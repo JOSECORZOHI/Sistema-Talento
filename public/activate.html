@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <title>Activar Cuenta Ã¢â‚¬â€ Talento Humano | AlcaldÃƒÂ­a de Valledupar</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=11">
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+    .login-page { display: flex !important; flex-direction: row !important; width: 100vw !important; height: 100vh !important; min-height: 100vh !important; overflow: hidden !important; }
+    .login-form-panel { flex: 0 0 45% !important; display: flex !important; align-items: center !important; justify-content: center !important; padding: 60px !important; background-color: var(--background) !important; }
+    .login-brand-panel { flex: 1 1 55% !important; display: flex !important; align-items: center !important; justify-content: center !important; padding: 60px !important; background: linear-gradient(135deg, #1A5276 0%, #154360 50%, #0E2F44 100%) !important; position: relative !important; overflow: hidden !important; }
+    @media (max-width: 600px) {
+      .login-page { flex-direction: column !important; }
+      .login-form-panel { flex: none !important; overflow-y: auto !important; height: 100vh !important; }
+      .login-brand-panel { flex: none !important; }
+    }
+  </style>
+</head>
+<body class="light-theme">
+  <div class="login-page">
+    <div class="login-brand-panel">
+      <div class="login-brand-content">
+        <div class="login-brand-logo">
+          <img src="Escudo_Valledupar.png" alt="Escudo de Valledupar">
+        </div>
+        <h1>AlcaldÃƒÂ­a de Valledupar</h1>
+        <h2>Sistema de GestiÃƒÂ³n Documental</h2>
+        <p>Active su cuenta definiendo una contraseÃƒÂ±a segura para acceder al sistema.</p>
+        <div class="login-brand-features">
+          <div class="login-feature">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+            <span>ContraseÃƒÂ±a segura con 12+ caracteres</span>
+          </div>
+        </div>
+      </div>
+      <div class="bandera-stripe"><span></span><span></span><span></span></div>
+    </div>
+    <div class="login-form-panel">
+      <div class="login-card">
+        <div class="login-card-header">
+          <div class="login-icon-circle">
+            <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="var(--primary)" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+            </svg>
+          </div>
+          <h3>Activar Cuenta</h3>
+          <p id="activate-subtitle">Defina su contraseÃƒÂ±a para acceder al sistema</p>
+        </div>
+        <div class="login-error-msg" id="activate-error-msg"></div>
+        <div class="login-success-msg" id="activate-success-msg"></div>
+
+        <div id="activate-loading" style="text-align:center;padding:40px 0;">
+          <div class="loader-backdrop" style="position:static;width:40px;height:40px;margin:0 auto;"></div>
+          <p style="margin-top:12px;color:var(--text-secondary);">Verificando token de activaciÃƒÂ³n...</p>
+        </div>
+
+        <form id="form-activate" style="display:none;">
+          <div style="background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:12px 16px;margin-bottom:20px;">
+            <span style="font-size:0.85rem;color:var(--text-secondary);">Cuenta para:</span>
+            <strong id="activate-email-display" style="display:block;margin-top:4px;font-size:0.95rem;"></strong>
+          </div>
+
+          <div class="login-field">
+            <label for="activate-password">Nueva contraseÃƒÂ±a</label>
+            <div class="login-input-wrapper">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+              <input type="password" id="activate-password" placeholder="MÃƒÂ­nimo 12 caracteres" required minlength="12" autocomplete="new-password">
+            </div>
+            <div class="password-strength">
+              <div class="strength-bar" id="strength-bar"></div>
+              <div class="strength-text" id="strength-text"></div>
+            </div>
+          </div>
+
+          <div class="login-field">
+            <label for="activate-password-confirm">Confirmar contraseÃƒÂ±a</label>
+            <div class="login-input-wrapper">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
+              <input type="password" id="activate-password-confirm" placeholder="Repita la contraseÃƒÂ±a" required minlength="12" autocomplete="new-password">
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-full-width login-submit" id="btn-activate-submit">
+            Activar Cuenta
+          </button>
+        </form>
+
+        <div class="login-footer-links">
+          <a href="/" class="login-register-link">Volver al inicio de sesiÃƒÂ³n</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="utils.js?v=2"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', async () => {
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get('token');
+      const form = document.getElementById('form-activate');
+      const loading = document.getElementById('activate-loading');
+      const errorDiv = document.getElementById('activate-error-msg');
+      const successDiv = document.getElementById('activate-success-msg');
+
+      if (!token) {
+        loading.innerHTML = '<p style="color:#e74c3c;text-align:center;padding:20px;">Token no proporcionado. Solicite un enlace de activaciÃƒÂ³n al administrador.</p>';
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/auth/activate/${token}`);
+        const data = await res.json();
+        if (!res.ok || !data.valid) {
+          loading.innerHTML = `<p style="color:#e74c3c;text-align:center;padding:20px;">${sanitize(data.error || 'Token invÃƒÂ¡lido.')}</p>`;
+          return;
+        }
+        document.getElementById('activate-email-display').textContent = data.email;
+        loading.style.display = 'none';
+        form.style.display = 'block';
+      } catch (err) {
+        loading.innerHTML = '<p style="color:#e74c3c;text-align:center;padding:20px;">Error de conexiÃƒÂ³n. Intente nuevamente.</p>';
+      }
+
+      const passwordInput = document.getElementById('activate-password');
+      const strengthBar = document.getElementById('strength-bar');
+      const strengthText = document.getElementById('strength-text');
+
+      passwordInput.addEventListener('input', () => {
+        const result = evaluatePasswordStrength(passwordInput.value);
+        strengthBar.className = 'strength-bar';
+        if (result.level !== 'none') strengthBar.classList.add(result.level);
+        strengthText.textContent = result.text;
+        strengthText.style.color = result.color;
+      });
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const password = passwordInput.value;
+        const confirm = document.getElementById('activate-password-confirm').value;
+        const btn = document.getElementById('btn-activate-submit');
+
+        errorDiv.style.display = 'none';
+        successDiv.style.display = 'none';
+
+        if (password !== confirm) {
+          errorDiv.textContent = 'Las contraseÃƒÂ±as no coinciden.';
+          errorDiv.style.display = 'block';
+          return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = 'Activando...';
+
+        try {
+          const res = await fetch(`/api/auth/activate/${token}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password })
+          });
+          const data = await res.json();
+
+          if (!res.ok) {
+            errorDiv.textContent = data.error || 'Error al activar la cuenta.';
+            errorDiv.style.display = 'block';
+            return;
+          }
+
+          form.style.display = 'none';
+          successDiv.textContent = 'Ã‚Â¡Cuenta activada exitosamente! Redirigiendo al inicio de sesiÃƒÂ³n...';
+          successDiv.style.display = 'block';
+          setTimeout(() => { window.location.href = '/'; }, 2500);
+        } catch (err) {
+          errorDiv.textContent = 'Error de conexiÃƒÂ³n. Intente nuevamente.';
+          errorDiv.style.display = 'block';
+        } finally {
+          btn.disabled = false;
+          btn.textContent = 'Activar Cuenta';
+        }
+      });
+    });
+  </script>
+</body>
+</html>

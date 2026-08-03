@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GestiÃƒÂ³n Documental Digital - Talento Humano | AlcaldÃƒÂ­a de Valledupar</title>
+  <!-- Google Fonts: Outfit & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="style.css?v=11">
+</head>
+<body class="light-theme">
+
+  <!-- Main Container -->
+  <div class="app-container">
+    
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-logo">
+          <img src="Escudo_Valledupar.png" alt="Escudo de Valledupar" style="width:42px;height:42px;object-fit:contain;">
+        </div>
+        <div class="brand-text">
+          <h1>AlcaldÃƒÂ­a de</h1>
+          <span>Valledupar</span>
+        </div>
+      </div>
+      
+      <div class="sidebar-subtext">Talento Humano</div>
+      
+      <nav class="sidebar-menu">
+        <a href="#dashboard" class="menu-item active" id="btn-nav-dashboard">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2H6a2 2 0 01-2-2v-4zM14 16a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2h-2a2 2 0 01-2-2v-4z" />
+          </svg>
+          <span>Dashboard</span>
+        </a>
+        <a href="#consultas" class="menu-item" id="btn-nav-consultas">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <span>Consultas</span>
+        </a>
+        <a href="#registro" class="menu-item" id="btn-nav-registro">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          <span>Registrar y Subir</span>
+          <span class="badge" id="badge-unregistered-files">0</span>
+        </a>
+        <a href="#funcionarios" class="menu-item" id="btn-nav-funcionarios">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+          </svg>
+          <span>Funcionarios</span>
+        </a>
+        <a href="#expedientes" class="menu-item" id="btn-nav-expedientes">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+          </svg>
+          <span>Expedientes</span>
+        </a>
+        <a href="#auditoria" class="menu-item" id="btn-nav-auditoria">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+          </svg>
+          <span>Seguimiento</span>
+        </a>
+        <a href="#eliminaciones" class="menu-item" id="btn-nav-eliminaciones">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+          <span>Eliminaciones</span>
+          <span class="badge-pending-requests" id="deletion-requests-badge" style="display:none;">0</span>
+        </a>
+      </nav>
+      
+      <!-- Theme Switcher and User Session -->
+      <div class="sidebar-footer">
+        <button class="theme-toggle" id="theme-toggle" title="Cambiar tema">
+          <svg class="sun-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5" /><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
+          </svg>
+          <svg class="moon-icon" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" style="display: none;">
+            <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" />
+          </svg>
+          <span id="theme-text">Modo Oscuro</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      
+      <!-- Header -->
+      <header class="content-header">
+        <div class="header-title">
+          <h2 id="current-section-title">Dashboard General</h2>
+          <p id="current-section-subtitle">GestiÃƒÂ³n e indicadores clave de expedientes laborales</p>
+        </div>
+        <div class="header-actions">
+          <button class="btn btn-secondary btn-icon-only" id="btn-refresh-data" title="Actualizar datos">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 1121.21 8H17" />
+            </svg>
+          </button>
+          <button class="btn btn-primary" id="btn-add-employee-trigger">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px;">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+            </svg>
+            Nuevo Funcionario
+          </button>
+          <div class="user-profile">
+            <div class="avatar" id="user-avatar">AD</div>
+            <div class="user-info">
+              <h4 id="user-display-name">AlcaldÃƒÂ­a Admin</h4>
+              <span id="user-display-dept">Talento Humano</span>
+              <span id="user-display-email" class="contact-email" style="font-size: 11px;"></span>
+            </div>
+            <button class="btn btn-secondary" id="btn-logout" style="margin-left: 12px; padding: 6px 14px; font-size: 12px;" title="Cerrar sesiÃƒÂ³n">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              Salir
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <!-- SECTIONS CONTAINER -->
+      <div class="sections-container">
+        
+        <!-- SECTION 1: DASHBOARD -->
+        <section id="section-dashboard" class="app-section active">
+          <!-- Summary Cards -->
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-icon bg-primary-soft">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="var(--primary)" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <div class="stat-details">
+                <h3 id="stat-total-docs">0</h3>
+                <p>Documentos Registrados</p>
+              </div>
+            </div>
+            
+            <div class="stat-card">
+              <div class="stat-icon bg-warning-soft">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="var(--warning)" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div class="stat-details">
+                <h3 id="stat-pending-docs">0</h3>
+                <p>Pendientes de RevisiÃƒÂ³n</p>
+              </div>
+            </div>
+
+            <div class="stat-card">
+              <div class="stat-icon bg-success-soft">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="var(--success)" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                </svg>
+              </div>
+              <div class="stat-details">
+                <h3 id="stat-total-employees">0</h3>
+                <p>Funcionarios Registrados</p>
+              </div>
+            </div>
+
+            <div class="stat-card cursor-pointer" id="card-unregistered-trigger">
+              <div class="stat-icon bg-info-soft">
+                <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="var(--info)" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+              </div>
+              <div class="stat-details">
+                <h3 id="stat-unregistered-docs">0</h3>
+                <p>Archivos por Registrar (Local)</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- CuadrÃƒÂ­cula de grÃƒÂ¡ficos y actividades -->
+          <div class="dashboard-grid">
+            
+            <!-- Desglose por tipos de documento -->
+            <div class="grid-card col-span-2">
+              <div class="card-header">
+                <h3>DistribuciÃƒÂ³n por Tipo de Documento</h3>
+                <span class="subtitle">Volumen de expedientes clasificados</span>
+              </div>
+              <div class="chart-container" id="types-chart-wrapper">
+                <!-- Barras generadas programÃƒÂ¡ticamente -->
+                <div class="no-data-placeholder">Cargando estadÃƒÂ­sticas...</div>
+              </div>
+            </div>
+
+            <!-- Funcionarios Registrados -->
+            <div class="grid-card">
+              <div class="card-header">
+                <h3>Funcionarios</h3>
+                <span class="subtitle" id="dashboard-employee-count"></span>
+              </div>
+              <div id="dashboard-employee-list" style="max-height:260px;overflow-y:auto;">
+                <div class="no-data-placeholder">Cargando funcionarios...</div>
+              </div>
+              <button class="btn btn-text btn-full-width" style="margin-top: 12px;" onclick="window.location.hash='#expedientes'">Ver directorio completo Ã¢â€ â€™</button>
+            </div>
+
+            <!-- Registros de actividad recientes -->
+            <div class="grid-card">
+              <div class="card-header">
+                <h3>ÃƒÅ¡ltimos Movimientos</h3>
+                <span class="subtitle">Trazabilidad de cambios reciente</span>
+              </div>
+              <div class="activity-timeline" id="recent-activity-timeline">
+                <!-- Lista de actividades -->
+                <div class="no-data-placeholder">Cargando bitÃƒÂ¡cora...</div>
+              </div>
+              <button class="btn btn-text btn-full-width" id="btn-see-all-logs" style="margin-top: 12px;">Ver historial completo Ã¢â€ â€™</button>
+            </div>
+            
+          </div>
+        </section>
+
+        <!-- SECTION 2: CONSULTAS -->
+        <section id="section-consultas" class="app-section">
+          <!-- Filters Box -->
+          <div class="filter-panel card-glass">
+            <div class="filter-row">
+              <div class="filter-group text-search">
+                <label for="search-input">Buscar por empleado, ID o nombre de archivo</label>
+                <div class="input-wrapper">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input type="text" id="search-input" placeholder="Escriba cÃƒÂ©dula, nombre, descripciÃƒÂ³n...">
+                </div>
+              </div>
+              
+              <div class="filter-group">
+                <label for="filter-type">Tipo de Documento</label>
+                <select id="filter-type">
+                  <option value="todos">-- Todos los tipos --</option>
+                  <!-- Cargado dinÃƒÂ¡micamente -->
+                </select>
+              </div>
+
+              <div class="filter-group">
+                <label for="filter-category">CategorÃƒÂ­a</label>
+                <select id="filter-category">
+                  <option value="todas">-- Todas las categorÃƒÂ­as --</option>
+                  <!-- Cargado dinÃƒÂ¡micamente -->
+                </select>
+              </div>
+
+              <div class="filter-group">
+                <label for="filter-status">Estado</label>
+                <select id="filter-status">
+                  <option value="todos">-- Todos los estados --</option>
+                  <option value="Activo">Activo</option>
+                  <option value="Aprobado">Aprobado</option>
+                  <option value="Pendiente">Pendiente</option>
+                  <option value="Archivado">Archivado</option>
+                </select>
+              </div>
+            </div>
+            
+            <div class="filter-row-sub">
+              <div class="date-range-wrapper">
+                <div class="filter-group">
+                  <label for="filter-date-start">Fecha EmisiÃƒÂ³n Desde</label>
+                  <input type="date" id="filter-date-start">
+                </div>
+                <div class="filter-group">
+                  <label for="filter-date-end">Hasta</label>
+                  <input type="date" id="filter-date-end">
+                </div>
+              </div>
+              <button class="btn btn-secondary" id="btn-clear-filters">Limpiar Filtros</button>
+            </div>
+          </div>
+
+          <!-- Document Table -->
+          <div class="table-container grid-card">
+            <div class="table-header">
+              <h3 >Listado de Documentos Digitales</h3>
+              <span class="count-badge" id="results-count">0 documentos</span>
+            </div>
+            
+            <div class="table-scroll">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Archivo / Nombre</th>
+                    <th>Funcionario (C.C.)</th>
+                    <th>ClasificaciÃƒÂ³n (CategorÃƒÂ­a)</th>
+                    <th>Fecha EmisiÃƒÂ³n</th>
+                    <th>Estado</th>
+                    <th class="text-right">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="documents-table-body">
+                  <!-- Contenido dinÃƒÂ¡mico -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- SECTION 3: REGISTRO Y SUBIDA -->
+        <section id="section-registro" class="app-section">
+          <!-- Subtabs Navigation -->
+          <div class="subtabs-navigation" style="display: flex; gap: 12px; margin-bottom: 24px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px;">
+            <button class="btn btn-secondary active" id="btn-subtab-manual" onclick="switchSubTab('manual')">
+              Carga Manual / Locales
+            </button>
+            <button class="btn btn-secondary" id="btn-subtab-scanner" onclick="switchSubTab('scanner')">
+              Bandeja de EscÃƒÂ¡ner
+            </button>
+            <button class="btn btn-secondary" id="btn-subtab-email" onclick="switchSubTab('email')">
+              Bandeja de Correo
+              <span class="count-badge" id="badge-email-unread" style="margin-left: 8px; font-size: 10px; background-color: var(--danger); color: white; display: none;">0</span>
+            </button>
+          </div>
+
+          <!-- SUBTAB 1: MANUAL & LOCAL ORPHANS -->
+          <div id="subtab-panel-manual" class="subtab-panel active">
+            <div class="dashboard-grid">
+              
+              <!-- Upload Module -->
+              <div class="grid-card col-span-2">
+                <div class="card-header">
+                  <h3>Digitalizar Nuevo Expediente</h3>
+                  <span class="subtitle">Cargue un documento al servidor e ingrese sus metadatos</span>
+                </div>
+                
+                <form id="form-upload-document" class="document-form">
+                  <div class="form-row">
+                    <div class="form-group col-span-2">
+                      <label for="upload-file">Archivo a Subir *</label>
+                      <div class="file-drop-area" id="file-drop-area">
+                        <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5">
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        <div class="drop-text">Arrastre el archivo aquÃƒÂ­ o haga clic para seleccionar</div>
+                        <div class="file-name-preview" id="file-name-preview">NingÃƒÂºn archivo seleccionado</div>
+                        <input type="file" id="upload-file" name="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.bmp,.tiff,.txt,.csv,.odt,.ods,.rtf" required>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label for="upload-employee">Funcionario Asociado *</label>
+                      <select id="upload-employee" name="employeeId" required>
+                        <option value="">-- Seleccionar Funcionario --</option>
+                      </select>
+                    </div>
+                    <div class="form-group">
+                      <label for="upload-category">CategorÃƒÂ­a Documental *</label>
+                      <select id="upload-category" name="categoryId" required>
+                        <option value="">-- Seleccionar CategorÃƒÂ­a --</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label for="upload-type">Tipo de Documento *</label>
+                      <select id="upload-type" name="documentTypeId" required>
+                        <option value="">-- Seleccionar Tipo --</option>
+                      </select>
+                    </div>
+                    <div class="form-group">
+                      <label for="upload-status">Estado Inicial *</label>
+                      <select id="upload-status" name="status" required>
+                        <option value="Pendiente">Pendiente de RevisiÃƒÂ³n</option>
+                        <option value="Aprobado" selected>Aprobado</option>
+                        <option value="Activo">Activo</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div class="form-row">
+                    <div class="form-group">
+                      <label for="upload-issue-date">Fecha de EmisiÃƒÂ³n *</label>
+                      <input type="date" id="upload-issue-date" name="issueDate" required>
+                    </div>
+                    <div class="form-group">
+                      <label for="upload-expiry-date">Fecha de ExpiraciÃƒÂ³n (Opcional)</label>
+                      <input type="date" id="upload-expiry-date" name="expiryDate">
+                    </div>
+                  </div>
+
+                  <div class="form-row">
+                    <div class="form-group col-span-2">
+                      <label for="upload-description">DescripciÃƒÂ³n / Comentarios del Documento</label>
+                      <textarea id="upload-description" name="description" rows="3" placeholder="Detalles de nombramiento, periodo de ARL, observaciones particulares..."></textarea>
+                    </div>
+                  </div>
+
+                  <div class="form-actions-row">
+                    <button type="button" class="btn btn-secondary" id="btn-cancel-upload">Limpiar Formulario</button>
+                    <button type="submit" class="btn btn-primary" >
+                      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px;">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                      </svg>
+                      Digitalizar y Guardar
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              <!-- Unregistered/Local Files Section -->
+              <div class="grid-card">
+                <div class="card-header">
+                  <h3>Documentos Locales Pendientes</h3>
+                  <span class="subtitle">Archivos PDF detectados en la carpeta que requieren registro de metadatos</span>
+                </div>
+                
+                <div class="local-files-list" id="unregistered-files-list">
+                  <div class="no-data-placeholder">No se encontraron archivos PDF huÃƒÂ©rfanos.</div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- SUBTAB 2: SCANNER BAND DE ENTRADA -->
+          <div id="subtab-panel-scanner" class="subtab-panel">
+            <div class="portal-panel">
+              <div class="portal-docs-header">
+                <h3>EscÃƒÂ¡neres Detectados</h3>
+                <span id="portal-scanner-count" style="font-size:12px;font-weight:600;">0 dispositivo(s)</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+                <div id="portal-scanner-status" style="display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;">
+                  <span style="width:8px;height:8px;border-radius:50%;background:#ccc;display:inline-block;" id="portal-scanner-dot"></span>
+                  <span id="portal-scanner-dot-text">Verificando...</span>
+                </div>
+                <input type="text" id="input-scan-filename" placeholder="Nombre del documento" style="padding:6px 10px;font-size:12px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);width:200px;" />
+                <button class="btn btn-primary" id="btn-portal-scan" style="padding:8px 18px;font-size:13px;">Escanear Documento</button>
+                <button class="btn btn-secondary" id="btn-portal-refresh-scanners" style="font-size:12px;padding:8px 14px;">Ã°Å¸â€â€ž Actualizar lista</button>
+              </div>
+              <div id="portal-scanner-device-list" style="max-height:160px;overflow-y:auto;margin-bottom:16px;"></div>
+              <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-top:4px;">
+                <div class="portal-docs-header" style="margin-bottom:10px;">
+                  <h3 style="font-size:15px;">Bandeja de EscÃƒÂ¡ner</h3>
+                  <span id="portal-scanner-tray-count" style="font-size:12px;font-weight:600;">0 archivo(s)</span>
+                </div>
+                <div id="portal-scanner-list" class="portal-scanner-list"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- SUBTAB 3: EMAIL BAND DE ENTRADA -->
+          <div id="subtab-panel-email" class="subtab-panel">
+            <div class="dashboard-grid">
+              
+              <!-- Emails Inbox list -->
+              <div class="grid-card">
+                <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
+                  <div>
+                    <h3>Bandeja de Correo ElectrÃƒÂ³nico</h3>
+                    <span class="subtitle">Ingesta institucional IMAP</span>
+                  </div>
+                  <button class="btn btn-secondary" id="btn-sync-email" style="padding: 6px 12px; font-size: 12px;">
+                    Sincronizar
+                  </button>
+                </div>
+                
+                <div class="email-list-container" id="email-inbox-list" style="display: flex; flex-direction: column; gap: 10px; max-height: 480px; overflow-y: auto;">
+                  <!-- Lista dinÃƒÂ¡mica de correos -->
+                </div>
+              </div>
+
+              <!-- Selected Email Details View -->
+              <div class="grid-card col-span-2">
+                <div class="card-header border-bottom-none">
+                  <h3>Detalle del Mensaje</h3>
+                  <span class="subtitle">Seleccione un correo electrÃƒÂ³nico para revisar el contenido y los archivos adjuntos</span>
+                </div>
+                
+                <div class="folder-blank-state" id="email-blank-state" style="height: 300px;">
+                  <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                  <h4>NingÃƒÂºn correo seleccionado</h4>
+                  <p>Haga clic en un mensaje de la bandeja de entrada para verificar su cuerpo, remitente y adjuntar sus archivos digitales al expediente de Talento Humano.</p>
+                </div>
+
+                <div class="email-detail-view" id="email-detail-real" style="display: none; flex-direction: column; gap: 16px;">
+                  <div style="border-bottom: 1px solid var(--border-color); padding-bottom: 12px;">
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                      <h3 id="email-detail-subject" style="font-family: var(--font-display); font-size: 17px; font-weight: 700;">Asunto</h3>
+                      <span id="email-detail-date" style="font-size: 11px; color: var(--text-muted);">Fecha</span>
+                    </div>
+                    <div style="margin-top: 8px; font-size: 13px;">
+                      <strong>De:</strong> <span id="email-detail-sender-name">Nombre</span> (<span id="email-detail-sender-email" style="color: var(--primary);">correo@valledupar-cesar.gov.co</span>)
+                    </div>
+                  </div>
+                  
+                  <div id="email-detail-body" style="font-size: 13px; line-height: 1.5; white-space: pre-wrap; background-color: var(--background); padding: 14px; border-radius: var(--radius-md); max-height: 200px; overflow-y: auto;">
+                    Cuerpo del mensaje...
+                  </div>
+
+                  <div>
+                    <h4 style="font-size: 13px; font-weight: 700; margin-bottom: 10px;">Archivos Adjuntos Detectados (PDF)</h4>
+                    <div id="email-attachments-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px;">
+                      <!-- Tarjetas de adjuntos -->
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+        </section>
+
+        <!-- SECTION 4: FUNCIONARIOS -->
+        <section id="section-funcionarios" class="app-section">
+          <div class="filter-panel card-glass" style="margin-bottom: 20px;">
+            <div class="filter-row">
+              <div class="filter-group text-search" style="flex: 2;">
+                <label for="emp-search-input">Buscar funcionario</label>
+                <div class="input-wrapper">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input type="text" id="emp-search-input" placeholder="Nombre, documento, dependencia o correo...">
+                </div>
+              </div>
+              <div class="filter-group">
+                <label for="emp-filter-status">Estado</label>
+                <select id="emp-filter-status">
+                  <option value="todos">Todos</option>
+                  <option value="activa">Activos</option>
+                  <option value="pendiente">Pendientes</option>
+                  <option value="suspendida">Suspendidos</option>
+                  <option value="inactiva">Inactivos</option>
+                </select>
+              </div>
+              <div class="filter-group" style="align-self: flex-end;">
+                <button class="btn btn-primary" onclick="document.getElementById('btn-add-employee-trigger').click()">
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                  </svg>
+                  Nuevo Funcionario
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="table-container grid-card">
+            <div class="table-header">
+              <h3>Listado de Funcionarios</h3>
+              <span class="count-badge" id="funcionarios-count">0 funcionarios</span>
+            </div>
+            <div class="table-scroll">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Documento</th>
+                    <th>Nombre</th>
+                    <th>Dependencia</th>
+                    <th>Cargo</th>
+                    <th>Correo</th>
+                    <th>Estado</th>
+                    <th class="text-right">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="funcionarios-table-body">
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- SECTION 5: EXPEDIENTES POR FUNCIONARIO -->
+        <section id="section-expedientes" class="app-section">
+          <div class="dashboard-grid">
+            
+            <!-- Employee Directory -->
+            <div class="grid-card">
+              <div class="card-header">
+                <h3>Directorio de Funcionarios</h3>
+                <span class="subtitle" id="employee-directory-count"></span>
+              </div>
+              <div class="employee-list-wrapper">
+                <div style="display:flex;gap:8px;align-items:center;padding:0 0 10px;flex-wrap:wrap;">
+                  <div class="input-wrapper search-box-sm" style="flex:1;min-width:160px;">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                    <input type="text" id="employee-search" placeholder="Filtrar funcionario...">
+                  </div>
+                  <select id="employee-filter-type" style="padding:8px 12px;border:1.5px solid var(--border-color);border-radius:var(--radius-md);font-size:12px;font-family:var(--font-body);background:var(--background);color:var(--text-primary);cursor:pointer;min-width:140px;">
+                    <option value="todos">Todos</option>
+                    <option value="activos">Activos</option>
+                    <option value="pendientes">Pendientes</option>
+                    <option value="suspendidos">Suspendidos</option>
+                    <option value="inactivos">Inactivos</option>
+                  </select>
+                </div>
+                <div class="employee-cards-container" id="employees-cards-list">
+                  <!-- Los empleados se cargan aquÃƒÂ­ -->
+                </div>
+              </div>
+            </div>
+
+            <!-- Digital Folder Viewer -->
+            <div class="grid-card col-span-2">
+              <div class="card-header border-bottom-none">
+                <h3>Expediente Laboral Digital</h3>
+                <span class="subtitle">Seleccione un funcionario a la izquierda para cargar su hoja de vida digital</span>
+              </div>
+              
+              <!-- Estado vacÃƒÂ­o -->
+              <div class="folder-blank-state" id="folder-blank-state">
+                <svg viewBox="0 0 24 24" width="64" height="64" fill="none" stroke="currentColor" stroke-width="1">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9l-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+                <h4>Expediente no seleccionado</h4>
+                <p>Haga clic en un funcionario del directorio para inspeccionar de manera centralizada sus documentos vinculados, contratos, estados de afiliaciÃƒÂ³n y certificaciones.</p>
+              </div>
+
+              <!-- Full Folder Content -->
+              <div class="folder-content" id="folder-real-content" style="display: none;">
+                <!-- Employee Summary Header -->
+                <div class="folder-employee-badge">
+                  <div class="badge-avatar" id="folder-emp-avatar">--</div>
+                  <div class="badge-info">
+                    <h3 id="folder-emp-name">Nombre Funcionario</h3>
+                    <p><strong id="folder-emp-id">C.C. --</strong> &bull; <span id="folder-emp-pos">Cargo</span> &bull; <span id="folder-emp-dep">ÃƒÂrea</span></p>
+                    <span class="contact-email" id="folder-emp-email">correo@valledupar-cesar.gov.co</span>
+                  </div>
+                </div>
+
+                <!-- CuadrÃƒÂ­cula de categorÃƒÂ­as de documentos en carpeta -->
+                <div class="folder-categories-nav" id="folder-categories-nav-list">
+                  <!-- CategorÃƒÂ­as y conteo de documentos -->
+                </div>
+
+                <!-- Listas de documentos agrupados/filtrados -->
+                <div class="folder-documents-section">
+                  <div class="folder-section-title">
+                    <h4 id="folder-current-category-title">Todos los Documentos</h4>
+                    <span class="count-badge" id="folder-category-docs-count">0</span>
+                  </div>
+                  
+                  <div class="folder-docs-list" id="folder-documents-grid">
+                    <!-- Tarjetas que representan documentos -->
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+        </section>
+
+        <!-- SECTION 5: AUDITORIA -->
+        <section id="section-auditoria" class="app-section">
+          <div class="filter-panel card-glass" style="margin-bottom: 20px;">
+            <div class="filter-row">
+              <div class="filter-group text-search" style="flex: 2;">
+                <label for="audit-search-input">Buscar en el registro de auditorÃƒÂ­a</label>
+                <div class="input-wrapper">
+                  <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  <input type="text" id="audit-search-input" placeholder="Filtrar por acciÃƒÂ³n, usuario o detalles del cambio...">
+                </div>
+              </div>
+              <div class="filter-group">
+                <label for="audit-filter-action">AcciÃƒÂ³n</label>
+                <select id="audit-filter-action">
+                  <option value="todos">-- Todas las acciones --</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="table-container grid-card">
+            <div class="table-header">
+              <h3>Historial de Trazabilidad e Integridad de la InformaciÃƒÂ³n</h3>
+              <span class="count-badge" id="audit-results-count">0 registros</span>
+            </div>
+            <div class="table-scroll">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Fecha y Hora</th>
+                    <th>Usuario Responsable</th>
+                    <th>OperaciÃƒÂ³n / AcciÃƒÂ³n</th>
+                    <th>Detalles del Cambio</th>
+                  </tr>
+                </thead>
+                <tbody id="audit-table-body">
+                  <!-- Contenido dinÃƒÂ¡mico -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- SECTION: SOLICITUDES DE ELIMINACIÃƒâ€œN -->
+        <section class="app-section" id="section-eliminaciones">
+          <div class="section-header">
+            <h2>Solicitudes de EliminaciÃƒÂ³n</h2>
+            <p class="section-desc">Gestione las solicitudes de eliminaciÃƒÂ³n de documentos enviadas por los funcionarios.</p>
+          </div>
+          <div class="section-body">
+            <div class="grid-card">
+              <div class="card-header">
+                <h3>Solicitudes Pendientes</h3>
+                <span id="deletion-requests-count">0 solicitud(es)</span>
+              </div>
+              <div class="table-responsive">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Documento</th>
+                      <th>Funcionario</th>
+                      <th>Motivo</th>
+                      <th>Solicitado por</th>
+                      <th>Fecha</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody id="deletion-requests-table-body">
+                    <tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text-muted);">No hay solicitudes.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+
+  </div>
+
+  <!-- MODAL 1: VIEW PDF AND MANAGE STATUS -->
+  <div class="modal-backdrop" id="modal-view-pdf">
+    <div class="modal-container modal-lg">
+      <div class="modal-header">
+        <div class="modal-header-info">
+          <h3 id="pdf-modal-title">Visualizador de Documentos</h3>
+          <p id="pdf-modal-subtitle">Detalles tÃƒÂ©cnicos del archivo y trazabilidad</p>
+        </div>
+        <button class="btn-close-modal" id="btn-close-pdf-modal">&times;</button>
+      </div>
+      
+      <div class="modal-body-split">
+        <!-- PDF Iframe -->
+        <div class="pdf-viewer-frame">
+          <iframe id="pdf-iframe" src="" title="Visualizador de Documentos"></iframe>
+        </div>
+        
+        <!-- Info Sidebar -->
+        <div class="pdf-details-sidebar">
+          <div class="detail-section">
+            <label>Funcionario</label>
+            <h4 id="pdf-detail-employee">Nombre del Empleado</h4>
+            <span id="pdf-detail-employee-id">C.C. --</span>
+          </div>
+
+          <div class="detail-section">
+            <label>Tipo de Documento y ClasificaciÃƒÂ³n</label>
+            <h4 id="pdf-detail-type">Tipo de Documento</h4>
+            <p><span class="category-tag" id="pdf-detail-category">CategorÃƒÂ­a</span></p>
+          </div>
+
+          <div class="detail-section">
+            <label>Fechas Relacionadas</label>
+            <p><strong>EmisiÃƒÂ³n:</strong> <span id="pdf-detail-issue-date">--</span></p>
+            <p><strong>ExpiraciÃƒÂ³n:</strong> <span id="pdf-detail-expiry-date">No vence</span></p>
+          </div>
+
+          <div class="detail-section">
+            <label>Comentarios / DescripciÃƒÂ³n</label>
+            <p class="description-text" id="pdf-detail-desc">Sin descripciÃƒÂ³n proporcionada.</p>
+          </div>
+
+          <div class="detail-section-status">
+            <label for="pdf-status-changer">Estado del Documento (Integridad)</label>
+            <select id="pdf-status-changer" class="status-select-large">
+              <option value="Pendiente">Pendiente de RevisiÃƒÂ³n</option>
+              <option value="Aprobado">Aprobado / Verificado</option>
+              <option value="Activo">Activo</option>
+              <option value="Archivado">Archivado</option>
+            </select>
+            <button class="btn btn-primary btn-full-width" id="btn-update-pdf-status" style="margin-top: 10px;">Guardar Estado</button>
+          </div>
+
+          <div class="detail-section-actions">
+            <button class="btn btn-secondary btn-full-width" id="btn-toggle-visibility" style="margin-bottom: 6px;">
+              Ã°Å¸â€˜Â Permitir que funcionario vea este doc
+            </button>
+            <button class="btn btn-secondary btn-full-width" id="btn-download-pdf-direct">Descargar Archivo</button>
+            <button class="btn btn-danger-text btn-full-width" id="btn-archive-pdf-direct">Archivar Expediente</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 2: REGISTER/EDIT DOCUMENT METADATA -->
+  <div class="modal-backdrop" id="modal-edit-document">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3 id="edit-modal-title">Registrar Metadatos de Documento</h3>
+        <button class="btn-close-modal" id="btn-close-edit-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-edit-document">
+          <input type="hidden" id="edit-doc-id">
+          <input type="hidden" id="edit-doc-filename">
+          <input type="hidden" id="edit-mode-local" value="false"> <!-- value can be 'edit', 'local', 'scanner', 'email' -->
+          <input type="hidden" id="edit-email-id">
+
+          <div class="form-group" style="margin-bottom: 12px;">
+            <label>Archivo FÃƒÂ­sico</label>
+            <div class="disabled-filename-box" id="edit-doc-filename-display">archivo.pdf</div>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 12px;">
+            <label for="edit-employee">Funcionario Asociado *</label>
+            <select id="edit-employee" required>
+              <option value="">-- Seleccionar Funcionario --</option>
+            </select>
+          </div>
+
+          <div class="form-row-2" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+            <div class="form-group">
+              <label for="edit-category">CategorÃƒÂ­a *</label>
+              <select id="edit-category" required>
+                <option value="">-- Seleccionar CategorÃƒÂ­a --</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="edit-type">Tipo Documento *</label>
+              <select id="edit-type" required>
+                <option value="">-- Seleccionar Tipo --</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row-2" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+            <div class="form-group">
+              <label for="edit-issue-date">Fecha de EmisiÃƒÂ³n *</label>
+              <input type="date" id="edit-issue-date" required>
+            </div>
+            <div class="form-group">
+              <label for="edit-expiry-date">Fecha ExpiraciÃƒÂ³n (Opcional)</label>
+              <input type="date" id="edit-expiry-date">
+            </div>
+          </div>
+
+          <div class="form-row-2" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+            <div class="form-group">
+              <label for="edit-status">Estado *</label>
+              <select id="edit-status" required>
+                <option value="Pendiente">Pendiente de RevisiÃƒÂ³n</option>
+                <option value="Aprobado">Aprobado</option>
+                <option value="Activo">Activo</option>
+                <option value="Archivado">Archivado</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 16px;">
+            <label for="edit-description">DescripciÃƒÂ³n / Notas</label>
+            <textarea id="edit-description" rows="3" placeholder="Detalles u observaciones del documento..."></textarea>
+          </div>
+
+          <div class="form-actions-row">
+            <button type="button" class="btn btn-secondary" id="btn-cancel-edit">Cancelar</button>
+            <button type="submit" class="btn btn-primary" id="btn-save-edit">Guardar Cambios</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL 3: REGISTER NEW EMPLOYEE -->
+  <div class="modal-backdrop" id="modal-add-employee">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3>Registrar Nuevo Funcionario</h3>
+        <button class="btn-close-modal" id="btn-close-emp-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-add-employee">
+          <div class="form-group" style="margin-bottom: 12px;">
+            <label for="emp-email">Correo ElectrÃƒÂ³nico Institucional *</label>
+            <input type="email" id="emp-email" placeholder="ejemplo@valledupar-cesar.gov.co" required>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 12px;">
+            <label for="emp-department">ÃƒÂrea / Dependencia *</label>
+            <input type="text" id="emp-department" placeholder="Ej: NÃƒÂ³mina, Bienestar Social, Despacho" required>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 16px; padding: 12px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;">
+            <small style="color: var(--text-secondary); font-size: 12px;">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--primary)" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              Se generarÃƒÂ¡ un enlace de activaciÃƒÂ³n ÃƒÂºnico. El funcionario definirÃƒÂ¡ su propia contraseÃƒÂ±a al activar la cuenta.
+            </small>
+          </div>
+
+          <div class="form-actions-row">
+            <button type="button" class="btn btn-secondary" id="btn-cancel-emp">Cancelar</button>
+            <button type="submit" class="btn btn-primary">Registrar Funcionario</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- JS Logic -->
+  <script src="utils.js?v=2"></script>
+  <script src="app.js?v=5"></script>
+</body>
+</html>

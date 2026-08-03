@@ -1,0 +1,23 @@
+node_modules/
+.env
+.env.local
+.env.*.local
+*.log
+
+# Datos y artefactos locales con información personal
+storage/
+bandeja_escaner/
+database.json
+database.example.json
+
+# Capturas y temporales
+server_output.txt
+server_error.txt
+server_stdout.txt
+th_log*.txt
+sistema
+test-scanner.ps1
+_tmp_*
+*.orig
+*.bak
+*.tmp

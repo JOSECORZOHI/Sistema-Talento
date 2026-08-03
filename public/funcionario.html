@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Portal Funcionario Ã¢â‚¬â€ Talento Humano | AlcaldÃƒÂ­a de Valledupar</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=11">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100vh; width: 100vw; overflow: hidden; background: var(--background); font-family: var(--font-body); }
+
+    .portal-layout { display: flex; flex-direction: column; height: 100vh; width: 100vw; overflow: hidden; }
+
+    /* --- TOPBAR --- */
+    .portal-topbar {
+      background: linear-gradient(135deg, #0E2F44 0%, #1A5276 35%, #1F6A9A 65%, #1A5276 100%);
+      padding: 0 28px; height: 64px; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: space-between;
+      z-index: 100; position: relative;
+      box-shadow: 0 4px 24px rgba(14, 47, 68, 0.25);
+    }
+    .portal-topbar::after {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(90deg, rgba(255,255,255,0.03) 0%, transparent 50%, rgba(255,255,255,0.03) 100%);
+      pointer-events: none;
+    }
+    .portal-topbar-brand { display: flex; align-items: center; gap: 14px; position: relative; z-index: 1; }
+    .portal-topbar-brand img { width: 34px; height: 34px; object-fit: contain; flex-shrink: 0; border-radius: 4px; }
+    .portal-topbar-brand .brand-text { display: flex; flex-direction: column; }
+    .portal-topbar-brand .brand-text span { font-family: var(--font-display); font-weight: 700; font-size: 15px; color: #FFFFFF; letter-spacing: 0.4px; line-height: 1.2; }
+    .portal-topbar-brand .brand-text small { font-size: 10px; color: rgba(255,255,255,0.5); line-height: 1.3; letter-spacing: 0.2px; }
+    .portal-topbar-user { display: flex; align-items: center; gap: 10px; }
+    .portal-avatar {
+      width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+      background: linear-gradient(135deg, rgba(255,255,255,0.25), rgba(255,255,255,0.1));
+      border: 2px solid rgba(255,255,255,0.25);
+      color: #FFFFFF; display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 13px; font-family: var(--font-display);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .portal-user-info { display: flex; flex-direction: column; gap: 1px; }
+    .portal-user-info h4 { font-size: 12px; font-weight: 600; color: #FFFFFF; margin: 0; line-height: 1.2; }
+    .portal-user-info span { font-size: 10px; color: rgba(255,255,255,0.45); line-height: 1.2; }
+    .btn-portal-action {
+      background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px; padding: 7px 12px; font-size: 11px; color: rgba(255,255,255,0.7);
+      cursor: pointer; transition: all 0.2s; font-family: var(--font-body); font-weight: 500;
+      display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+      backdrop-filter: blur(4px);
+    }
+    .btn-portal-action:hover { background: rgba(255,255,255,0.14); color: #FFFFFF; border-color: rgba(255,255,255,0.22); }
+    .btn-portal-logout { border-color: rgba(255,255,255,0.08); color: rgba(255,255,255,0.45); }
+    .btn-portal-logout:hover { background: rgba(176, 58, 46, 0.45); border-color: #EC7063; color: #FFFFFF; }
+
+    .portal-topbar .bandera-strip {
+      position: absolute; bottom: 0; left: 0; right: 0; height: 3px; display: flex;
+      z-index: 2;
+    }
+    .portal-topbar .bandera-strip span { flex: 1; }
+    .portal-topbar .bandera-strip span:nth-child(1) { background: #B03A2E; }
+    .portal-topbar .bandera-strip span:nth-child(2) { background: #FFFFFF; }
+    .portal-topbar .bandera-strip span:nth-child(3) { background: #1A5276; }
+
+    /* --- MAIN CONTENT --- */
+    .portal-main {
+      flex: 1; padding: 0 32px 28px; width: 100%; overflow-y: auto; overflow-x: hidden;
+    }
+
+    /* --- WELCOME BANNER --- */
+    .portal-welcome {
+      background: linear-gradient(135deg, #0E2F44 0%, #1A5276 40%, #2471A3 100%);
+      border-radius: 16px; padding: 26px 30px; margin: 20px 0 22px;
+      color: #FFFFFF; position: relative; overflow: hidden;
+      box-shadow: 0 8px 32px rgba(14, 47, 68, 0.2);
+    }
+    .portal-welcome::before {
+      content: ''; position: absolute; top: -60%; right: -8%; width: 340px; height: 340px;
+      background: radial-gradient(circle, rgba(255,255,255,0.06) 0%, transparent 70%);
+      border-radius: 50%;
+    }
+    .portal-welcome::after {
+      content: ''; position: absolute; bottom: -30%; left: 5%; width: 220px; height: 220px;
+      background: radial-gradient(circle, rgba(255,255,255,0.04) 0%, transparent 70%);
+      border-radius: 50%;
+    }
+    .portal-welcome h2 {
+      font-family: var(--font-display); font-size: 22px; font-weight: 800;
+      margin: 0 0 4px; position: relative; z-index: 1; letter-spacing: 0.2px;
+    }
+    .portal-welcome p {
+      font-size: 13px; opacity: 0.7; margin: 0; position: relative; z-index: 1;
+      max-width: 65%; line-height: 1.5;
+    }
+    .portal-welcome .welcome-stats {
+      display: flex; gap: 12px; margin-top: 16px; position: relative; z-index: 1;
+    }
+    .portal-welcome .welcome-stat {
+      background: rgba(255,255,255,0.08); backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.1); border-radius: 12px;
+      padding: 12px 20px; min-width: 130px; text-align: center;
+      transition: transform 0.2s, background 0.2s;
+    }
+    .portal-welcome .welcome-stat:hover { transform: translateY(-2px); background: rgba(255,255,255,0.12); }
+    .portal-welcome .welcome-stat strong {
+      display: block; font-size: 22px; font-weight: 800; font-family: var(--font-display); line-height: 1.2;
+    }
+    .portal-welcome .welcome-stat span { font-size: 10px; opacity: 0.65; display: block; margin-top: 2px; letter-spacing: 0.3px; }
+
+    /* --- TABS --- */
+    .portal-tabs {
+      display: flex; gap: 4px; margin-bottom: 22px;
+      background: var(--surface); border-radius: 14px; padding: 5px;
+      border: 1px solid var(--border-color);
+      box-shadow: 0 2px 8px var(--shadow);
+    }
+    .portal-tab {
+      flex: 1; padding: 11px 14px; border: none; background: none;
+      font-size: 12px; font-weight: 600; color: var(--text-secondary);
+      cursor: pointer; border-radius: 10px; transition: all 0.25s;
+      font-family: var(--font-body); display: flex; align-items: center;
+      justify-content: center; gap: 7px; white-space: nowrap;
+    }
+    .portal-tab svg { width: 15px; height: 15px; flex-shrink: 0; }
+    .portal-tab:hover { color: var(--primary); background: var(--primary-soft); }
+    .portal-tab.active {
+      color: #FFFFFF; background: linear-gradient(135deg, #1A5276, #2471A3);
+      box-shadow: 0 2px 10px rgba(26, 82, 118, 0.3);
+    }
+
+    /* --- PANELS --- */
+    .portal-panel { display: none; animation: portalFadeIn 0.3s ease; }
+    .portal-panel.active { display: block; }
+    @keyframes portalFadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* --- SECTION HEADER --- */
+    .portal-docs-header {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px solid var(--border-color);
+    }
+    .portal-docs-header h3 {
+      font-family: var(--font-display); font-size: 17px; font-weight: 700; color: var(--text-primary); margin: 0;
+    }
+    .portal-docs-header span {
+      font-size: 11px; color: var(--text-muted); background: var(--primary-soft);
+      padding: 4px 12px; border-radius: 20px; font-weight: 600; white-space: nowrap;
+      border: 1px solid transparent;
+    }
+
+    /* --- DOCUMENT CARDS GRID --- */
+    .portal-docs-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 18px;
+    }
+    .portal-doc-card {
+      background: var(--surface); border: 1px solid var(--border-color);
+      border-radius: 16px; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      overflow: hidden; position: relative;
+      display: flex; flex-direction: column;
+    }
+    .portal-doc-card::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      background: linear-gradient(90deg, #1A5276, #5DADE2, #B03A2E);
+      z-index: 1;
+    }
+    .portal-doc-card:hover {
+      box-shadow: 0 12px 32px var(--shadow-lg); transform: translateY(-3px);
+      border-color: var(--primary);
+    }
+    .portal-doc-card-body { padding: 20px 20px 14px; flex: 1; display: flex; flex-direction: column; }
+    .portal-doc-card .doc-icon {
+      width: 48px; height: 48px; border-radius: 12px;
+      background: linear-gradient(135deg, #FADBD8, #F5B7B1);
+      display: flex; align-items: center; justify-content: center; margin-bottom: 14px;
+      box-shadow: 0 4px 12px rgba(176, 58, 46, 0.12);
+    }
+    .portal-doc-card .doc-icon svg { width: 24px; height: 24px; stroke: #B03A2E; }
+    .portal-doc-card h5 {
+      font-size: 14px; font-weight: 700; color: var(--text-primary);
+      margin: 0 0 4px; word-break: break-word; line-height: 1.3;
+    }
+    .portal-doc-card .doc-type {
+      font-size: 10px; color: var(--primary); font-weight: 700; margin-bottom: 10px;
+      display: inline-block; background: var(--primary-soft); padding: 3px 10px; border-radius: 6px;
+      align-self: flex-start; letter-spacing: 0.2px;
+    }
+    .portal-doc-card .doc-meta {
+      font-size: 11px; color: var(--text-muted); line-height: 1.6; margin-top: auto;
+    }
+    .portal-doc-card .doc-meta > div { display: inline; }
+    .portal-doc-card .doc-meta > div + div::before { content: ' Ã‚Â· '; }
+    .portal-doc-card .doc-footer {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 20px; border-top: 1px solid var(--border-color);
+      background: var(--background);
+    }
+    .btn-ver-doc {
+      background: linear-gradient(135deg, #1A5276, #2471A3); color: #FFFFFF; border: none; border-radius: 8px;
+      padding: 7px 18px; font-size: 11px; font-weight: 600; cursor: pointer;
+      transition: all 0.2s; font-family: var(--font-body);
+      box-shadow: 0 2px 8px rgba(26, 82, 118, 0.12);
+    }
+    .btn-ver-doc:hover { background: linear-gradient(135deg, #154360, #1A5276); box-shadow: 0 4px 12px rgba(26, 82, 118, 0.25); transform: translateY(-1px); }
+
+    /* --- UPLOAD CARD --- */
+    .portal-upload-card {
+      background: var(--surface); border: 1px solid var(--border-color);
+      border-radius: 16px; padding: 36px; max-width: 660px;
+      margin: 0 auto; width: 100%;
+      box-shadow: 0 6px 24px var(--shadow);
+    }
+    .portal-upload-card h3 {
+      font-family: var(--font-display); font-size: 19px; font-weight: 700;
+      margin: 0 0 4px; color: var(--text-primary); text-align: center;
+    }
+    .portal-upload-card p.hint {
+      font-size: 12px; color: var(--text-secondary); margin-bottom: 28px; line-height: 1.6; text-align: center;
+    }
+    .form-field { margin-bottom: 20px; }
+    .form-field label {
+      display: block; font-size: 11px; font-weight: 600; color: var(--text-secondary);
+      margin-bottom: 6px; letter-spacing: 0.3px; text-transform: uppercase;
+    }
+    .form-field input, .form-field select, .form-field textarea {
+      width: 100%; padding: 11px 14px; box-sizing: border-box;
+      border: 1.5px solid var(--border-color); border-radius: 10px;
+      font-size: 13px; font-family: var(--font-body); color: var(--text-primary);
+      background: var(--background); transition: all 0.2s;
+    }
+    .form-field input:focus, .form-field select:focus, .form-field textarea:focus {
+      outline: none; border-color: var(--primary);
+      box-shadow: 0 0 0 3px var(--primary-soft);
+      background: var(--surface);
+    }
+    .form-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .drop-area-portal {
+      border: 2px dashed var(--border-color); border-radius: 12px; padding: 32px 20px;
+      text-align: center; cursor: pointer; transition: all 0.25s;
+      background: var(--background);
+    }
+    .drop-area-portal:hover, .drop-area-portal.drag-over {
+      border-color: var(--primary); background: var(--primary-soft);
+      border-style: solid;
+    }
+    .drop-area-portal input[type="file"] { display: none; }
+    .drop-area-portal p { font-size: 13px; color: var(--text-secondary); margin: 10px 0 4px; font-weight: 500; }
+    .drop-area-portal small { font-size: 10px; color: var(--text-muted); }
+    #portal-file-preview { font-size: 11px; font-weight: 600; color: var(--primary); margin-top: 10px; padding: 4px 12px; background: var(--primary-soft); border-radius: 6px; display: inline-block; }
+    .btn-submit-upload {
+      background: linear-gradient(135deg, #1A5276, #2471A3); color: #FFFFFF;
+      border: none; border-radius: 10px; padding: 13px 36px; font-size: 14px;
+      font-weight: 700; cursor: pointer; transition: all 0.25s; font-family: var(--font-body);
+      box-shadow: 0 4px 16px rgba(26, 82, 118, 0.25); display: block; margin: 12px auto 0; min-width: 220px;
+    }
+    .btn-submit-upload:hover {
+      background: linear-gradient(135deg, #154360, #1A5276);
+      box-shadow: 0 6px 20px rgba(26, 82, 118, 0.35); transform: translateY(-1px);
+    }
+    .btn-submit-upload:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .pending-notice {
+      background: linear-gradient(135deg, #D4EFDF, #ABEBC6); border: 1px solid #82E0AA;
+      border-radius: 12px; padding: 14px 20px; font-size: 12px; color: #1E8449;
+      margin: 0 auto 22px; max-width: 660px; display: flex; align-items: center; gap: 10px;
+      box-shadow: 0 2px 10px rgba(30, 132, 73, 0.08); line-height: 1.4;
+    }
+    .pending-notice svg { flex-shrink: 0; }
+
+    /* --- EMPTY STATE --- */
+    .portal-no-docs {
+      text-align: center; padding: 56px 24px; color: var(--text-muted);
+      background: var(--surface); border-radius: 16px; border: 1px solid var(--border-color);
+    }
+    .portal-no-docs svg { opacity: 0.4; margin-bottom: 8px; }
+    .portal-no-docs h4 {
+      font-family: var(--font-display); font-size: 16px; color: var(--text-secondary);
+      margin: 0 0 6px; font-weight: 600;
+    }
+    .portal-no-docs p { font-size: 12px; max-width: 400px; margin: 0 auto; line-height: 1.6; }
+
+    /* --- SCANNER / EMAIL ITEMS --- */
+    .portal-scanner-list, .portal-email-list { display: flex; flex-direction: column; gap: 10px; }
+    .portal-item-card {
+      background: var(--surface); border: 1px solid var(--border-color);
+      border-radius: 12px; padding: 14px 18px;
+      display: flex; align-items: center; gap: 14px;
+      transition: all 0.25s;
+    }
+    .portal-item-card:hover { border-color: var(--primary); box-shadow: 0 6px 20px var(--shadow); transform: translateX(2px); }
+    .portal-item-icon {
+      width: 40px; height: 40px; border-radius: 10px;
+      background: var(--primary-soft); display: flex; align-items: center; justify-content: center;
+      font-size: 18px; flex-shrink: 0; line-height: 1;
+    }
+    .portal-item-info { flex: 1; min-width: 0; }
+    .portal-item-info h5 { font-size: 13px; font-weight: 600; color: var(--text-primary); margin: 0 0 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .portal-item-info span { font-size: 10px; color: var(--text-muted); }
+    .portal-item-actions { display: flex; gap: 8px; flex-shrink: 0; }
+    .btn-register-item {
+      background: linear-gradient(135deg, #1A5276, #2471A3); color: #FFFFFF;
+      border: none; border-radius: 8px; padding: 8px 16px; font-size: 11px;
+      font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: var(--font-body);
+      white-space: nowrap; box-shadow: 0 2px 8px rgba(26, 82, 118, 0.12);
+    }
+    .btn-register-item:hover { box-shadow: 0 4px 14px rgba(26, 82, 118, 0.25); transform: translateY(-1px); }
+
+    /* --- DELETE DOC BUTTON --- */
+    .btn-delete-doc {
+      background: none; border: 1px solid var(--border-color); border-radius: 8px;
+      padding: 6px 10px; cursor: pointer; transition: all 0.2s; color: var(--text-muted);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .btn-delete-doc:hover { background: var(--danger-soft); border-color: var(--danger); color: var(--danger); transform: scale(1.05); }
+
+    /* --- PENDING REQUESTS BADGE --- */
+    .badge-pending-requests {
+      background: linear-gradient(135deg, #E74C3C, #C0392B); color: #FFF; font-size: 10px; font-weight: 700;
+      border-radius: 10px; padding: 2px 8px; margin-left: 6px; vertical-align: middle;
+      box-shadow: 0 2px 6px rgba(231, 76, 60, 0.25);
+    }
+
+    /* --- MODALS --- */
+    .modal-backdrop {
+      display: none; position: fixed; inset: 0;
+      background: rgba(10, 20, 40, 0.5); backdrop-filter: blur(6px);
+      z-index: 9000; align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    .modal-backdrop.show { display: flex; animation: modalFadeIn 0.2s ease; }
+    @keyframes modalFadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .modal-container {
+      background: var(--surface); border-radius: 18px; width: 100%; max-width: 780px;
+      max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;
+      box-shadow: 0 32px 80px rgba(0,0,0,0.3); border: 1px solid var(--border-color);
+    }
+    .modal-container.modal-small { max-width: 460px; }
+    .modal-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 18px 24px; border-bottom: 1px solid var(--border-color);
+      background: var(--surface);
+    }
+    .modal-header h3 {
+      font-family: var(--font-display); font-size: 16px; font-weight: 700;
+      color: var(--text-primary); margin: 0;
+    }
+    .btn-close {
+      background: var(--background); border: 1px solid var(--border-color);
+      border-radius: 8px; width: 34px; height: 34px;
+      font-size: 18px; color: var(--text-secondary); line-height: 1;
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .btn-close:hover { background: var(--danger-soft); color: var(--danger); border-color: var(--danger); }
+    .modal-body-scroll { padding: 24px; overflow-y: auto; max-height: 65vh; }
+    .pdf-frame-wrapper { flex: 1; overflow: hidden; }
+    .pdf-frame-wrapper iframe { width: 100%; height: 70vh; border: none; display: block; }
+
+    /* --- LOADER --- */
+    .global-loader {
+      display: none; position: fixed; inset: 0; background: rgba(10, 20, 40, 0.35);
+      backdrop-filter: blur(4px); z-index: 9999; align-items: center; justify-content: center;
+    }
+    .global-loader.show { display: flex; }
+    .spinner-ring {
+      width: 44px; height: 44px; border: 4px solid var(--border-color);
+      border-top-color: var(--primary); border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      box-shadow: 0 0 16px rgba(26, 82, 118, 0.08);
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* --- TOAST --- */
+    .portal-toast {
+      position: fixed; bottom: 28px; right: 28px; z-index: 10000;
+      padding: 12px 22px; border-radius: 10px; font-size: 12px; font-weight: 600;
+      color: #FFFFFF; box-shadow: 0 8px 24px rgba(0,0,0,0.2); transform: translateY(100px);
+      opacity: 0; transition: all 0.3s;
+    }
+    .portal-toast.show { transform: translateY(0); opacity: 1; }
+    .portal-toast.success { background: #27AE60; }
+    .portal-toast.error { background: #E74C3C; }
+    .portal-toast.info { background: #2980B9; }
+
+    /* --- SCANNER DEVICE LIST --- */
+    .portal-scanner-device-list { max-height: 180px; overflow-y: auto; margin-bottom: 18px; }
+    .portal-scanner-bar { border-top: 1px solid var(--border-color); padding-top: 18px; margin-top: 6px; }
+
+    /* --- RESPONSIVE --- */
+    @media (max-width: 768px) {
+      .portal-topbar { padding: 0 14px; height: 56px; }
+      .portal-main { padding: 0 14px 20px; }
+      .portal-welcome { padding: 20px; }
+      .portal-welcome p { max-width: 100%; }
+      .portal-welcome .welcome-stats { flex-wrap: wrap; gap: 10px; }
+      .portal-welcome .welcome-stat { min-width: 0; flex: 1; }
+      .portal-docs-grid { grid-template-columns: 1fr; gap: 14px; }
+      .form-row-2 { grid-template-columns: 1fr; }
+      .portal-upload-card { padding: 20px; }
+      .portal-topbar .brand-text small { display: none; }
+      .portal-topbar-user .btn-portal-action svg { margin-right: 0; }
+      .portal-topbar-user .btn-portal-action:not(#btn-theme-toggle) span { display: none; }
+    }
+  </style>
+</head>
+<body class="light-theme">
+
+  <div class="global-loader" id="portal-loader"><div class="spinner-ring"></div></div>
+
+  <!-- ===== PORTAL LAYOUT (no local login - uses unified login) ===== -->
+  <div class="portal-layout" id="portal-app">
+
+    <!-- TOP BAR -->
+    <header class="portal-topbar">
+      <div class="portal-topbar-brand">
+        <img src="Escudo_Valledupar.png" alt="Escudo de Valledupar">
+        <div>
+          <span>AlcaldÃƒÂ­a de Valledupar</span>
+          <small>Portal del Funcionario Ã¢â‚¬â€ Talento Humano</small>
+        </div>
+      </div>
+      <div class="portal-topbar-user">
+        <div class="portal-avatar" id="portal-avatar">--</div>
+        <div class="portal-user-info">
+          <h4 id="portal-user-name">Funcionario</h4>
+          <span id="portal-user-dept">ÃƒÂrea</span>
+        </div>
+        <button class="btn-portal-action" id="btn-change-password" title="Cambiar contraseÃƒÂ±a">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
+          </svg>
+          Cambiar clave
+        </button>
+        <button class="btn-portal-action" id="btn-theme-toggle" title="Cambiar tema" style="display:flex;align-items:center;gap:5px;">
+          <svg class="portal-sun-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+          </svg>
+          <svg class="portal-moon-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="display:none;">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
+          </svg>
+        </button>
+        <button class="btn-portal-action btn-portal-logout" id="btn-portal-logout">Salir</button>
+      </div>
+      <div class="bandera-strip">
+        <span></span><span></span><span></span>
+      </div>
+    </header>
+
+    <!-- MAIN -->
+    <main class="portal-main">
+      <!-- WELCOME BANNER -->
+      <div class="portal-welcome">
+        <h2>Bienvenido, <span id="portal-welcome-name">Funcionario</span></h2>
+        <p>Gestione sus documentos personales, suba archivos y acceda al escÃƒÂ¡ner y correo desde un solo lugar.</p>
+        <div class="welcome-stats">
+          <div class="welcome-stat">
+            <strong id="stat-total">0</strong>
+            <span>Documentos Totales</span>
+          </div>
+          <div class="welcome-stat">
+            <strong id="stat-activos">0</strong>
+            <span>En TrÃƒÂ¡mite</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="portal-tabs">
+        <button class="portal-tab active" data-tab="mis-docs" onclick="portalShowTab('mis-docs')">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          Mis Documentos
+        </button>
+        <button class="portal-tab" data-tab="subir" onclick="portalShowTab('subir')">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+          Subir Documento
+        </button>
+        <button class="portal-tab" data-tab="scanner" onclick="portalShowTab('scanner')">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>
+          EscÃƒÂ¡ner
+        </button>
+        <button class="portal-tab" data-tab="correo" onclick="portalShowTab('correo')">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+          Correo
+        </button>
+      </div>
+
+      <!-- MIS DOCUMENTOS -->
+      <div class="portal-panel active" id="panel-mis-docs">
+        <div class="portal-docs-header">
+          <h3>Mis Documentos</h3>
+          <span id="portal-docs-count">0 documentos</span>
+        </div>
+        <div id="portal-docs-grid" class="portal-docs-grid"></div>
+      </div>
+
+      <!-- SUBIR DOCUMENTO -->
+      <div class="portal-panel" id="panel-subir">
+        <div class="pending-notice">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          Los documentos que usted suba quedarÃƒÂ¡n registrados como <strong>Pendientes</strong> y visibles para el administrador de Talento Humano, quien confirmarÃƒÂ¡ su estado.
+        </div>
+        <div class="portal-upload-card">
+          <h3>Subir un Documento</h3>
+          <p class="hint">Adjunte contratos, certificados, soportes mÃƒÂ©dicos u otros documentos personales. Formatos aceptados: PDF, Word, Excel, imÃƒÂ¡genes, y mÃƒÂ¡s.</p>
+          <form id="form-portal-upload">
+            <div class="form-field">
+              <label>Archivo *</label>
+              <div class="drop-area-portal" id="portal-drop-area">
+                <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="var(--primary)" stroke-width="1.5">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                <p>Arrastre el archivo aquÃƒÂ­ o haga clic para seleccionar</p>
+                <small>PDF, Word, Excel, imÃƒÂ¡genes, texto Ã¢â‚¬â€ mÃƒÂ¡ximo 20 MB</small>
+                <div id="portal-file-preview">NingÃƒÂºn archivo seleccionado</div>
+                <input type="file" id="portal-upload-file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.bmp,.tiff,.txt,.csv,.odt,.ods,.rtf" required>
+              </div>
+            </div>
+            <div class="form-row-2">
+              <div class="form-field">
+                <label for="portal-upload-type">Tipo de Documento *</label>
+                <select id="portal-upload-type" required><option value="">-- Seleccionar --</option></select>
+              </div>
+              <div class="form-field">
+                <label for="portal-upload-category">CategorÃƒÂ­a *</label>
+                <select id="portal-upload-category" required><option value="">-- Seleccionar --</option></select>
+              </div>
+            </div>
+            <div class="form-field">
+              <label for="portal-upload-date">Fecha de EmisiÃƒÂ³n *</label>
+              <input type="date" id="portal-upload-date" required>
+            </div>
+            <div class="form-field">
+              <label for="portal-upload-desc">DescripciÃƒÂ³n (Opcional)</label>
+              <textarea id="portal-upload-desc" rows="3" placeholder="Ej: Certificado de EPS vigente..."></textarea>
+            </div>
+            <button type="submit" class="btn-submit-upload" id="btn-portal-submit-upload">Enviar Documento</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- ESCANER -->
+      <div class="portal-panel" id="panel-scanner">
+        <div class="portal-docs-header">
+          <h3>EscÃƒÂ¡neres Detectados</h3>
+          <span id="portal-scanner-count" style="font-size:12px;font-weight:600;">0 dispositivo(s)</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
+          <div id="portal-scanner-status" style="display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;">
+            <span style="width:8px;height:8px;border-radius:50%;background:#ccc;display:inline-block;" id="portal-scanner-dot"></span>
+            <span id="portal-scanner-dot-text">Verificando...</span>
+          </div>
+          <input type="text" id="input-scan-filename" placeholder="Nombre del documento" style="padding:6px 10px;font-size:12px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);width:200px;" />
+          <button class="btn btn-primary" id="btn-portal-scan" style="padding:8px 18px;font-size:13px;">Escanear Documento</button>
+          <button class="btn btn-secondary" id="btn-portal-refresh-scanners" style="font-size:12px;padding:8px 14px;">Ã°Å¸â€â€ž Actualizar lista</button>
+        </div>
+        <div class="portal-scanner-device-list" id="portal-scanner-device-list"></div>
+        <div class="portal-scanner-bar">
+          <div class="portal-docs-header" style="margin-bottom:10px;">
+            <h3 style="font-size:15px;">Bandeja de EscÃƒÂ¡ner</h3>
+            <span id="portal-scanner-tray-count" style="font-size:12px;font-weight:600;">0 archivo(s)</span>
+          </div>
+          <div id="portal-scanner-list" class="portal-scanner-list"></div>
+        </div>
+      </div>
+
+      <!-- CORREO -->
+      <div class="portal-panel" id="panel-correo">
+        <div class="portal-docs-header">
+          <h3>Bandeja de Correo</h3>
+          <span id="portal-email-count">0 correos</span>
+        </div>
+        <div id="portal-email-list" class="portal-email-list"></div>
+      </div>
+    </main>
+  </div>
+
+  <!-- PDF VIEWER MODAL -->
+  <div class="modal-backdrop" id="portal-modal-pdf">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3 id="portal-pdf-modal-title">Documento</h3>
+        <button class="btn-close" id="btn-close-portal-pdf">&times;</button>
+      </div>
+      <div class="pdf-frame-wrapper">
+        <iframe id="portal-pdf-iframe" src="" title="Visualizador de Documentos"></iframe>
+      </div>
+    </div>
+  </div>
+
+  <!-- DELETE REQUEST MODAL -->
+  <div class="modal-backdrop" id="modal-delete-request">
+    <div class="modal-container modal-small">
+      <div class="modal-header">
+        <h3>Solicitar EliminaciÃƒÂ³n de Documento</h3>
+        <button class="btn-close" onclick="closeModal('modal-delete-request')">&times;</button>
+      </div>
+      <div class="modal-body-scroll">
+        <form id="form-delete-request">
+          <input type="hidden" id="delete-req-doc-id">
+          <div class="form-field">
+            <label>Archivo: <strong id="delete-req-filename"></strong></label>
+          </div>
+          <div class="form-field">
+            <label for="delete-req-reason">Motivo de la solicitud *</label>
+            <textarea id="delete-req-reason" rows="4" placeholder="Describa el motivo por el cual desea eliminar este documento..." required></textarea>
+          </div>
+          <div style="background:rgba(231,76,60,0.08);border:1px solid rgba(231,76,60,0.2);border-radius:8px;padding:10px 14px;font-size:11px;color:#922B21;margin-bottom:16px;">
+            <strong>AtenciÃƒÂ³n:</strong> Esta solicitud serÃƒÂ¡ revisada por un administrador. El documento serÃƒÂ¡ eliminado solo si el administrador aprueba la solicitud.
+          </div>
+          <button type="submit" class="btn-submit-upload" style="background:linear-gradient(135deg,#922B21,#C0392B);box-shadow:0 4px 16px rgba(146,43,33,0.25);">Enviar Solicitud</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- REGISTER SCANNER DOC MODAL -->
+  <div class="modal-backdrop" id="modal-register-scanner">
+    <div class="modal-container modal-small">
+      <div class="modal-header">
+        <h3>Registrar Documento Escaneado</h3>
+        <button class="btn-close" onclick="closeModal('modal-register-scanner')">&times;</button>
+      </div>
+      <div class="modal-body-scroll">
+        <form id="form-register-scanner">
+          <input type="hidden" id="scanner-reg-filename">
+          <div class="form-field">
+            <label>Archivo: <strong id="scanner-reg-filename-display"></strong></label>
+          </div>
+          <div class="form-row-2">
+            <div class="form-field">
+              <label for="scanner-reg-type">Tipo de Documento *</label>
+              <select id="scanner-reg-type" required><option value="">-- Seleccionar --</option></select>
+            </div>
+            <div class="form-field">
+              <label for="scanner-reg-category">CategorÃƒÂ­a *</label>
+              <select id="scanner-reg-category" required><option value="">-- Seleccionar --</option></select>
+            </div>
+          </div>
+          <div class="form-field">
+            <label for="scanner-reg-date">Fecha de EmisiÃƒÂ³n *</label>
+            <input type="date" id="scanner-reg-date" required>
+          </div>
+          <div class="form-field">
+            <label for="scanner-reg-desc">DescripciÃƒÂ³n (Opcional)</label>
+            <textarea id="scanner-reg-desc" rows="2" placeholder="Ej: Documento escaneado..."></textarea>
+          </div>
+          <button type="submit" class="btn-submit-upload">Registrar Documento</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- REGISTER EMAIL ATTACHMENT MODAL -->
+  <div class="modal-backdrop" id="modal-register-email">
+    <div class="modal-container modal-small">
+      <div class="modal-header">
+        <h3>Registrar Adjunto de Correo</h3>
+        <button class="btn-close" onclick="closeModal('modal-register-email')">&times;</button>
+      </div>
+      <div class="modal-body-scroll">
+        <form id="form-register-email">
+          <input type="hidden" id="email-reg-emailId">
+          <input type="hidden" id="email-reg-filename">
+          <div class="form-field">
+            <label>Archivo: <strong id="email-reg-filename-display"></strong></label>
+          </div>
+          <div class="form-row-2">
+            <div class="form-field">
+              <label for="email-reg-type">Tipo de Documento *</label>
+              <select id="email-reg-type" required><option value="">-- Seleccionar --</option></select>
+            </div>
+            <div class="form-field">
+              <label for="email-reg-category">CategorÃƒÂ­a *</label>
+              <select id="email-reg-category" required><option value="">-- Seleccionar --</option></select>
+            </div>
+          </div>
+          <div class="form-field">
+            <label for="email-reg-date">Fecha de EmisiÃƒÂ³n *</label>
+            <input type="date" id="email-reg-date" required>
+          </div>
+          <div class="form-field">
+            <label for="email-reg-desc">DescripciÃƒÂ³n (Opcional)</label>
+            <textarea id="email-reg-desc" rows="2" placeholder="Ej: Adjunto de correo..."></textarea>
+          </div>
+          <button type="submit" class="btn-submit-upload">Registrar Adjunto</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHANGE PASSWORD MODAL -->
+  <div class="modal-backdrop" id="modal-change-password">
+    <div class="modal-container modal-small">
+      <div class="modal-header">
+        <h3>Cambiar ContraseÃƒÂ±a</h3>
+        <button class="btn-close" onclick="closeModal('modal-change-password')">&times;</button>
+      </div>
+      <div class="modal-body-scroll">
+        <form id="form-change-password">
+          <div class="form-field">
+            <label for="cp-current">ContraseÃƒÂ±a actual *</label>
+            <input type="password" id="cp-current" required>
+          </div>
+          <div class="form-field">
+            <label for="cp-new">Nueva contraseÃƒÂ±a *</label>
+            <input type="password" id="cp-new" required minlength="12" placeholder="MÃƒÂ­nimo 12 caracteres">
+          </div>
+          <div class="form-field">
+            <label for="cp-confirm">Confirmar nueva contraseÃƒÂ±a *</label>
+            <input type="password" id="cp-confirm" required minlength="12" placeholder="Repita la contraseÃƒÂ±a">
+          </div>
+          <div class="login-error" id="cp-error" style="display:none; margin-bottom:12px;"></div>
+          <button type="submit" class="btn-submit-upload">Actualizar ContraseÃƒÂ±a</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="utils.js?v=2"></script>
+  <script src="funcionario.js?v=4"></script>
+</body>
+</html>
