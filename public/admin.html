@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>GestiÃƒÂ³n Documental Digital - Talento Humano | AlcaldÃƒÂ­a de Valledupar</title>
+  <title>Gestión Documental Digital - Talento Humano | Alcaldía de Valledupar</title>
   <!-- Google Fonts: Outfit & Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -23,7 +23,7 @@
           <img src="Escudo_Valledupar.png" alt="Escudo de Valledupar" style="width:42px;height:42px;object-fit:contain;">
         </div>
         <div class="brand-text">
-          <h1>AlcaldÃƒÂ­a de</h1>
+          <h1>Alcaldía de</h1>
           <span>Valledupar</span>
         </div>
       </div>
@@ -98,7 +98,7 @@
       <header class="content-header">
         <div class="header-title">
           <h2 id="current-section-title">Dashboard General</h2>
-          <p id="current-section-subtitle">GestiÃƒÂ³n e indicadores clave de expedientes laborales</p>
+          <p id="current-section-subtitle">Gestión e indicadores clave de expedientes laborales</p>
         </div>
         <div class="header-actions">
           <button class="btn btn-secondary btn-icon-only" id="btn-refresh-data" title="Actualizar datos">
@@ -115,11 +115,11 @@
           <div class="user-profile">
             <div class="avatar" id="user-avatar">AD</div>
             <div class="user-info">
-              <h4 id="user-display-name">AlcaldÃƒÂ­a Admin</h4>
+              <h4 id="user-display-name">Alcaldía Admin</h4>
               <span id="user-display-dept">Talento Humano</span>
               <span id="user-display-email" class="contact-email" style="font-size: 11px;"></span>
             </div>
-            <button class="btn btn-secondary" id="btn-logout" style="margin-left: 12px; padding: 6px 14px; font-size: 12px;" title="Cerrar sesiÃƒÂ³n">
+            <button class="btn btn-secondary" id="btn-logout" style="margin-left: 12px; padding: 6px 14px; font-size: 12px;" title="Cerrar sesión">
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
               </svg>
@@ -156,7 +156,7 @@
               </div>
               <div class="stat-details">
                 <h3 id="stat-pending-docs">0</h3>
-                <p>Pendientes de RevisiÃƒÂ³n</p>
+                <p>Pendientes de Revisión</p>
               </div>
             </div>
 
@@ -185,18 +185,18 @@
             </div>
           </div>
 
-          <!-- CuadrÃƒÂ­cula de grÃƒÂ¡ficos y actividades -->
+          <!-- Cuadrícula de gráficos y actividades -->
           <div class="dashboard-grid">
             
             <!-- Desglose por tipos de documento -->
             <div class="grid-card col-span-2">
               <div class="card-header">
-                <h3>DistribuciÃƒÂ³n por Tipo de Documento</h3>
+                <h3>Distribución por Tipo de Documento</h3>
                 <span class="subtitle">Volumen de expedientes clasificados</span>
               </div>
               <div class="chart-container" id="types-chart-wrapper">
-                <!-- Barras generadas programÃƒÂ¡ticamente -->
-                <div class="no-data-placeholder">Cargando estadÃƒÂ­sticas...</div>
+                <!-- Barras generadas programáticamente -->
+                <div class="no-data-placeholder">Cargando estadísticas...</div>
               </div>
             </div>
 
@@ -209,20 +209,20 @@
               <div id="dashboard-employee-list" style="max-height:260px;overflow-y:auto;">
                 <div class="no-data-placeholder">Cargando funcionarios...</div>
               </div>
-              <button class="btn btn-text btn-full-width" style="margin-top: 12px;" onclick="window.location.hash='#expedientes'">Ver directorio completo Ã¢â€ â€™</button>
+              <button class="btn btn-text btn-full-width" style="margin-top: 12px;" onclick="window.location.hash='#expedientes'">Ver directorio completo →</button>
             </div>
 
             <!-- Registros de actividad recientes -->
             <div class="grid-card">
               <div class="card-header">
-                <h3>ÃƒÅ¡ltimos Movimientos</h3>
+                <h3>Últimos Movimientos</h3>
                 <span class="subtitle">Trazabilidad de cambios reciente</span>
               </div>
               <div class="activity-timeline" id="recent-activity-timeline">
                 <!-- Lista de actividades -->
-                <div class="no-data-placeholder">Cargando bitÃƒÂ¡cora...</div>
+                <div class="no-data-placeholder">Cargando bitácora...</div>
               </div>
-              <button class="btn btn-text btn-full-width" id="btn-see-all-logs" style="margin-top: 12px;">Ver historial completo Ã¢â€ â€™</button>
+              <button class="btn btn-text btn-full-width" id="btn-see-all-logs" style="margin-top: 12px;">Ver historial completo →</button>
             </div>
             
           </div>
@@ -239,7 +239,7 @@
                   <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
-                  <input type="text" id="search-input" placeholder="Escriba cÃƒÂ©dula, nombre, descripciÃƒÂ³n...">
+                  <input type="text" id="search-input" placeholder="Escriba cédula, nombre, descripción...">
                 </div>
               </div>
               
@@ -247,15 +247,15 @@
                 <label for="filter-type">Tipo de Documento</label>
                 <select id="filter-type">
                   <option value="todos">-- Todos los tipos --</option>
-                  <!-- Cargado dinÃƒÂ¡micamente -->
+                  <!-- Cargado dinámicamente -->
                 </select>
               </div>
 
               <div class="filter-group">
-                <label for="filter-category">CategorÃƒÂ­a</label>
+                <label for="filter-category">Categoría</label>
                 <select id="filter-category">
-                  <option value="todas">-- Todas las categorÃƒÂ­as --</option>
-                  <!-- Cargado dinÃƒÂ¡micamente -->
+                  <option value="todas">-- Todas las categorías --</option>
+                  <!-- Cargado dinámicamente -->
                 </select>
               </div>
 
@@ -274,7 +274,7 @@
             <div class="filter-row-sub">
               <div class="date-range-wrapper">
                 <div class="filter-group">
-                  <label for="filter-date-start">Fecha EmisiÃƒÂ³n Desde</label>
+                  <label for="filter-date-start">Fecha Emisión Desde</label>
                   <input type="date" id="filter-date-start">
                 </div>
                 <div class="filter-group">
@@ -299,14 +299,14 @@
                   <tr>
                     <th>Archivo / Nombre</th>
                     <th>Funcionario (C.C.)</th>
-                    <th>ClasificaciÃƒÂ³n (CategorÃƒÂ­a)</th>
-                    <th>Fecha EmisiÃƒÂ³n</th>
+                    <th>Clasificación (Categoría)</th>
+                    <th>Fecha Emisión</th>
                     <th>Estado</th>
                     <th class="text-right">Acciones</th>
                   </tr>
                 </thead>
                 <tbody id="documents-table-body">
-                  <!-- Contenido dinÃƒÂ¡mico -->
+                  <!-- Contenido dinámico -->
                 </tbody>
               </table>
             </div>
@@ -321,7 +321,7 @@
               Carga Manual / Locales
             </button>
             <button class="btn btn-secondary" id="btn-subtab-scanner" onclick="switchSubTab('scanner')">
-              Bandeja de EscÃƒÂ¡ner
+              Bandeja de Escáner
             </button>
             <button class="btn btn-secondary" id="btn-subtab-email" onclick="switchSubTab('email')">
               Bandeja de Correo
@@ -348,8 +348,8 @@
                         <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5">
                           <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                         </svg>
-                        <div class="drop-text">Arrastre el archivo aquÃƒÂ­ o haga clic para seleccionar</div>
-                        <div class="file-name-preview" id="file-name-preview">NingÃƒÂºn archivo seleccionado</div>
+                        <div class="drop-text">Arrastre el archivo aquí o haga clic para seleccionar</div>
+                        <div class="file-name-preview" id="file-name-preview">Ningún archivo seleccionado</div>
                         <input type="file" id="upload-file" name="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.bmp,.tiff,.txt,.csv,.odt,.ods,.rtf" required>
                       </div>
                     </div>
@@ -363,9 +363,9 @@
                       </select>
                     </div>
                     <div class="form-group">
-                      <label for="upload-category">CategorÃƒÂ­a Documental *</label>
+                      <label for="upload-category">Categoría Documental *</label>
                       <select id="upload-category" name="categoryId" required>
-                        <option value="">-- Seleccionar CategorÃƒÂ­a --</option>
+                        <option value="">-- Seleccionar Categoría --</option>
                       </select>
                     </div>
                   </div>
@@ -380,7 +380,7 @@
                     <div class="form-group">
                       <label for="upload-status">Estado Inicial *</label>
                       <select id="upload-status" name="status" required>
-                        <option value="Pendiente">Pendiente de RevisiÃƒÂ³n</option>
+                        <option value="Pendiente">Pendiente de Revisión</option>
                         <option value="Aprobado" selected>Aprobado</option>
                         <option value="Activo">Activo</option>
                       </select>
@@ -389,18 +389,18 @@
 
                   <div class="form-row">
                     <div class="form-group">
-                      <label for="upload-issue-date">Fecha de EmisiÃƒÂ³n *</label>
+                      <label for="upload-issue-date">Fecha de Emisión *</label>
                       <input type="date" id="upload-issue-date" name="issueDate" required>
                     </div>
                     <div class="form-group">
-                      <label for="upload-expiry-date">Fecha de ExpiraciÃƒÂ³n (Opcional)</label>
+                      <label for="upload-expiry-date">Fecha de Expiración (Opcional)</label>
                       <input type="date" id="upload-expiry-date" name="expiryDate">
                     </div>
                   </div>
 
                   <div class="form-row">
                     <div class="form-group col-span-2">
-                      <label for="upload-description">DescripciÃƒÂ³n / Comentarios del Documento</label>
+                      <label for="upload-description">Descripción / Comentarios del Documento</label>
                       <textarea id="upload-description" name="description" rows="3" placeholder="Detalles de nombramiento, periodo de ARL, observaciones particulares..."></textarea>
                     </div>
                   </div>
@@ -425,7 +425,7 @@
                 </div>
                 
                 <div class="local-files-list" id="unregistered-files-list">
-                  <div class="no-data-placeholder">No se encontraron archivos PDF huÃƒÂ©rfanos.</div>
+                  <div class="no-data-placeholder">No se encontraron archivos PDF huérfanos.</div>
                 </div>
               </div>
 
@@ -436,7 +436,7 @@
           <div id="subtab-panel-scanner" class="subtab-panel">
             <div class="portal-panel">
               <div class="portal-docs-header">
-                <h3>EscÃƒÂ¡neres Detectados</h3>
+                <h3>Escáneres Detectados</h3>
                 <span id="portal-scanner-count" style="font-size:12px;font-weight:600;">0 dispositivo(s)</span>
               </div>
               <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
@@ -446,12 +446,13 @@
                 </div>
                 <input type="text" id="input-scan-filename" placeholder="Nombre del documento" style="padding:6px 10px;font-size:12px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);width:200px;" />
                 <button class="btn btn-primary" id="btn-portal-scan" style="padding:8px 18px;font-size:13px;">Escanear Documento</button>
-                <button class="btn btn-secondary" id="btn-portal-refresh-scanners" style="font-size:12px;padding:8px 14px;">Ã°Å¸â€â€ž Actualizar lista</button>
+                <button class="btn btn-secondary" id="btn-portal-epson-scan" style="font-size:12px;padding:8px 14px;display:none;" title="Abrir EPSON Scan 2: escanee y guarde el PDF en la bandeja de escáner para registrarlo">EPSON Scan 2</button>
+                <button class="btn btn-secondary" id="btn-portal-refresh-scanners" style="font-size:12px;padding:8px 14px;">🔄 Actualizar lista</button>
               </div>
               <div id="portal-scanner-device-list" style="max-height:160px;overflow-y:auto;margin-bottom:16px;"></div>
               <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-top:4px;">
                 <div class="portal-docs-header" style="margin-bottom:10px;">
-                  <h3 style="font-size:15px;">Bandeja de EscÃƒÂ¡ner</h3>
+                  <h3 style="font-size:15px;">Bandeja de Escáner</h3>
                   <span id="portal-scanner-tray-count" style="font-size:12px;font-weight:600;">0 archivo(s)</span>
                 </div>
                 <div id="portal-scanner-list" class="portal-scanner-list"></div>
@@ -467,7 +468,7 @@
               <div class="grid-card">
                 <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
                   <div>
-                    <h3>Bandeja de Correo ElectrÃƒÂ³nico</h3>
+                    <h3>Bandeja de Correo Electrónico</h3>
                     <span class="subtitle">Ingesta institucional IMAP</span>
                   </div>
                   <button class="btn btn-secondary" id="btn-sync-email" style="padding: 6px 12px; font-size: 12px;">
@@ -476,7 +477,7 @@
                 </div>
                 
                 <div class="email-list-container" id="email-inbox-list" style="display: flex; flex-direction: column; gap: 10px; max-height: 480px; overflow-y: auto;">
-                  <!-- Lista dinÃƒÂ¡mica de correos -->
+                  <!-- Lista dinámica de correos -->
                 </div>
               </div>
 
@@ -484,14 +485,14 @@
               <div class="grid-card col-span-2">
                 <div class="card-header border-bottom-none">
                   <h3>Detalle del Mensaje</h3>
-                  <span class="subtitle">Seleccione un correo electrÃƒÂ³nico para revisar el contenido y los archivos adjuntos</span>
+                  <span class="subtitle">Seleccione un correo electrónico para revisar el contenido y los archivos adjuntos</span>
                 </div>
                 
                 <div class="folder-blank-state" id="email-blank-state" style="height: 300px;">
                   <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                   </svg>
-                  <h4>NingÃƒÂºn correo seleccionado</h4>
+                  <h4>Ningún correo seleccionado</h4>
                   <p>Haga clic en un mensaje de la bandeja de entrada para verificar su cuerpo, remitente y adjuntar sus archivos digitales al expediente de Talento Humano.</p>
                 </div>
 
@@ -610,7 +611,7 @@
                   </select>
                 </div>
                 <div class="employee-cards-container" id="employees-cards-list">
-                  <!-- Los empleados se cargan aquÃƒÂ­ -->
+                  <!-- Los empleados se cargan aquí -->
                 </div>
               </div>
             </div>
@@ -622,13 +623,13 @@
                 <span class="subtitle">Seleccione un funcionario a la izquierda para cargar su hoja de vida digital</span>
               </div>
               
-              <!-- Estado vacÃƒÂ­o -->
+              <!-- Estado vacío -->
               <div class="folder-blank-state" id="folder-blank-state">
                 <svg viewBox="0 0 24 24" width="64" height="64" fill="none" stroke="currentColor" stroke-width="1">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9l-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
                 </svg>
                 <h4>Expediente no seleccionado</h4>
-                <p>Haga clic en un funcionario del directorio para inspeccionar de manera centralizada sus documentos vinculados, contratos, estados de afiliaciÃƒÂ³n y certificaciones.</p>
+                <p>Haga clic en un funcionario del directorio para inspeccionar de manera centralizada sus documentos vinculados, contratos, estados de afiliación y certificaciones.</p>
               </div>
 
               <!-- Full Folder Content -->
@@ -638,14 +639,14 @@
                   <div class="badge-avatar" id="folder-emp-avatar">--</div>
                   <div class="badge-info">
                     <h3 id="folder-emp-name">Nombre Funcionario</h3>
-                    <p><strong id="folder-emp-id">C.C. --</strong> &bull; <span id="folder-emp-pos">Cargo</span> &bull; <span id="folder-emp-dep">ÃƒÂrea</span></p>
+                    <p><strong id="folder-emp-id">C.C. --</strong> &bull; <span id="folder-emp-pos">Cargo</span> &bull; <span id="folder-emp-dep">Área</span></p>
                     <span class="contact-email" id="folder-emp-email">correo@valledupar-cesar.gov.co</span>
                   </div>
                 </div>
 
-                <!-- CuadrÃƒÂ­cula de categorÃƒÂ­as de documentos en carpeta -->
+                <!-- Cuadrícula de categorías de documentos en carpeta -->
                 <div class="folder-categories-nav" id="folder-categories-nav-list">
-                  <!-- CategorÃƒÂ­as y conteo de documentos -->
+                  <!-- Categorías y conteo de documentos -->
                 </div>
 
                 <!-- Listas de documentos agrupados/filtrados -->
@@ -671,16 +672,16 @@
           <div class="filter-panel card-glass" style="margin-bottom: 20px;">
             <div class="filter-row">
               <div class="filter-group text-search" style="flex: 2;">
-                <label for="audit-search-input">Buscar en el registro de auditorÃƒÂ­a</label>
+                <label for="audit-search-input">Buscar en el registro de auditoría</label>
                 <div class="input-wrapper">
                   <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                   </svg>
-                  <input type="text" id="audit-search-input" placeholder="Filtrar por acciÃƒÂ³n, usuario o detalles del cambio...">
+                  <input type="text" id="audit-search-input" placeholder="Filtrar por acción, usuario o detalles del cambio...">
                 </div>
               </div>
               <div class="filter-group">
-                <label for="audit-filter-action">AcciÃƒÂ³n</label>
+                <label for="audit-filter-action">Acción</label>
                 <select id="audit-filter-action">
                   <option value="todos">-- Todas las acciones --</option>
                 </select>
@@ -690,7 +691,7 @@
 
           <div class="table-container grid-card">
             <div class="table-header">
-              <h3>Historial de Trazabilidad e Integridad de la InformaciÃƒÂ³n</h3>
+              <h3>Historial de Trazabilidad e Integridad de la Información</h3>
               <span class="count-badge" id="audit-results-count">0 registros</span>
             </div>
             <div class="table-scroll">
@@ -699,23 +700,23 @@
                   <tr>
                     <th>Fecha y Hora</th>
                     <th>Usuario Responsable</th>
-                    <th>OperaciÃƒÂ³n / AcciÃƒÂ³n</th>
+                    <th>Operación / Acción</th>
                     <th>Detalles del Cambio</th>
                   </tr>
                 </thead>
                 <tbody id="audit-table-body">
-                  <!-- Contenido dinÃƒÂ¡mico -->
+                  <!-- Contenido dinámico -->
                 </tbody>
               </table>
             </div>
           </div>
         </section>
 
-        <!-- SECTION: SOLICITUDES DE ELIMINACIÃƒâ€œN -->
+        <!-- SECTION: SOLICITUDES DE ELIMINACIÓN -->
         <section class="app-section" id="section-eliminaciones">
           <div class="section-header">
-            <h2>Solicitudes de EliminaciÃƒÂ³n</h2>
-            <p class="section-desc">Gestione las solicitudes de eliminaciÃƒÂ³n de documentos enviadas por los funcionarios.</p>
+            <h2>Solicitudes de Eliminación</h2>
+            <p class="section-desc">Gestione las solicitudes de eliminación de documentos enviadas por los funcionarios.</p>
           </div>
           <div class="section-body">
             <div class="grid-card">
@@ -755,7 +756,7 @@
       <div class="modal-header">
         <div class="modal-header-info">
           <h3 id="pdf-modal-title">Visualizador de Documentos</h3>
-          <p id="pdf-modal-subtitle">Detalles tÃƒÂ©cnicos del archivo y trazabilidad</p>
+          <p id="pdf-modal-subtitle">Detalles técnicos del archivo y trazabilidad</p>
         </div>
         <button class="btn-close-modal" id="btn-close-pdf-modal">&times;</button>
       </div>
@@ -775,26 +776,26 @@
           </div>
 
           <div class="detail-section">
-            <label>Tipo de Documento y ClasificaciÃƒÂ³n</label>
+            <label>Tipo de Documento y Clasificación</label>
             <h4 id="pdf-detail-type">Tipo de Documento</h4>
-            <p><span class="category-tag" id="pdf-detail-category">CategorÃƒÂ­a</span></p>
+            <p><span class="category-tag" id="pdf-detail-category">Categoría</span></p>
           </div>
 
           <div class="detail-section">
             <label>Fechas Relacionadas</label>
-            <p><strong>EmisiÃƒÂ³n:</strong> <span id="pdf-detail-issue-date">--</span></p>
-            <p><strong>ExpiraciÃƒÂ³n:</strong> <span id="pdf-detail-expiry-date">No vence</span></p>
+            <p><strong>Emisión:</strong> <span id="pdf-detail-issue-date">--</span></p>
+            <p><strong>Expiración:</strong> <span id="pdf-detail-expiry-date">No vence</span></p>
           </div>
 
           <div class="detail-section">
-            <label>Comentarios / DescripciÃƒÂ³n</label>
-            <p class="description-text" id="pdf-detail-desc">Sin descripciÃƒÂ³n proporcionada.</p>
+            <label>Comentarios / Descripción</label>
+            <p class="description-text" id="pdf-detail-desc">Sin descripción proporcionada.</p>
           </div>
 
           <div class="detail-section-status">
             <label for="pdf-status-changer">Estado del Documento (Integridad)</label>
             <select id="pdf-status-changer" class="status-select-large">
-              <option value="Pendiente">Pendiente de RevisiÃƒÂ³n</option>
+              <option value="Pendiente">Pendiente de Revisión</option>
               <option value="Aprobado">Aprobado / Verificado</option>
               <option value="Activo">Activo</option>
               <option value="Archivado">Archivado</option>
@@ -804,7 +805,7 @@
 
           <div class="detail-section-actions">
             <button class="btn btn-secondary btn-full-width" id="btn-toggle-visibility" style="margin-bottom: 6px;">
-              Ã°Å¸â€˜Â Permitir que funcionario vea este doc
+              Ã°Å¸â€˜ Permitir que funcionario vea este doc
             </button>
             <button class="btn btn-secondary btn-full-width" id="btn-download-pdf-direct">Descargar Archivo</button>
             <button class="btn btn-danger-text btn-full-width" id="btn-archive-pdf-direct">Archivar Expediente</button>
@@ -829,7 +830,7 @@
           <input type="hidden" id="edit-email-id">
 
           <div class="form-group" style="margin-bottom: 12px;">
-            <label>Archivo FÃƒÂ­sico</label>
+            <label>Archivo Físico</label>
             <div class="disabled-filename-box" id="edit-doc-filename-display">archivo.pdf</div>
           </div>
 
@@ -842,9 +843,9 @@
 
           <div class="form-row-2" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
             <div class="form-group">
-              <label for="edit-category">CategorÃƒÂ­a *</label>
+              <label for="edit-category">Categoría *</label>
               <select id="edit-category" required>
-                <option value="">-- Seleccionar CategorÃƒÂ­a --</option>
+                <option value="">-- Seleccionar Categoría --</option>
               </select>
             </div>
             <div class="form-group">
@@ -857,11 +858,11 @@
 
           <div class="form-row-2" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
             <div class="form-group">
-              <label for="edit-issue-date">Fecha de EmisiÃƒÂ³n *</label>
+              <label for="edit-issue-date">Fecha de Emisión *</label>
               <input type="date" id="edit-issue-date" required>
             </div>
             <div class="form-group">
-              <label for="edit-expiry-date">Fecha ExpiraciÃƒÂ³n (Opcional)</label>
+              <label for="edit-expiry-date">Fecha Expiración (Opcional)</label>
               <input type="date" id="edit-expiry-date">
             </div>
           </div>
@@ -870,7 +871,7 @@
             <div class="form-group">
               <label for="edit-status">Estado *</label>
               <select id="edit-status" required>
-                <option value="Pendiente">Pendiente de RevisiÃƒÂ³n</option>
+                <option value="Pendiente">Pendiente de Revisión</option>
                 <option value="Aprobado">Aprobado</option>
                 <option value="Activo">Activo</option>
                 <option value="Archivado">Archivado</option>
@@ -879,7 +880,7 @@
           </div>
 
           <div class="form-group" style="margin-bottom: 16px;">
-            <label for="edit-description">DescripciÃƒÂ³n / Notas</label>
+            <label for="edit-description">Descripción / Notas</label>
             <textarea id="edit-description" rows="3" placeholder="Detalles u observaciones del documento..."></textarea>
           </div>
 
@@ -902,19 +903,19 @@
       <div class="modal-body">
         <form id="form-add-employee">
           <div class="form-group" style="margin-bottom: 12px;">
-            <label for="emp-email">Correo ElectrÃƒÂ³nico Institucional *</label>
+            <label for="emp-email">Correo Electrónico Institucional *</label>
             <input type="email" id="emp-email" placeholder="ejemplo@valledupar-cesar.gov.co" required>
           </div>
 
           <div class="form-group" style="margin-bottom: 12px;">
-            <label for="emp-department">ÃƒÂrea / Dependencia *</label>
-            <input type="text" id="emp-department" placeholder="Ej: NÃƒÂ³mina, Bienestar Social, Despacho" required>
+            <label for="emp-department">Área / Dependencia *</label>
+            <input type="text" id="emp-department" placeholder="Ej: Nómina, Bienestar Social, Despacho" required>
           </div>
 
           <div class="form-group" style="margin-bottom: 16px; padding: 12px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;">
             <small style="color: var(--text-secondary); font-size: 12px;">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--primary)" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-              Se generarÃƒÂ¡ un enlace de activaciÃƒÂ³n ÃƒÂºnico. El funcionario definirÃƒÂ¡ su propia contraseÃƒÂ±a al activar la cuenta.
+              Se generará un enlace de activación único. El funcionario definirá su propia contraseña al activar la cuenta.
             </small>
           </div>
 
@@ -929,6 +930,6 @@
 
   <!-- JS Logic -->
   <script src="utils.js?v=2"></script>
-  <script src="app.js?v=5"></script>
+  <script src="app.js?v=6"></script>
 </body>
 </html>

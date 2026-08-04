@@ -91,6 +91,28 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Botón para abrir EPSON Scan 2 (multifunción sin WIA: escanear a la bandeja)
+  const btnEpsonScan = document.getElementById('btn-portal-epson-scan');
+  if (btnEpsonScan) {
+    btnEpsonScan.addEventListener('click', async () => {
+      btnEpsonScan.disabled = true;
+      try {
+        const res = await apiFetch('/api/scanner/launch-epson-scan', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok) {
+          alert(data.message || 'EPSON Scan 2 abierto.');
+          await loadPortalData();
+        } else {
+          alert(data.error || 'Error al abrir EPSON Scan 2.');
+        }
+      } catch (e) {
+        alert('Error de red al abrir EPSON Scan 2.');
+      } finally {
+        btnEpsonScan.disabled = false;
+      }
+    });
+  }
+
   // Formulario de registro de correo
   document.getElementById('form-register-email').addEventListener('submit', handleRegisterEmailAttachment);
 
@@ -136,8 +158,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Botón de actualizar escáneres
   document.getElementById('btn-portal-refresh-scanners')?.addEventListener('click', async () => {
-    const btn = document.getElementById('btn-portal-refresh-scanners');
-    btn.disabled = true;
+    const btn = document.getElementById('btn-portal-refresh-scanners');    btn.disabled = true;
     btn.textContent = '🔄 Buscando...';
     try {
       await apiFetch('/api/scanner/refresh', { method: 'POST' });
@@ -509,8 +530,28 @@ window.openDeleteRequest = function(docId, filename) {
   document.getElementById('delete-req-doc-id').value = docId;
   document.getElementById('delete-req-filename').textContent = filename;
   document.getElementById('delete-req-reason').value = '';
+  loadFuncionarioDeletionRequests();
   openModal('modal-delete-request');
 };
+
+async function loadFuncionarioDeletionRequests() {
+  const container = document.getElementById('func-deletion-requests-list');
+  if (!container) return;
+  try {
+    const res = await apiFetch('/api/funcionario/deletion-requests');
+    if (!res.ok) { container.innerHTML = '<p class="portal-muted">No se pudieron cargar sus solicitudes.</p>'; return; }
+    const requests = await res.json();
+    if (!requests.length) { container.innerHTML = '<p class="portal-muted">No tiene solicitudes de eliminación pendientes o previas.</p>'; return; }
+    container.innerHTML = requests.map(req => {
+      const badge = req.status === 'Pendiente' ? 'solicitud-status-pendiente'
+        : req.status === 'Aprobada' ? 'solicitud-status-aprobada'
+        : 'solicitud-status-rechazada';
+      return `<div class="func-req-item"><span class="func-req-file">${sanitize(req.documentFilename)}</span><span class="func-req-status ${badge}">${sanitize(req.status)}</span><span class="func-req-date">${sanitize((req.createdAt || '').slice(0, 10))}</span></div>`;
+    }).join('');
+  } catch (err) {
+    container.innerHTML = '<p class="portal-muted">Error de conexión al cargar solicitudes.</p>';
+  }
+}
 
 // ============================================================
 // CAMBIAR CONTRASEÑA
@@ -603,6 +644,9 @@ async function refreshPortalScannerStatus() {
       btnScan.style.cursor = isConnected ? 'pointer' : 'not-allowed';
       btnScan.title = isConnected ? 'Escanear un documento' : 'No hay escáner conectado';
     }
+
+    const btnEpsonScan = document.getElementById('btn-portal-epson-scan');
+    if (btnEpsonScan) btnEpsonScan.style.display = data.epsonScanAvailable ? 'inline-flex' : 'none';
 
     if (deviceList) {
       if (!isConnected) {

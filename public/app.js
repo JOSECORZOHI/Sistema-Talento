@@ -109,6 +109,27 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Botón para abrir EPSON Scan 2 (multifunción sin WIA: escanear a la bandeja)
+  const btnEpsonScan = document.getElementById('btn-portal-epson-scan');
+  if (btnEpsonScan) {
+    btnEpsonScan.addEventListener('click', async () => {
+      btnEpsonScan.disabled = true;
+      try {
+        const res = await apiFetch('/api/scanner/launch-epson-scan', { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) {
+          showToast(data.error || 'Error al abrir EPSON Scan 2.', 'error');
+        } else {
+          showToast(data.message || 'EPSON Scan 2 abierto.', 'success');
+        }
+      } catch (e) {
+        showToast('Error de red al abrir EPSON Scan 2.', 'error');
+      } finally {
+        btnEpsonScan.disabled = false;
+      }
+    });
+  }
+
   // Botón de sincronización de correo
   const btnSync = document.getElementById('btn-sync-email');
   if (btnSync) {
@@ -1961,6 +1982,9 @@ async function refreshScannerStatus() {
       btnScan.style.cursor = isConnected ? 'pointer' : 'not-allowed';
       btnScan.title = isConnected ? 'Escanear un documento' : 'No hay escáner conectado';
     }
+
+    const btnEpsonScan = document.getElementById('btn-portal-epson-scan');
+    if (btnEpsonScan) btnEpsonScan.style.display = data.epsonScanAvailable ? 'inline-flex' : 'none';
 
     if (!list) return;
 

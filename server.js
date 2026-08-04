@@ -10,7 +10,7 @@ const hpp = require('hpp');
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execSync, spawn } = require('child_process');
 const os = require('os');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -232,6 +232,7 @@ function isAllowedInstitutionalEmail(email) {
 
 function validatePasswordStrength(password) {
   if (password.length < 12) return { valid: false, error: 'La contraseña debe tener al menos 12 caracteres.' };
+  if (Buffer.byteLength(password, 'utf8') > 72) return { valid: false, error: 'La contraseña no debe superar los 72 caracteres.' };
   if (!/[A-Z]/.test(password)) return { valid: false, error: 'La contraseña debe contener al menos una letra mayúscula.' };
   if (!/[a-z]/.test(password)) return { valid: false, error: 'La contraseña debe contener al menos una letra minúscula.' };
   if (!/[0-9]/.test(password)) return { valid: false, error: 'La contraseña debe contener al menos un número.' };
@@ -337,17 +338,11 @@ async function authenticateUser(user, collectionName, role, username, password, 
     await col(collectionName).updateOne({ _id: user._id }, { $set: { status: 'activa', lockedUntil: null, failedAttempts: 0 } });
     user.status = 'activa';
   }
-  if (user.status === 'pendiente') {
-    return res.status(403).json({ error: 'Su cuenta aún no ha sido activada. Revise su correo electrónico para el enlace de activación.' });
-  }
-  if (user.status === 'suspendida') {
-    return res.status(403).json({ error: 'Su cuenta ha sido suspendida. Contacte al administrador.' });
-  }
-  if (user.status === 'inactiva') {
-    return res.status(403).json({ error: 'Su cuenta ha sido desactivada. Contacte al administrador.' });
-  }
-  if (role === 'funcionario' && user.active === false) {
-    return res.status(403).json({ error: 'Su cuenta ha sido desactivada. Contacte al administrador.' });
+  // Mensajes unificados: no revelar el estado de la cuenta (anti-enumeración).
+  // Un usuario pendiente/suspendido/inactivo ve la misma respuesta que una credencial errónea.
+  if (user.status === 'pendiente' || user.status === 'suspendida' || user.status === 'inactiva'
+    || (role === 'funcionario' && user.active === false)) {
+    return res.status(401).json({ error: 'Credenciales incorrectas.' });
   }
   if (user.status === 'bloqueada') {
     return res.status(423).json({ error: 'Su cuenta ha sido bloqueada. Contacte al administrador.' });
@@ -379,8 +374,8 @@ async function authenticateUser(user, collectionName, role, username, password, 
 
 // --- CAMBIO DE CONTRASEÑA COMPARTIDO ---
 async function handleChangePasswordForRole(user, currentPassword, newPassword, role, ip, res) {
-  const collectionName = role === 'admin' ? 'users' : 'employees';
-  const lookupField = role === 'admin' ? { email: user.email } : { id: user.employeeId };
+  const collectionName = getCollectionForRole(role);
+  const lookupField = getLookupForRole(role, user);
   const doc = await col(collectionName).findOne(lookupField);
   if (!doc || !doc.password) return res.status(404).json({ error: `${role === 'admin' ? 'Usuario' : 'Funcionario'} no encontrado.` });
   if (!(await bcrypt.compare(currentPassword, doc.password))) {
@@ -439,7 +434,7 @@ async function getUnregisteredFiles(allDocs = null) {
 
 // --- HISTORIAL DE CONTRASEÑAS ---
 async function checkPasswordHistory(email, newPassword, role) {
-  const collection = role === 'admin' ? 'users' : 'employees';
+  const collection = getCollectionForRole(role);
   const user = await col(collection).findOne({ email });
   if (!user || !user.passwordHistory) return false;
   for (const oldHash of user.passwordHistory.slice(-PASSWORD_HISTORY_SIZE)) {
@@ -449,7 +444,7 @@ async function checkPasswordHistory(email, newPassword, role) {
 }
 
 async function addToPasswordHistory(email, hashedPassword, role) {
-  const collection = role === 'admin' ? 'users' : 'employees';
+  const collection = getCollectionForRole(role);
   await col(collection).updateOne(
     { email },
     { $push: { passwordHistory: { $each: [hashedPassword], $slice: -PASSWORD_HISTORY_SIZE } } }
@@ -464,7 +459,8 @@ const ROLES = {
       'documents.create', 'documents.read', 'documents.update', 'documents.delete',
       'audit.read', 'config.manage',
       'scanner.manage', 'scanner.read', 'scanner.refresh', 'scanner.scan',
-      'email.manage'
+      'email.manage',
+      'deletion.create'
     ]
   },
   funcionario: {
@@ -538,6 +534,68 @@ function getUniqueFilename(originalFilename) {
   const ext = path.extname(originalFilename);
   const base = path.basename(originalFilename, ext);
   return `${base}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}${ext}`;
+}
+
+// --- HELPERS COMPARTIDOS (anti-duplicación) ---
+function getCollectionForRole(role) {
+  return role === 'admin' ? 'users' : 'employees';
+}
+
+function getLookupForRole(role, user) {
+  return role === 'admin' ? { email: user.email } : { id: user.employeeId };
+}
+
+function requireFields(body, fields) {
+  for (const f of fields) {
+    if (body[f] === undefined || body[f] === null || String(body[f]).trim() === '') return f;
+  }
+  return null;
+}
+
+function validateDocStatus(status) {
+  if (status !== undefined && !VALID_DOC_STATUSES.includes(status)) {
+    return `Estado no válido. Valores permitidos: ${VALID_DOC_STATUSES.join(', ')}.`;
+  }
+  return null;
+}
+
+// El archivo debe estar en la bandeja del escáner (local) o ser un archivo de escáner sin registrar en GridFS
+async function isFileInScannerTray(filename) {
+  const scanPath = getSafeFilePath(SCANNER_DIR, filename);
+  if (scanPath && fs.existsSync(scanPath)) return true;
+  return (await listFilesBySource('scanner', false).catch(() => []))
+    .some(f => f.filename === filename);
+}
+
+async function rollbackStoredAttachments(filenames) {
+  for (const fn of filenames) { try { await deleteFileByName(fn); } catch (e) { /* ignorar */ } }
+}
+
+// Valida que el contenido coincida con la extensión (magic bytes).
+// Evita que un .pdf sea en realidad HTML/script u otro binario.
+function validateFileContent(filename, buffer) {
+  const ext = path.extname(filename).toLowerCase();
+  if (!buffer || buffer.length < 4) return null;
+  const head = buffer.subarray(0, 12);
+  const startsWith = bytes => bytes.every((b, i) => head[i] === b);
+  const zip = [0x50, 0x4b, 0x03, 0x04];        // PK\x03\x04 (docx/xlsx/pptx/odt/ods)
+  const ole = [0xd0, 0xcf, 0x11, 0xe0];        // OLE2 (doc/xls/ppt)
+
+  const expectations = [
+    ['.pdf', [0x25, 0x50, 0x44, 0x46]],
+    ['.png', [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]],
+    ['.jpg', [0xff, 0xd8, 0xff]], ['.jpeg', [0xff, 0xd8, 0xff]],
+    ['.gif', [0x47, 0x49, 0x46, 0x38]],
+    ['.bmp', [0x42, 0x4d]],
+    ['.tif', [0x49, 0x49, 0x2a, 0x00]], ['.tiff', [0x49, 0x49, 0x2a, 0x00]],
+    ['.docx', zip], ['.xlsx', zip], ['.pptx', zip], ['.odt', zip], ['.ods', zip],
+    ['.doc', ole], ['.xls', ole], ['.ppt', ole]
+  ];
+  const match = expectations.find(e => e[0] === ext);
+  if (!match) return null; // .txt/.csv/.rtf: sin firma binaria, no se valida
+  return startsWith(match[1])
+    ? null
+    : `El archivo '${filename}' no coincide con su extensión (${ext}). Verifique que sea un archivo válido.`;
 }
 
 // Mutex por archivo: evita que dos peticiones simultáneas registren el mismo archivo
@@ -639,7 +697,9 @@ async function registerDocumentCore({ req, filename, employeeId, documentTypeId,
         fileSize = buf.length;
         deferredOriginalDelete = { type: 'gridfs', name: filename };
       } else {
-        const buf = fs.readFileSync(sourcePath);
+        let buf;
+        try { buf = fs.readFileSync(sourcePath); }
+        catch (e) { return { error: `El archivo '${filename}' ya no está disponible en la bandeja.`, status: 404 }; }
         if (buf.length > MAX_REGISTER_BYTES) {
           return { error: `El archivo '${filename}' supera el tamaño máximo permitido (${Math.round(MAX_REGISTER_BYTES / 1024 / 1024)} MB).`, status: 400 };
         }
@@ -659,7 +719,9 @@ async function registerDocumentCore({ req, filename, employeeId, documentTypeId,
         const filePath = getSafeFilePath(sourceDir || DOCUMENTS_DIR, filename);
         if (filePath && fs.existsSync(filePath)) {
           targetFilename = filename;
-          const buf = fs.readFileSync(filePath);
+          let buf;
+          try { buf = fs.readFileSync(filePath); }
+          catch (e) { return { error: `El archivo '${filename}' ya no está disponible.`, status: 404 }; }
           await storeFileBuffer(targetFilename, buf, { source: 'local', registered: true });
           stored = true;
           fileSize = buf.length;
@@ -701,6 +763,49 @@ async function registerDocumentCore({ req, filename, employeeId, documentTypeId,
       try { await deleteFileByName(targetFilename); } catch (e2) { console.warn('Error revirtiendo archivo:', e2.message); }
     }
     throw err;
+  }
+}
+
+// Registro compartido de adjunto de correo (admin y funcionario). `email` ya fue cargado
+// por la ruta (para validar propiedad o armar metadatos). Encapsula: verificación del adjunto,
+// registro con lock y marcado del adjunto como registrado. Devuelve { doc } o { error, status }.
+async function registerEmailAttachmentCore({ req, email, emailId, filename, employeeId, documentTypeId, categoryId, description, issueDate, expiryDate, status, auditAction, auditMessageTemplate, extraDocFields }) {
+  const attachment = (email.attachments || []).find(a => a.filename === filename);
+  if (!attachment) return { error: 'Archivo adjunto no encontrado.', status: 404 };
+  if (attachment.registered) return { error: 'Este adjunto ya fue registrado como documento.', status: 409 };
+
+  const result = await withRegisterLock(filename, () => registerDocumentCore({
+    req, filename, employeeId, documentTypeId, categoryId,
+    description: description || `Ingresado desde correo de ${email.senderName} (${email.senderEmail}) - Asunto: ${email.subject}.`,
+    issueDate, expiryDate,
+    status: status || 'Pendiente',
+    sourceDir: GMAIL_INBOX_DIR, mover: true,
+    auditAction,
+    auditMessageTemplate,
+    extraDocFields: { sourceEmailId: emailId, sourceSenderEmail: email.senderEmail || email.sender, ...(extraDocFields || {}) },
+    actor: req.user.name
+  }));
+  if (result.error) return result;
+
+  await col('emailsInbox').updateOne(
+    { id: emailId, 'attachments.filename': filename },
+    { $set: { 'attachments.$.registered': true } }
+  );
+  return result;
+}
+
+// Eliminación compartida de un documento y su archivo físico (GridFS y/o disco).
+// El registro siempre se elimina; el archivo físico solo se borra si ningún otro
+// documento lo comparte, para no dejar documentos huérfanos.
+async function deleteDocAndPhysicalFile(id, filename) {
+  const sharingDocs = await col('documents').countDocuments({ filename, id: { $ne: id } });
+  await col('documents').deleteOne({ id });
+  if (sharingDocs === 0) {
+    await deleteFileByName(filename);
+    const filePath = getSafeFilePath(DOCUMENTS_DIR, filename);
+    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } else {
+    console.warn(`[DEL] El archivo '${filename}' lo comparten ${sharingDocs} documento(s); no se elimina físicamente.`);
   }
 }
 
@@ -757,7 +862,7 @@ async function authMiddleware(req, res, next) {
     if (decoded.v === undefined) {
       return res.status(401).json({ error: 'Sesión no válida. Inicie sesión nuevamente.' });
     }
-    const collection = decoded.role === 'admin' ? 'users' : 'employees';
+    const collection = getCollectionForRole(decoded.role);
     const dbUser = await col(collection).findOne(
       { email: decoded.email },
       { projection: { jwtVersion: 1, status: 1, active: 1, id: 1, name: 1 } }
@@ -886,7 +991,7 @@ app.post('/api/auth/activate/:token', async (req, res) => {
 
   // Seguridad: un token de activación solo puede activar cuentas pendientes/inactivas.
   // No re-activar cuentas suspendidas o bloqueadas.
-  const targetCollection = activationToken.role === 'admin' ? 'users' : 'employees';
+  const targetCollection = getCollectionForRole(activationToken.role);
   const target = await col(targetCollection).findOne({ email: activationToken.email });
   if (!target) return res.status(404).json({ error: 'Cuenta no encontrada.' });
   if (target.status === 'suspendida' || target.status === 'bloqueada' || target.status === 'activa') {
@@ -995,7 +1100,7 @@ app.post('/api/auth/reset-password/:token', async (req, res) => {
 
   // Seguridad: no forzar status:'activa'. Solo se limpia el bloqueo; cuentas
   // suspendidas/desactivadas siguen sin poder entrar hasta que el admin las reactive.
-  const currentUser = await col(resetToken.role === 'admin' ? 'users' : 'employees').findOne({ email: resetToken.email });
+  const currentUser = await col(getCollectionForRole(resetToken.role)).findOne({ email: resetToken.email });
   const currentStatus = currentUser?.status;
   if (currentStatus === 'suspendida' || currentStatus === 'inactiva' || (resetToken.role === 'funcionario' && !currentUser?.password)) {
     await col('passwordResetTokens').updateOne({ _id: resetToken._id }, { $set: { used: true } });
@@ -1063,49 +1168,35 @@ app.post('/api/funcionario/subir-documento', authMiddleware, upload.single('file
 
   const empleadoId = req.user.employeeId;
   const { documentTypeId, categoryId, description, issueDate } = req.body;
-  if (!documentTypeId || !categoryId || !issueDate) {
+  if (requireFields(req.body, ['documentTypeId', 'categoryId', 'issueDate'])) {
     return res.status(400).json({ error: 'Faltan campos obligatorios.' });
   }
+  const contentErr = validateFileContent(req.file.originalname, req.file.buffer);
+  if (contentErr) return res.status(400).json({ error: contentErr });
 
   const employee = await col('employees').findOne({ id: empleadoId });
   if (!employee) return res.status(404).json({ error: 'Funcionario no encontrado.' });
 
-  const references = await validateDocumentReferences(documentTypeId, categoryId);
-  if (!references) return res.status(400).json({ error: 'Tipo de documento o categoría no válidos.' });
-
-  const uniqueName = getUniqueFilename(req.file.originalname);
-  await storeFileBuffer(uniqueName, req.file.buffer, { source: 'upload', registered: true });
-
-  const newDoc = createDoc({
-    filename: uniqueName, originalName: req.file.originalname,
-    employeeId: empleadoId, employeeName: employee.name,
-    documentTypeId, categoryId, description, issueDate, fileSize: req.file.size,
-    uploadedBy: employee.name, uploadedByEmployee: true
+  const result = await registerDocumentCore({
+    req, filename: req.file.originalname, employeeId: empleadoId, documentTypeId, categoryId, description, issueDate,
+    fileBuffer: req.file.buffer, gridFSSource: 'upload',
+    auditAction: 'Carga por Funcionario',
+    auditMessageTemplate: (emp, type, fn) => `${emp} subió el archivo '${fn}' (${type}).`,
+    extraDocFields: { uploadedBy: employee.name, uploadedByEmployee: true },
+    actor: employee.name
   });
-  try {
-    await col('documents').insertOne(newDoc);
-  } catch (e) {
-    try { await deleteFileByName(uniqueName); } catch (e2) { console.warn('Error revirtiendo archivo subido:', e2.message); }
-    throw e;
-  }
-
-  await addAuditLog('Carga por Funcionario', `${employee.name} subió el archivo '${uniqueName}' (${references.documentType.name}).`, employee.name, getClientIp(req));
-  res.status(201).json(newDoc);
+  if (result.error) return res.status(result.status).json({ error: result.error });
+  res.status(201).json(result.doc);
 });
 
 app.post('/api/funcionario/register-scanner', authMiddleware, async (req, res) => {
   if (req.user.role !== 'funcionario') return res.status(403).json({ error: 'Acceso denegado.' });
   const { filename, documentTypeId, categoryId, description, issueDate, expiryDate } = req.body;
-  if (!filename || !documentTypeId || !categoryId || !issueDate) {
+  if (requireFields(req.body, ['filename', 'documentTypeId', 'categoryId', 'issueDate'])) {
     return res.status(400).json({ error: 'Faltan campos obligatorios.' });
   }
 
-  // El archivo debe estar en la bandeja del escáner (local) o ser un archivo de escáner sin registrar en GridFS
-  const scanPath = getSafeFilePath(SCANNER_DIR, filename);
-  const inLocalTray = scanPath && fs.existsSync(scanPath);
-  const inScannerGrid = !inLocalTray && (await listFilesBySource('scanner', false).catch(() => []))
-    .some(f => f.filename === filename);
-  if (!inLocalTray && !inScannerGrid) {
+  if (!(await isFileInScannerTray(filename))) {
     return res.status(403).json({ error: 'El archivo no se encuentra en la bandeja del escáner.' });
   }
 
@@ -1126,7 +1217,7 @@ app.post('/api/funcionario/register-scanner', authMiddleware, async (req, res) =
 app.post('/api/funcionario/register-email-attachment', authMiddleware, async (req, res) => {
   if (req.user.role !== 'funcionario') return res.status(403).json({ error: 'Acceso denegado.' });
   const { emailId, filename, documentTypeId, categoryId, description, issueDate, expiryDate } = req.body;
-  if (!emailId || !filename || !documentTypeId || !categoryId || !issueDate) {
+  if (requireFields(req.body, ['emailId', 'filename', 'documentTypeId', 'categoryId', 'issueDate'])) {
     return res.status(400).json({ error: 'Faltan campos obligatorios.' });
   }
   const email = await col('emailsInbox').findOne({ id: emailId });
@@ -1134,29 +1225,17 @@ app.post('/api/funcionario/register-email-attachment', authMiddleware, async (re
   if (email.suggestedEmployeeId && email.suggestedEmployeeId !== req.user.employeeId) {
     return res.status(403).json({ error: 'No tiene permisos para registrar adjuntos de este correo.' });
   }
-  const attachment = (email.attachments || []).find(a => a.filename === filename);
-  if (!attachment) return res.status(404).json({ error: 'Archivo adjunto no encontrado.' });
-  if (attachment.registered) return res.status(409).json({ error: 'Este adjunto ya fue registrado como documento.' });
 
   // Un funcionario solo puede dejar el documento en revisión; el estado lo fija el administrador.
-  const result = await withRegisterLock(filename, () => registerDocumentCore({
-    req, filename, employeeId: req.user.employeeId, documentTypeId, categoryId,
+  const result = await registerEmailAttachmentCore({
+    req, email, emailId, filename, employeeId: req.user.employeeId, documentTypeId, categoryId,
     description: description || `Ingresado desde correo de ${email.senderName} - Asunto: ${email.subject}.`,
-    issueDate, expiryDate,
-    status: 'Pendiente',
-    sourceDir: GMAIL_INBOX_DIR, mover: true,
+    issueDate, expiryDate, status: 'Pendiente',
     auditAction: 'Correo por Funcionario',
     auditMessageTemplate: (emp, type, fn) => `${emp} registró el adjunto '${fn}' del correo de ${email.senderName} (${type}).`,
-    extraDocFields: { sourceEmailId: emailId, sourceSenderEmail: email.senderEmail || email.sender, uploadedBy: req.user.name || 'Funcionario', uploadedByEmployee: true },
-    actor: req.user.name
-  }));
+    extraDocFields: { uploadedBy: req.user.name || 'Funcionario', uploadedByEmployee: true }
+  });
   if (result.error) return res.status(result.status).json({ error: result.error });
-
-  await col('emailsInbox').updateOne(
-    { id: emailId, 'attachments.filename': filename },
-    { $set: { 'attachments.$.registered': true } }
-  );
-
   res.status(201).json(result.doc);
 });
 
@@ -1239,8 +1318,10 @@ app.post('/api/employees', authMiddleware, requirePermission('employees.create')
 
   res.status(201).json({
     ...newEmployee,
-    activationToken: activation.raw,
-    activationSent,
+    // El token solo se expone cuando el correo no pudo enviarse (no hay SMTP),
+    // para que el administrador lo comparta manualmente. Si el correo se envió,
+    // el token nunca se devuelve al navegador.
+    ...(activationSent ? { activationSent } : { activationToken: activation.raw, activationSent: false }),
     message: activationSent
       ? `Empleado creado. Se envió el enlace de activación al correo del funcionario.`
       : `Empleado creado. Comparta este enlace de activación con el funcionario: /activate.html?token=${activation.raw}`
@@ -1420,12 +1501,11 @@ app.get('/api/documents/unregistered', authMiddleware, requirePermission('docume
 
 app.post('/api/documents/register-local', authMiddleware, requirePermission('documents.create'), async (req, res) => {
   const { filename, employeeId, documentTypeId, categoryId, description, issueDate, expiryDate, status } = req.body;
-  if (!filename || !employeeId || !documentTypeId || !categoryId || !issueDate) {
+  if (requireFields(req.body, ['filename', 'employeeId', 'documentTypeId', 'categoryId', 'issueDate'])) {
     return res.status(400).json({ error: 'Faltan campos obligatorios para registrar el documento.' });
   }
-  if (status !== undefined && !VALID_DOC_STATUSES.includes(status)) {
-    return res.status(400).json({ error: `Estado no válido. Valores permitidos: ${VALID_DOC_STATUSES.join(', ')}.` });
-  }
+  const statusErr = validateDocStatus(status);
+  if (statusErr) return res.status(400).json({ error: statusErr });
   const result = await withRegisterLock(filename, () => registerDocumentCore({
     req, filename, employeeId, documentTypeId, categoryId, description, issueDate, expiryDate, status,
     sourceDir: DOCUMENTS_DIR, mover: false,
@@ -1442,36 +1522,24 @@ app.post('/api/documents/upload', authMiddleware, requirePermission('documents.c
   if (!req.file) return res.status(400).json({ error: 'No se proporcionó ningún archivo o el formato no es válido.' });
 
   const { employeeId, documentTypeId, categoryId, description, issueDate, expiryDate, status } = req.body;
-  if (!employeeId || !documentTypeId || !categoryId || !issueDate) {
+  if (requireFields(req.body, ['employeeId', 'documentTypeId', 'categoryId', 'issueDate'])) {
     return res.status(400).json({ error: 'Faltan campos obligatorios para registrar el documento cargado.' });
   }
-  if (status !== undefined && !VALID_DOC_STATUSES.includes(status)) {
-    return res.status(400).json({ error: `Estado no válido. Valores permitidos: ${VALID_DOC_STATUSES.join(', ')}.` });
-  }
+  const statusErr = validateDocStatus(status);
+  if (statusErr) return res.status(400).json({ error: statusErr });
+  const contentErr = validateFileContent(req.file.originalname, req.file.buffer);
+  if (contentErr) return res.status(400).json({ error: contentErr });
 
-  const employee = await col('employees').findOne({ id: employeeId });
-  if (!employee) return res.status(404).json({ error: 'El funcionario seleccionado no existe.' });
-  const references = await validateDocumentReferences(documentTypeId, categoryId);
-  if (!references) return res.status(400).json({ error: 'El tipo documental o la categoría seleccionada no existen.' });
-
-  const uniqueName = getUniqueFilename(req.file.originalname);
-  await storeFileBuffer(uniqueName, req.file.buffer, { source: 'upload', registered: true });
-
-  const newDoc = createDoc({
-    filename: uniqueName, originalName: req.file.originalname,
-    employeeId, employeeName: employee.name,
-    documentTypeId, categoryId, description, issueDate, expiryDate,
-    status, fileSize: req.file.size, uploadedBy: 'Sistema'
+  const result = await registerDocumentCore({
+    req, filename: req.file.originalname, employeeId, documentTypeId, categoryId, description, issueDate, expiryDate, status,
+    fileBuffer: req.file.buffer, gridFSSource: 'upload',
+    auditAction: 'Carga de Documento',
+    auditMessageTemplate: (emp, type, fn) => `Se subió y registró el archivo '${fn}' para ${emp} (${type}).`,
+    extraDocFields: { uploadedBy: 'Sistema' },
+    actor: req.user.name
   });
-  try {
-    await col('documents').insertOne(newDoc);
-  } catch (e) {
-    try { await deleteFileByName(uniqueName); } catch (e2) { console.warn('Error revirtiendo archivo subido:', e2.message); }
-    throw e;
-  }
-
-  await addAuditLog('Carga de Documento', `Se subió y registró el archivo '${uniqueName}' para ${employee.name} (${references.documentType.name}).`, req.user.name, getClientIp(req));
-  res.status(201).json(newDoc);
+  if (result.error) return res.status(result.status).json({ error: result.error });
+  res.status(201).json(result.doc);
 });
 
 app.put('/api/documents/:id', authMiddleware, requirePermission('documents.update'), async (req, res) => {
@@ -1498,7 +1566,7 @@ app.put('/api/documents/:id', authMiddleware, requirePermission('documents.updat
   if (documentTypeId) updates.documentTypeId = documentTypeId;
   if (categoryId) updates.categoryId = categoryId;
   if (description !== undefined) updates.description = description;
-  if (issueDate) updates.issueDate = issueDate;
+  if (issueDate !== undefined) updates.issueDate = issueDate;
   if (expiryDate !== undefined) updates.expiryDate = expiryDate;
   if (status !== undefined) {
     if (!VALID_DOC_STATUSES.includes(status)) {
@@ -1526,17 +1594,7 @@ app.delete('/api/documents/:id', authMiddleware, requirePermission('documents.de
 
   if (deletePhysical === 'true') {
     try {
-      const sharingDocs = await col('documents').countDocuments({ filename: doc.filename, id: { $ne: id } });
-      await col('documents').deleteOne({ id });
-      // Si otros documentos comparten el mismo archivo físico, no se borra el archivo
-      // para no dejar documentos huérfanos.
-      if (sharingDocs === 0) {
-        await deleteFileByName(doc.filename);
-      } else {
-        console.warn(`[DEL] El archivo '${doc.filename}' lo comparten ${sharingDocs} documento(s); no se elimina físicamente.`);
-      }
-      const filePath = getSafeFilePath(DOCUMENTS_DIR, doc.filename);
-      if (sharingDocs === 0 && filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      await deleteDocAndPhysicalFile(id, doc.filename);
       await addAuditLog('Eliminación Física', `Se eliminó físicamente el archivo '${doc.filename}' y su registro de la base de datos.`, req.user.name, getClientIp(req));
       await addSecurityLog('Documento Eliminado', `Documento '${doc.filename}' eliminado físicamente por ${req.user.name}.`, getClientIp(req), req.user.email);
       res.json({ message: 'Documento eliminado física y lógicamente.' });
@@ -1607,6 +1665,20 @@ app.post('/api/deletion-requests', authMiddleware, requirePermission('deletion.c
   }
 });
 
+// El funcionario puede consultar el estado de SUS solicitudes de eliminación.
+app.get('/api/funcionario/deletion-requests', authMiddleware, async (req, res) => {
+  if (req.user.role !== 'funcionario') return res.status(403).json({ error: 'Acceso denegado.' });
+  try {
+    const requests = await col('deletionRequests')
+      .find({ employeeId: req.user.employeeId })
+      .sort({ createdAt: -1 }).toArray();
+    res.json(requests);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al obtener solicitudes.' });
+  }
+});
+
 app.patch('/api/deletion-requests/:id/approve', authMiddleware, requirePermission('employees.read'), async (req, res) => {
   try {
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Solo administradores pueden aprobar eliminaciones.' });
@@ -1617,12 +1689,7 @@ app.patch('/api/deletion-requests/:id/approve', authMiddleware, requirePermissio
 
     const doc = await col('documents').findOne({ id: request.documentId });
     if (doc) {
-      await col('documents').deleteOne({ id: request.documentId });
-      try { await deleteFileByName(doc.filename); } catch (e) { console.warn('Error eliminando archivo de GridFS:', e.message); }
-      const filePath = getSafeFilePath(DOCUMENTS_DIR, doc.filename);
-      if (filePath && fs.existsSync(filePath)) {
-        try { fs.unlinkSync(filePath); } catch (e) { console.error('Error eliminando archivo:', e.message); }
-      }
+      await deleteDocAndPhysicalFile(doc.id, doc.filename);
     }
 
     await col('deletionRequests').updateOne({ id: req.params.id }, { $set: { status: 'Aprobada', processedBy: req.user.name || req.user.email, processedAt: new Date().toISOString() } });
@@ -1733,7 +1800,10 @@ app.get('/api/scanner-files', authMiddleware, requirePermission('scanner.read'),
 // --- ESTADO DEL ESCÁNER (Detección USB + Red + Monitoreo de bandeja) ---
 function runPs(cmd) {
   try {
-    return execSync(`powershell -NoProfile -Command "${cmd}"`, { timeout: 10000, encoding: 'utf8', windowsHide: true }).trim();
+    const full = `$ProgressPreference='SilentlyContinue';${cmd}`;
+    const encoded = Buffer.from(full, 'utf16le').toString('base64');
+    const raw = execSync(`powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encoded}`, { timeout: 20000, encoding: 'utf8', windowsHide: true });
+    return raw.replace(/#< CLIXML[\s\S]*?<\/Objs>\s*/g, '').trim();
   } catch (e) { console.warn('Error ejecutando PowerShell:', e.message); return ''; }
 }
 
@@ -1897,6 +1967,23 @@ let lastScanCheck = 0;
 const SCANNER_CACHE_MS = 20000;
 let scannerRefreshRunning = false;
 
+// Ubica el launcher de EPSON Scan 2 (impresoras multifunción sin driver WIA de escáner).
+// Se cachea porque la búsqueda es determinista y el costo es de una sola vez.
+let epsonScanLauncher = null;
+let epsonScanLauncherChecked = false;
+function findEpsonScanLauncher() {
+  if (epsonScanLauncherChecked) return epsonScanLauncher;
+  epsonScanLauncherChecked = true;
+  const candidates = [
+    path.join(process.env.ProgramFiles || 'C:\\Program Files', 'EPSON', 'Epson Scan 2', 'Core', 'es2launcher.exe'),
+    path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'EPSON', 'Epson Scan 2', 'Core', 'es2launcher.exe')
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) { epsonScanLauncher = c; break; }
+  }
+  return epsonScanLauncher;
+}
+
 function refreshScannerCache() {
   if (scannerRefreshRunning) return;
   scannerRefreshRunning = true;
@@ -1910,10 +1997,33 @@ function refreshScannerCache() {
   }
 }
 
+// Refresco en segundo plano: no bloquea el event loop durante la detección
+// (detectAllScanners ejecuta PowerShell/consultas de red de forma síncrona).
+function refreshScannerCacheAsync() {
+  if (scannerRefreshRunning) return;
+  if ((Date.now() - lastScanCheck) <= SCANNER_CACHE_MS) return;
+  scannerRefreshRunning = true;
+  setImmediate(() => {
+    try {
+      cachedScanners = detectAllScanners();
+      lastScanCheck = Date.now();
+    } catch (e) {
+      console.error('[SCANNER] Error detecting scanners:', e.message);
+    } finally {
+      scannerRefreshRunning = false;
+    }
+  });
+}
+
 app.get('/api/scanner/status', authMiddleware, requirePermission('scanner.read'), async (req, res) => {
   const now = Date.now();
-  if ((now - lastScanCheck) > SCANNER_CACHE_MS) {
+  const stale = (now - lastScanCheck) > SCANNER_CACHE_MS;
+  if (stale && cachedScanners.length === 0) {
+    // Primera consulta del proceso: refresco síncrono único.
     refreshScannerCache();
+  } else if (stale) {
+    // Caché vencida: refrescar en segundo plano y responder con lo último conocido.
+    refreshScannerCacheAsync();
   }
 
   const trayFiles = await getScannerFiles();
@@ -1927,7 +2037,8 @@ app.get('/api/scanner/status', authMiddleware, requirePermission('scanner.read')
     networkCount: cachedScanners.filter(s => s.type === 'Red').length,
     trayCount: trayFiles.length,
     trayFiles,
-    subnet: getLocalSubnet(),
+    epsonScanAvailable: !!findEpsonScanLauncher(),
+    subnet: hasPermission(req.user.role, 'scanner.manage') ? getLocalSubnet() : null,
     lastChecked: new Date(lastScanCheck).toISOString()
   });
 });
@@ -1958,10 +2069,16 @@ async function scanWithScanner(customName) {
       $image.SaveFile($tempPath)
       Write-Output 'OK'
     } catch {
-      Write-Output 'ERROR:' + $_.Exception.Message
+      Write-Output ('ERROR:' + $_.Exception.Message)
     }
   `);
-  if (!raw || raw.startsWith('ERROR:')) return raw;
+  if (!raw || raw.startsWith('ERROR:')) {
+    const msg = (raw ? raw.replace('ERROR:', '') : '').trim();
+    if (msg === 'No scanner found') {
+      return 'ERROR:Ningún escáner WIA disponible. Las EPSON L3110/L3210 son impresoras multifunción sin driver WIA de escáner; use EPSON Scan y la bandeja de escáner.';
+    }
+    return raw;
+  }
   const tempPath = path.join(SCANNER_DIR, tempFile);
   if (!fs.existsSync(tempPath)) return 'ERROR:No se encontró la imagen escaneada temporal';
   try {
@@ -2007,17 +2124,32 @@ app.post('/api/scanner/scan', authMiddleware, requireAnyPermission('scanner.mana
   }
 });
 
+app.post('/api/scanner/launch-epson-scan', authMiddleware, requireAnyPermission('scanner.manage', 'scanner.scan'), async (req, res) => {
+  try {
+    const launcher = findEpsonScanLauncher();
+    if (!launcher) {
+      return res.status(404).json({ error: 'EPSON Scan 2 no está instalado en este equipo.' });
+    }
+    const child = spawn(launcher, [], { detached: true, stdio: 'ignore' });
+    child.on('error', err => console.warn('Error abriendo EPSON Scan 2:', err.message));
+    child.unref();
+    await addAuditLog('Escáner Real', 'Se abrió EPSON Scan 2 para escanear a la bandeja.', req.user.name || 'Sistema', getClientIp(req));
+    res.json({ ok: true, message: 'EPSON Scan 2 abierto. Configure la salida en bandeja_escaner y registre el PDF desde la bandeja.' });
+  } catch (e) {
+    console.error('[SCAN] Error abriendo EPSON Scan 2:', e.message);
+    res.status(500).json({ error: 'Error al abrir EPSON Scan 2.' });
+  }
+});
+
 app.post('/api/documents/register-scanner', authMiddleware, requirePermission('documents.create'), async (req, res) => {
   const { filename, employeeId, documentTypeId, categoryId, description, issueDate, expiryDate, status } = req.body;
-  if (!filename || !employeeId || !documentTypeId || !categoryId || !issueDate) {
+  if (requireFields(req.body, ['filename', 'employeeId', 'documentTypeId', 'categoryId', 'issueDate'])) {
     return res.status(400).json({ error: 'Faltan campos obligatorios para registrar el documento escaneado.' });
   }
+  const statusErr = validateDocStatus(status);
+  if (statusErr) return res.status(400).json({ error: statusErr });
 
-  const scanPath = getSafeFilePath(SCANNER_DIR, filename);
-  const inLocalTray = scanPath && fs.existsSync(scanPath);
-  const inScannerGrid = !inLocalTray && (await listFilesBySource('scanner', false).catch(() => []))
-    .some(f => f.filename === filename);
-  if (!inLocalTray && !inScannerGrid) {
+  if (!(await isFileInScannerTray(filename))) {
     return res.status(403).json({ error: 'El archivo no se encuentra en la bandeja del escáner.' });
   }
 
@@ -2079,7 +2211,8 @@ app.get('/api/gmail/oauth2callback', async (req, res) => {
     const ip = getClientIp(req);
     await addAuditLog('Autorización Gmail', 'Se completó la autorización OAuth con Google para la sincronización de correos.', 'Sistema', ip);
     // El refresh token solo se muestra en la consola del servidor, no en el navegador.
-    if (tokens.refresh_token) {
+    // Solo en desarrollo/ejecución local: en producción nunca se imprime.
+    if (tokens.refresh_token && process.env.NODE_ENV !== 'production') {
       console.log('[GMAIL] Autorización completada. Agregue al .env:');
       console.log('GMAIL_REFRESH_TOKEN=' + tokens.refresh_token);
     }
@@ -2160,12 +2293,18 @@ app.post('/api/email-inbox/sync', authMiddleware, requirePermission('email.manag
         // 3) Persistir adjuntos en GridFS y construir el registro.
         const attachments = [];
         for (const b of buffered) {
+          const contentErr = validateFileContent(b.filename, b.content);
+          if (contentErr) {
+            console.warn(`[GMAIL] Adjunto '${b.filename}' omitido: ${contentErr}`);
+            continue;
+          }
           const filename = getUniqueFilename(b.filename);
           await storeFileBuffer(filename, b.content, { source: 'gmail', registered: false });
           attachments.push({ filename, sizeBytes: b.content.length, registered: false, source: 'gmail' });
           storedAttachmentFilenames.add(filename);
           attachmentsDownloaded++;
         }
+        if (!attachments.length) continue;
 
         const headers = payload.headers || [];
         const fromHeader = getHeader(headers, 'From');
@@ -2185,7 +2324,7 @@ app.post('/api/email-inbox/sync', authMiddleware, requirePermission('email.manag
       }
     } catch (e) {
       // Revertir TODOS los adjuntos guardados del lote para no dejar huérfanos.
-      for (const fn of storedAttachmentFilenames) { try { await deleteFileByName(fn); } catch (e2) { /* ignorar */ } }
+      await rollbackStoredAttachments([...storedAttachmentFilenames]);
       throw e;
     }
 
@@ -2197,7 +2336,7 @@ app.post('/api/email-inbox/sync', authMiddleware, requirePermission('email.manag
       await col('emailsInbox').insertMany(newEmails);
     } catch (e) {
       // Si el insert falla, limpiar los adjuntos guardados para no dejarlos huérfanos.
-      for (const fn of storedAttachmentFilenames) { try { await deleteFileByName(fn); } catch (e2) { /* ignorar */ } }
+      await rollbackStoredAttachments([...storedAttachmentFilenames]);
       throw e;
     }
 
@@ -2218,33 +2357,21 @@ app.post('/api/email-inbox/sync', authMiddleware, requirePermission('email.manag
 
 app.post('/api/documents/register-email-attachment', authMiddleware, requirePermission('documents.create'), async (req, res) => {
   const { emailId, filename, employeeId, documentTypeId, categoryId, description, issueDate, expiryDate, status } = req.body;
-  if (!emailId || !filename || !employeeId || !documentTypeId || !categoryId || !issueDate) {
+  if (requireFields(req.body, ['emailId', 'filename', 'employeeId', 'documentTypeId', 'categoryId', 'issueDate'])) {
     return res.status(400).json({ error: 'Faltan campos obligatorios.' });
   }
+  const statusErr = validateDocStatus(status);
+  if (statusErr) return res.status(400).json({ error: statusErr });
   const email = await col('emailsInbox').findOne({ id: emailId });
   if (!email) return res.status(404).json({ error: 'Correo electrónico no encontrado.' });
-  const attachment = (email.attachments || []).find(a => a.filename === filename);
-  if (!attachment) return res.status(404).json({ error: 'Archivo adjunto no encontrado.' });
-  if (attachment.registered) return res.status(409).json({ error: 'Este adjunto ya fue registrado como documento.' });
 
-  const result = await withRegisterLock(filename, () => registerDocumentCore({
-    req, filename, employeeId, documentTypeId, categoryId,
-    description: description || `Ingresado desde correo de ${email.senderName} (${email.senderEmail}) - Asunto: ${email.subject}.`,
-    issueDate, expiryDate,
-    status: status || 'Pendiente',
-    sourceDir: GMAIL_INBOX_DIR, mover: true,
+  const result = await registerEmailAttachmentCore({
+    req, email, emailId, filename, employeeId, documentTypeId, categoryId,
+    description, issueDate, expiryDate, status,
     auditAction: 'Ingesta de Correo',
-    auditMessageTemplate: (emp, type, fn) => `Se registró el archivo adjunto '${fn}' del correo de ${email.senderName} asignándolo a ${emp} (${type}).`,
-    extraDocFields: { sourceEmailId: emailId, sourceSenderEmail: email.senderEmail || email.sender },
-    actor: req.user.name
-  }));
+    auditMessageTemplate: (emp, type, fn) => `Se registró el archivo adjunto '${fn}' del correo de ${email.senderName} asignándolo a ${emp} (${type}).`
+  });
   if (result.error) return res.status(result.status).json({ error: result.error });
-
-  await col('emailsInbox').updateOne(
-    { id: emailId, 'attachments.filename': filename },
-    { $set: { 'attachments.$.registered': true } }
-  );
-
   res.status(201).json(result.doc);
 });
 

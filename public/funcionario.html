@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Portal Funcionario Ã¢â‚¬â€ Talento Humano | AlcaldÃƒÂ­a de Valledupar</title>
+  <title>Portal Funcionario — Talento Humano | Alcaldía de Valledupar</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -189,7 +189,7 @@
       font-size: 11px; color: var(--text-muted); line-height: 1.6; margin-top: auto;
     }
     .portal-doc-card .doc-meta > div { display: inline; }
-    .portal-doc-card .doc-meta > div + div::before { content: ' Ã‚Â· '; }
+    .portal-doc-card .doc-meta > div + div::before { content: ' · '; }
     .portal-doc-card .doc-footer {
       display: flex; align-items: center; justify-content: space-between;
       padding: 12px 20px; border-top: 1px solid var(--border-color);
@@ -385,6 +385,17 @@
     .portal-scanner-device-list { max-height: 180px; overflow-y: auto; margin-bottom: 18px; }
     .portal-scanner-bar { border-top: 1px solid var(--border-color); padding-top: 18px; margin-top: 6px; }
 
+    .func-req-section { border-top: 1px solid var(--border-color); margin-top: 18px; padding-top: 14px; }
+    .func-req-section h4 { margin: 0 0 10px; font-size: 13px; color: var(--text-primary); }
+    .func-req-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 6px; background: var(--card-bg, rgba(0,0,0,0.03)); border: 1px solid var(--border-color); margin-bottom: 6px; font-size: 12px; }
+    .func-req-file { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .func-req-date { color: var(--text-muted); flex-shrink: 0; }
+    .func-req-status { flex-shrink: 0; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; padding: 3px 8px; border-radius: 20px; }
+    .solicitud-status-pendiente { background: rgba(243,156,18,0.15); color: #B7950B; }
+    .solicitud-status-aprobada { background: rgba(39,174,96,0.15); color: #1E8449; }
+    .solicitud-status-rechazada { background: rgba(231,76,60,0.15); color: #922B21; }
+    .portal-muted { color: var(--text-muted); font-size: 12px; }
+
     /* --- RESPONSIVE --- */
     @media (max-width: 768px) {
       .portal-topbar { padding: 0 14px; height: 56px; }
@@ -414,17 +425,17 @@
       <div class="portal-topbar-brand">
         <img src="Escudo_Valledupar.png" alt="Escudo de Valledupar">
         <div>
-          <span>AlcaldÃƒÂ­a de Valledupar</span>
-          <small>Portal del Funcionario Ã¢â‚¬â€ Talento Humano</small>
+          <span>Alcaldía de Valledupar</span>
+          <small>Portal del Funcionario — Talento Humano</small>
         </div>
       </div>
       <div class="portal-topbar-user">
         <div class="portal-avatar" id="portal-avatar">--</div>
         <div class="portal-user-info">
           <h4 id="portal-user-name">Funcionario</h4>
-          <span id="portal-user-dept">ÃƒÂrea</span>
+          <span id="portal-user-dept">Área</span>
         </div>
-        <button class="btn-portal-action" id="btn-change-password" title="Cambiar contraseÃƒÂ±a">
+        <button class="btn-portal-action" id="btn-change-password" title="Cambiar contraseña">
           <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;">
             <path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
           </svg>
@@ -450,7 +461,7 @@
       <!-- WELCOME BANNER -->
       <div class="portal-welcome">
         <h2>Bienvenido, <span id="portal-welcome-name">Funcionario</span></h2>
-        <p>Gestione sus documentos personales, suba archivos y acceda al escÃƒÂ¡ner y correo desde un solo lugar.</p>
+        <p>Gestione sus documentos personales, suba archivos y acceda al escáner y correo desde un solo lugar.</p>
         <div class="welcome-stats">
           <div class="welcome-stat">
             <strong id="stat-total">0</strong>
@@ -458,7 +469,7 @@
           </div>
           <div class="welcome-stat">
             <strong id="stat-activos">0</strong>
-            <span>En TrÃƒÂ¡mite</span>
+            <span>En Trámite</span>
           </div>
         </div>
       </div>
@@ -474,7 +485,7 @@
         </button>
         <button class="portal-tab" data-tab="scanner" onclick="portalShowTab('scanner')">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>
-          EscÃƒÂ¡ner
+          Escáner
         </button>
         <button class="portal-tab" data-tab="correo" onclick="portalShowTab('correo')">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
@@ -497,11 +508,11 @@
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          Los documentos que usted suba quedarÃƒÂ¡n registrados como <strong>Pendientes</strong> y visibles para el administrador de Talento Humano, quien confirmarÃƒÂ¡ su estado.
+          Los documentos que usted suba quedarán registrados como <strong>Pendientes</strong> y visibles para el administrador de Talento Humano, quien confirmará su estado.
         </div>
         <div class="portal-upload-card">
           <h3>Subir un Documento</h3>
-          <p class="hint">Adjunte contratos, certificados, soportes mÃƒÂ©dicos u otros documentos personales. Formatos aceptados: PDF, Word, Excel, imÃƒÂ¡genes, y mÃƒÂ¡s.</p>
+          <p class="hint">Adjunte contratos, certificados, soportes médicos u otros documentos personales. Formatos aceptados: PDF, Word, Excel, imágenes, y más.</p>
           <form id="form-portal-upload">
             <div class="form-field">
               <label>Archivo *</label>
@@ -509,9 +520,9 @@
                 <svg viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="var(--primary)" stroke-width="1.5">
                   <path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
-                <p>Arrastre el archivo aquÃƒÂ­ o haga clic para seleccionar</p>
-                <small>PDF, Word, Excel, imÃƒÂ¡genes, texto Ã¢â‚¬â€ mÃƒÂ¡ximo 20 MB</small>
-                <div id="portal-file-preview">NingÃƒÂºn archivo seleccionado</div>
+                <p>Arrastre el archivo aquí o haga clic para seleccionar</p>
+                <small>PDF, Word, Excel, imágenes, texto — máximo 20 MB</small>
+                <div id="portal-file-preview">Ningún archivo seleccionado</div>
                 <input type="file" id="portal-upload-file" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.gif,.bmp,.tiff,.txt,.csv,.odt,.ods,.rtf" required>
               </div>
             </div>
@@ -521,16 +532,16 @@
                 <select id="portal-upload-type" required><option value="">-- Seleccionar --</option></select>
               </div>
               <div class="form-field">
-                <label for="portal-upload-category">CategorÃƒÂ­a *</label>
+                <label for="portal-upload-category">Categoría *</label>
                 <select id="portal-upload-category" required><option value="">-- Seleccionar --</option></select>
               </div>
             </div>
             <div class="form-field">
-              <label for="portal-upload-date">Fecha de EmisiÃƒÂ³n *</label>
+              <label for="portal-upload-date">Fecha de Emisión *</label>
               <input type="date" id="portal-upload-date" required>
             </div>
             <div class="form-field">
-              <label for="portal-upload-desc">DescripciÃƒÂ³n (Opcional)</label>
+              <label for="portal-upload-desc">Descripción (Opcional)</label>
               <textarea id="portal-upload-desc" rows="3" placeholder="Ej: Certificado de EPS vigente..."></textarea>
             </div>
             <button type="submit" class="btn-submit-upload" id="btn-portal-submit-upload">Enviar Documento</button>
@@ -541,7 +552,7 @@
       <!-- ESCANER -->
       <div class="portal-panel" id="panel-scanner">
         <div class="portal-docs-header">
-          <h3>EscÃƒÂ¡neres Detectados</h3>
+          <h3>Escáneres Detectados</h3>
           <span id="portal-scanner-count" style="font-size:12px;font-weight:600;">0 dispositivo(s)</span>
         </div>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
@@ -551,12 +562,13 @@
           </div>
           <input type="text" id="input-scan-filename" placeholder="Nombre del documento" style="padding:6px 10px;font-size:12px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);width:200px;" />
           <button class="btn btn-primary" id="btn-portal-scan" style="padding:8px 18px;font-size:13px;">Escanear Documento</button>
-          <button class="btn btn-secondary" id="btn-portal-refresh-scanners" style="font-size:12px;padding:8px 14px;">Ã°Å¸â€â€ž Actualizar lista</button>
+          <button class="btn btn-secondary" id="btn-portal-epson-scan" style="font-size:12px;padding:8px 14px;display:none;" title="Abrir EPSON Scan 2: escanee y guarde el PDF en la bandeja de escáner para registrarlo">EPSON Scan 2</button>
+          <button class="btn btn-secondary" id="btn-portal-refresh-scanners" style="font-size:12px;padding:8px 14px;">🔄 Actualizar lista</button>
         </div>
         <div class="portal-scanner-device-list" id="portal-scanner-device-list"></div>
         <div class="portal-scanner-bar">
           <div class="portal-docs-header" style="margin-bottom:10px;">
-            <h3 style="font-size:15px;">Bandeja de EscÃƒÂ¡ner</h3>
+            <h3 style="font-size:15px;">Bandeja de Escáner</h3>
             <span id="portal-scanner-tray-count" style="font-size:12px;font-weight:600;">0 archivo(s)</span>
           </div>
           <div id="portal-scanner-list" class="portal-scanner-list"></div>
@@ -591,7 +603,7 @@
   <div class="modal-backdrop" id="modal-delete-request">
     <div class="modal-container modal-small">
       <div class="modal-header">
-        <h3>Solicitar EliminaciÃƒÂ³n de Documento</h3>
+        <h3>Solicitar Eliminación de Documento</h3>
         <button class="btn-close" onclick="closeModal('modal-delete-request')">&times;</button>
       </div>
       <div class="modal-body-scroll">
@@ -605,10 +617,16 @@
             <textarea id="delete-req-reason" rows="4" placeholder="Describa el motivo por el cual desea eliminar este documento..." required></textarea>
           </div>
           <div style="background:rgba(231,76,60,0.08);border:1px solid rgba(231,76,60,0.2);border-radius:8px;padding:10px 14px;font-size:11px;color:#922B21;margin-bottom:16px;">
-            <strong>AtenciÃƒÂ³n:</strong> Esta solicitud serÃƒÂ¡ revisada por un administrador. El documento serÃƒÂ¡ eliminado solo si el administrador aprueba la solicitud.
+            <strong>Atención:</strong> Esta solicitud será revisada por un administrador. El documento será eliminado solo si el administrador aprueba la solicitud.
           </div>
           <button type="submit" class="btn-submit-upload" style="background:linear-gradient(135deg,#922B21,#C0392B);box-shadow:0 4px 16px rgba(146,43,33,0.25);">Enviar Solicitud</button>
         </form>
+        <div class="func-req-section">
+          <h4>Mis solicitudes de eliminación</h4>
+          <div id="func-deletion-requests-list">
+            <p class="portal-muted">Cargando...</p>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -632,16 +650,16 @@
               <select id="scanner-reg-type" required><option value="">-- Seleccionar --</option></select>
             </div>
             <div class="form-field">
-              <label for="scanner-reg-category">CategorÃƒÂ­a *</label>
+              <label for="scanner-reg-category">Categoría *</label>
               <select id="scanner-reg-category" required><option value="">-- Seleccionar --</option></select>
             </div>
           </div>
           <div class="form-field">
-            <label for="scanner-reg-date">Fecha de EmisiÃƒÂ³n *</label>
+            <label for="scanner-reg-date">Fecha de Emisión *</label>
             <input type="date" id="scanner-reg-date" required>
           </div>
           <div class="form-field">
-            <label for="scanner-reg-desc">DescripciÃƒÂ³n (Opcional)</label>
+            <label for="scanner-reg-desc">Descripción (Opcional)</label>
             <textarea id="scanner-reg-desc" rows="2" placeholder="Ej: Documento escaneado..."></textarea>
           </div>
           <button type="submit" class="btn-submit-upload">Registrar Documento</button>
@@ -670,16 +688,16 @@
               <select id="email-reg-type" required><option value="">-- Seleccionar --</option></select>
             </div>
             <div class="form-field">
-              <label for="email-reg-category">CategorÃƒÂ­a *</label>
+              <label for="email-reg-category">Categoría *</label>
               <select id="email-reg-category" required><option value="">-- Seleccionar --</option></select>
             </div>
           </div>
           <div class="form-field">
-            <label for="email-reg-date">Fecha de EmisiÃƒÂ³n *</label>
+            <label for="email-reg-date">Fecha de Emisión *</label>
             <input type="date" id="email-reg-date" required>
           </div>
           <div class="form-field">
-            <label for="email-reg-desc">DescripciÃƒÂ³n (Opcional)</label>
+            <label for="email-reg-desc">Descripción (Opcional)</label>
             <textarea id="email-reg-desc" rows="2" placeholder="Ej: Adjunto de correo..."></textarea>
           </div>
           <button type="submit" class="btn-submit-upload">Registrar Adjunto</button>
@@ -692,31 +710,31 @@
   <div class="modal-backdrop" id="modal-change-password">
     <div class="modal-container modal-small">
       <div class="modal-header">
-        <h3>Cambiar ContraseÃƒÂ±a</h3>
+        <h3>Cambiar Contraseña</h3>
         <button class="btn-close" onclick="closeModal('modal-change-password')">&times;</button>
       </div>
       <div class="modal-body-scroll">
         <form id="form-change-password">
           <div class="form-field">
-            <label for="cp-current">ContraseÃƒÂ±a actual *</label>
+            <label for="cp-current">Contraseña actual *</label>
             <input type="password" id="cp-current" required>
           </div>
           <div class="form-field">
-            <label for="cp-new">Nueva contraseÃƒÂ±a *</label>
-            <input type="password" id="cp-new" required minlength="12" placeholder="MÃƒÂ­nimo 12 caracteres">
+            <label for="cp-new">Nueva contraseña *</label>
+            <input type="password" id="cp-new" required minlength="12" placeholder="Mínimo 12 caracteres">
           </div>
           <div class="form-field">
-            <label for="cp-confirm">Confirmar nueva contraseÃƒÂ±a *</label>
-            <input type="password" id="cp-confirm" required minlength="12" placeholder="Repita la contraseÃƒÂ±a">
+            <label for="cp-confirm">Confirmar nueva contraseña *</label>
+            <input type="password" id="cp-confirm" required minlength="12" placeholder="Repita la contraseña">
           </div>
           <div class="login-error" id="cp-error" style="display:none; margin-bottom:12px;"></div>
-          <button type="submit" class="btn-submit-upload">Actualizar ContraseÃƒÂ±a</button>
+          <button type="submit" class="btn-submit-upload">Actualizar Contraseña</button>
         </form>
       </div>
     </div>
   </div>
 
   <script src="utils.js?v=2"></script>
-  <script src="funcionario.js?v=4"></script>
+  <script src="funcionario.js?v=5"></script>
 </body>
 </html>

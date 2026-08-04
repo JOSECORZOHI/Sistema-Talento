@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { MongoClient, GridFSBucket } = require('mongodb');
 const bcrypt = require('bcryptjs');
 
@@ -34,6 +35,16 @@ const MONGO_OPTIONS = {
   retryWrites: true,
   retryReads: true
 };
+
+// Contraseña temporal de un solo uso: evita sembrar contraseñas conocidas (ej. "admin").
+function generateTempPassword() {
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lower = 'abcdefghjkmnpqrstuvwxyz';
+  const digits = '23456789';
+  const symbols = '!@#$%^&*_-+=?';
+  const pick = (set, n) => Array.from({ length: n }, () => set[crypto.randomInt(set.length)]).join('');
+  return pick(upper, 2) + pick(lower, 2) + pick(digits, 2) + pick(symbols, 2) + pick(upper + lower + digits + symbols, 8);
+}
 
 function buildUri(uri) {
   const hasParams = uri.includes('?');
@@ -135,7 +146,7 @@ async function connect() {
     initPromise = (async () => {
       uri = buildUri(uri);
 
-      // TLS: tlsAllowInvalidCertificates=true en MONGO_OPTIONS (scoped a MongoDB, no global)
+      // TLS: verificación de certificados activa por defecto (sin tlsAllowInvalidCertificates)
 
       const MAX_RETRIES = 4;
       let lastError;
@@ -171,10 +182,12 @@ async function connect() {
       bucket = new GridFSBucket(db, { bucketName: BUCKET_NAME });
 
       // Sembrar desde database.json local si las colecciones están vacías
+      // Crear índices ANTES del seed para que users.email (único) evite duplicados (race en arranque)
+      await ensureIndexes();
+
       const usersCount = await db.collection(COLLECTIONS.users).countDocuments();
       if (usersCount === 0) {
         const seed = readLocalSeed();
-        const hashAdmin = await bcrypt.hash('admin', 12);
         console.log('Poblando MongoDB desde database.json de referencia...');
 
         // Usuarios: garantiza al menos un admin aunque no exista database.json
@@ -185,15 +198,37 @@ async function connect() {
           department: 'Talento Humano',
           active: true
         }];
-        if (!seed) {
-          console.warn('[SEGU] No hay database.json: se crea el usuario admin por defecto (contraseña temporal "admin").');
-        }
+
+        // Sin contraseña definida => contraseña temporal aleatoria de un solo uso (nunca una conocida)
+        const tempPasswords = new Map();
         for (const u of seedUsers) {
-          if (!u.password) u.password = hashAdmin;
+          if (!u.password) {
+            const temp = generateTempPassword();
+            u.password = await bcrypt.hash(temp, 12);
+            tempPasswords.set(u.email, temp);
+          }
         }
+
         seedUsers = enforceSingleAdmin(seedUsers);
         if (seedUsers.length > 0) {
           await db.collection(COLLECTIONS.users).insertMany(seedUsers);
+        }
+
+        if (tempPasswords.size > 0) {
+          for (const [email, temp] of tempPasswords) {
+            console.warn(`[SEGU] Usuario sembrado sin contraseña definida (${email}). Contraseña temporal de un solo uso: ${temp} (cámbiela en el primer inicio).`);
+          }
+          try {
+            await db.collection(COLLECTIONS.securityLogs).insertOne({
+              id: 'sec_seed_' + Date.now() + '_' + crypto.randomBytes(4).toString('hex'),
+              timestamp: new Date().toISOString(),
+              event: 'SEED_INIT',
+              details: `Base de datos inicializada. Se generaron contraseñas temporales de un solo uso para ${tempPasswords.size} usuario(s) sin contraseña definida.`,
+              ip: 'local',
+              email: 'sistema',
+              severity: 'warning'
+            });
+          } catch (_) {}
         }
 
         // Empleados
@@ -228,21 +263,43 @@ async function connect() {
 
         console.log('Base de datos poblada exitosamente.');
       } else {
-        // Asegurar que el admin tenga contraseña
+        // No reasignar contraseñas en arranque (anti-backdoor). Solo se alerta en securityLogs.
         const adminUser = await db.collection(COLLECTIONS.users).findOne({ role: 'admin' });
         if (adminUser && !adminUser.password) {
-          await db.collection(COLLECTIONS.users).updateOne(
-            { _id: adminUser._id },
-            { $set: { password: await bcrypt.hash('admin', 12) } }
-          );
+          console.warn('[SEGU] El administrador no tiene contraseña definida. No se asignó ninguna por defecto por seguridad.');
+          try {
+            await db.collection(COLLECTIONS.securityLogs).insertOne({
+              id: 'sec_nopw_' + Date.now() + '_' + crypto.randomBytes(4).toString('hex'),
+              timestamp: new Date().toISOString(),
+              event: 'ADMIN_SIN_PASSWORD',
+              details: 'Se detectó un usuario admin sin contraseña. No se reasignó automáticamente. Configure una contraseña manualmente.',
+              ip: 'local',
+              email: adminUser.email || 'unknown',
+              severity: 'high'
+            });
+          } catch (_) {}
         }
       }
 
       // Migraciones retroactivas (con retry ante TLS inestable)
       await runMigrations();
 
-      // Crear índices para performance
-      await ensureIndexes();
+      // Integridad: verificar el número de administradores y registrar divergencias
+      const adminCount = await db.collection(COLLECTIONS.users).countDocuments({ role: 'admin' });
+      if (adminCount !== 1) {
+        console.warn(`[SEGU] Se encontraron ${adminCount} administrador(es). Solo se permite 1. Revise la colección 'users'.`);
+        try {
+          await db.collection(COLLECTIONS.securityLogs).insertOne({
+            id: 'sec_admins_' + Date.now() + '_' + crypto.randomBytes(4).toString('hex'),
+            timestamp: new Date().toISOString(),
+            event: 'ADMIN_COUNT_INVALIDO',
+            details: `Se detectaron ${adminCount} administradores en la colección users.`,
+            ip: 'local',
+            email: 'sistema',
+            severity: 'high'
+          });
+        } catch (_) {}
+      }
 
       return db;
     })().catch(error => {
