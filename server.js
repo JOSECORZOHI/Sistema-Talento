@@ -10,7 +10,7 @@ const hpp = require('hpp');
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
-const { execSync, spawn } = require('child_process');
+const { execSync, exec, spawn } = require('child_process');
 const os = require('os');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -1807,17 +1807,37 @@ function runPs(cmd) {
   } catch (e) { console.warn('Error ejecutando PowerShell:', e.message); return ''; }
 }
 
+// Versión asíncrona: no bloquea el event loop y admite timeouts largos (escaneo WIA).
+function runPsAsync(cmd, timeoutMs = 120000) {
+  return new Promise((resolve) => {
+    const full = `$ProgressPreference='SilentlyContinue';${cmd}`;
+    const encoded = Buffer.from(full, 'utf16le').toString('base64');
+    exec(`powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encoded}`,
+      { timeout: timeoutMs, encoding: 'utf8', windowsHide: true, maxBuffer: 64 * 1024 * 1024 },
+      (error, stdout) => {
+        const raw = (stdout || '').replace(/#< CLIXML[\s\S]*?<\/Objs>\s*/g, '').trim();
+        if (error && !raw) { console.warn('Error ejecutando PowerShell (async):', error.message); return resolve(''); }
+        resolve(raw);
+      });
+  });
+}
+
 function detectUsbScanners() {
   const raw = runPs(`
     $scanners = @()
 
-    # Método 1: WIA COM
+    # Método 1: WIA COM (WIA.DeviceManager; WIA.Devices ya no se registra en Windows moderno)
     try {
-      $devices = New-Object -ComObject WIA.Devices
-      foreach ($dev in $devices) {
-        $typeId = $dev.Type
-        if ($typeId -eq 1) {
-          $scanners += [PSCustomObject]@{ Name = $dev.Name; Status = 'Conectado'; Manufacturer = $dev.Manufacturer }
+      $deviceManager = New-Object -ComObject WIA.DeviceManager
+      foreach ($di in $deviceManager.DeviceInfos) {
+        if (($di.Type -band 1) -eq 1) {
+          $desc = ''
+          $mfr = ''
+          foreach ($p in $di.Properties) {
+            if ($p.PropertyID -eq 4) { $desc = [string]$p.Value }
+            if ($p.PropertyID -eq 3) { $mfr = [string]$p.Value }
+          }
+          $scanners += [PSCustomObject]@{ Name = $desc; Status = 'Conectado'; Manufacturer = $mfr }
         }
       }
     } catch {}
@@ -1915,7 +1935,7 @@ function detectPrintersWithScanners() {
   const raw = runPs(`
     $scanners = @()
     try {
-      $printers = Get-CimInstance Win32_Printer | Where-Object { $_.PrinterStatus -eq 3 }
+      $printers = Get-CimInstance Win32_Printer | Where-Object { -not $_.WorkOffline -and $_.PrinterStatus -notin @(6,7) }
       foreach ($p in $printers) {
         $name = $p.Name.ToLower()
         $driver = if ($p.DriverName) { $p.DriverName.ToLower() } else { '' }
@@ -1926,7 +1946,6 @@ function detectPrintersWithScanners() {
         if (-not $isExcluded) {
           $hasScan = $false
           if ($driver -match 'scan|twain|wia|fax|multi|all.in.one|mfp|print.scan') { $hasScan = $true }
-          if ($port -match '^usb') { $hasScan = $true }
           if ($name -match 'scan|multi|all.in.one|mfp|fax') { $hasScan = $true }
           if ($hasScan) { $scanners += $p }
         }
@@ -2051,35 +2070,45 @@ app.post('/api/scanner/refresh', authMiddleware, requireAnyPermission('scanner.m
 async function scanWithScanner(customName) {
   const escapedDir = SCANNER_DIR.replace(/\\/g, '\\\\');
   const timestamp = Date.now();
-  const tempFile = `_temp_${timestamp}.png`;
   const baseName = (customName || `Escaner_Folio_${timestamp.toString().slice(-4)}`)
     .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').substring(0, 200);
   const pdfBase = `${baseName}.pdf`;
-  const raw = runPs(`
+  const raw = await runPsAsync(`
     try {
       $deviceManager = New-Object -ComObject WIA.DeviceManager
       $deviceInfo = $deviceManager.DeviceInfos | Where-Object { $_.Type -eq 1 } | Select-Object -First 1
       if (-not $deviceInfo) { throw 'No scanner found' }
       $device = $deviceInfo.Connect()
-      $item = $device.Items[1]
-      if ($item.Properties.Item(6146)) { $item.Properties(6146).Value = 200 }
-      if ($item.Properties.Item(6147)) { $item.Properties(6147).Value = 200 }
+      $item = $device.Items(1)
+      # Fijar resolución horizontal/vertical a 200 dpi. Se itera la colección porque
+      # Properties(6147)/Properties.Item(6147) falla con "índice fuera del intervalo"
+      # en varios drivers WIA (trata el PID como índice posicional).
+      foreach ($prop in $item.Properties) {
+        if ($prop.PropertyID -eq 6147 -or $prop.PropertyID -eq 6148) { $prop.Value = 200 }
+      }
+      # El driver EPSON entrega BMP aunque se pida PNG; se convierte a JPG para el PDF.
+      $bmpPath = '${escapedDir}\\_temp_${timestamp}.bmp'
+      $jpgPath = '${escapedDir}\\_temp_${timestamp}.jpg'
       $image = $item.Transfer('{B96B3CAF-0728-11D3-9D7B-0000F81EF32E}')
-      $tempPath = '${escapedDir}\\${tempFile}'
-      $image.SaveFile($tempPath)
-      Write-Output 'OK'
+      $image.SaveFile($bmpPath)
+      Add-Type -AssemblyName System.Drawing
+      $img = [System.Drawing.Image]::FromFile($bmpPath)
+      try { $img.Save($jpgPath, [System.Drawing.Imaging.ImageFormat]::Jpeg) } finally { $img.Dispose() }
+      Remove-Item $bmpPath -ErrorAction SilentlyContinue
+      Write-Output $jpgPath
     } catch {
       Write-Output ('ERROR:' + $_.Exception.Message)
     }
-  `);
+  `, 120000);
   if (!raw || raw.startsWith('ERROR:')) {
     const msg = (raw ? raw.replace('ERROR:', '') : '').trim();
     if (msg === 'No scanner found') {
-      return 'ERROR:Ningún escáner WIA disponible. Las EPSON L3110/L3210 son impresoras multifunción sin driver WIA de escáner; use EPSON Scan y la bandeja de escáner.';
+      return 'ERROR:Ningún escáner WIA disponible. Verifique que la impresora esté encendida y conectada (USB o red).';
     }
     return raw;
   }
-  const tempPath = path.join(SCANNER_DIR, tempFile);
+  const jpgFileName = raw.trim().split(/[\\/]/).pop();
+  const tempPath = path.join(SCANNER_DIR, jpgFileName);
   if (!fs.existsSync(tempPath)) return 'ERROR:No se encontró la imagen escaneada temporal';
   try {
     const pdfBuffer = await new Promise((resolve, reject) => {
@@ -2105,8 +2134,7 @@ async function scanWithScanner(customName) {
 
 app.post('/api/scanner/scan', authMiddleware, requireAnyPermission('scanner.manage', 'scanner.scan'), async (req, res) => {
   try {
-    refreshScannerCache();
-    await new Promise(r => setTimeout(r, 1500));
+    if ((Date.now() - lastScanCheck) > SCANNER_CACHE_MS) refreshScannerCacheAsync();
     if (cachedScanners.length === 0) {
       return res.status(400).json({ error: 'No hay escáner conectado.' });
     }
