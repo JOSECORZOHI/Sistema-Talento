@@ -148,7 +148,7 @@ async function connect() {
 
       // TLS: verificación de certificados activa por defecto (sin tlsAllowInvalidCertificates)
 
-      const MAX_RETRIES = 4;
+      const MAX_RETRIES = 7;
       let lastError;
       for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
@@ -168,7 +168,7 @@ async function connect() {
           console.warn(`Intento ${attempt}/${MAX_RETRIES} de conexión a MongoDB falló: ${err.message}`);
           if (client) { try { await client.close(true); } catch (_) {} client = null; }
           if (attempt < MAX_RETRIES) {
-            const delay = 300 + Math.random() * 500;
+            const delay = 1000 + Math.random() * 1500;
             await new Promise(r => setTimeout(r, delay));
           }
         }

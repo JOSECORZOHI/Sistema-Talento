@@ -1844,7 +1844,7 @@ function detectUsbScanners() {
 
     # Método 2: PnP Image devices (detecta escáneres con driver TWAIN/WIA)
     try {
-      Get-PnpDevice -Status OK -Class Image | ForEach-Object {
+      Get-PnpDevice -Status OK -Class Image -ErrorAction SilentlyContinue | ForEach-Object {
         $exists = $false
         foreach ($s in $scanners) { if ($s.Name -eq $_.FriendlyName) { $exists = $true; break } }
         if (-not $exists) {
@@ -1855,7 +1855,7 @@ function detectUsbScanners() {
 
     # Método 3: PnP devices con error de driver (informar al usuario)
     try {
-      Get-PnpDevice | Where-Object { $_.FriendlyName -match 'scanner|scan|perfection|flatbed|image' -and $_.Status -eq 'Error' } | ForEach-Object {
+      Get-PnpDevice -ErrorAction SilentlyContinue | Where-Object { $_.FriendlyName -match 'scanner|scan|perfection|flatbed|image' -and $_.Status -eq 'Error' } | ForEach-Object {
         $scanners += [PSCustomObject]@{ Name = $_.FriendlyName; Status = 'Error (driver)'; Manufacturer = '' }
       }
     } catch {}
