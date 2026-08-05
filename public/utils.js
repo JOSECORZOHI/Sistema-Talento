@@ -17,8 +17,11 @@ function sanitize(str) {
 function escOnclick(str) {
   return String(str)
     .replace(/\\/g, '\\\\')
-    .replace(/'/g, '\\x27')
-    .replace(/"/g, '\\x22')
+    .replace(/['"\r\n\t\u2028\u2029]/g, (ch) => {
+      if (ch === "'") return '\\x27';
+      if (ch === '"') return '\\x22';
+      return '';
+    })
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');

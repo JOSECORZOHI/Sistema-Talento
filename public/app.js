@@ -274,6 +274,7 @@ async function loadAllData(retries = 5) {
       appState.unregisteredFiles = data.unregisteredFiles;
       appState.scannerFiles = data.scannerFiles;
       appState.emails = data.emails;
+      appState.stats = data.stats;
 
       populateDropdown('upload-type', appState.documentTypes);
       populateDropdown('upload-category', appState.categories);
@@ -329,6 +330,7 @@ async function fetchStats() {
   appState.unregisteredFiles = data.unregisteredFiles;
   appState.scannerFiles = data.scannerFiles;
   appState.emails = data.emails;
+  appState.stats = data.stats;
   renderStats(data.stats);
 }
 
@@ -408,7 +410,7 @@ function renderDashboardEmployees() {
     const isInactive = emp.active === false;
     const isAuto = emp.registeredBy === 'Auto-Registro';
     const initials = getInitials(emp.name);
-    const docCount = appState.documents.filter(d => d.employeeId === emp.id && d.status !== 'Archivado').length;
+    const docCount = appState.documents.filter(d => d.employeeId === emp.id).length;
 
     const div = document.createElement('div');
     div.style.cssText = `display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--border-color);cursor:pointer;${isInactive ? 'opacity:0.5;' : ''}`;
@@ -723,8 +725,8 @@ function renderEmployeeDirectory() {
     const isSuspended = emp.status === 'suspendida';
     const isBlocked = emp.status === 'bloqueada';
     
-    // Contar documentos de este empleado
-    const docCount = appState.documents.filter(d => d.employeeId === emp.id && d.status !== 'Archivado').length;
+    // Contar todos los documentos de este empleado (incluye archivados)
+    const docCount = appState.documents.filter(d => d.employeeId === emp.id).length;
 
     const isAutoRegistered = emp.registeredBy === 'Auto-Registro';
     const regDate = emp.registeredAt ? new Date(emp.registeredAt).toLocaleDateString('es-CO') : '';
@@ -827,7 +829,8 @@ function renderEmployeeDossier() {
     badgeInfo.appendChild(badge);
   }
 
-  // Obtener documentos activos del empleado (excluir eliminados físicos, mostrar archivados si está marcado o mostrar todos los no archivados por defecto)
+  // Documentos del empleado (incluye archivados; el conteo por categoría y
+  // el badge de la carpeta se mantienen consistentes con este criterio)
   const empDocs = appState.documents.filter(d => d.employeeId === employee.id);
 
   // Agrupar por conteo de categorías
@@ -1648,8 +1651,9 @@ function setupEventListeners() {
 function refreshActiveSectionViews() {
   const hash = window.location.hash;
   if (!hash || hash === '#dashboard') {
-    // Las estadísticas se actualizarán y recargarán los gráficos del dashboard
-    fetchStats();
+    // Re-render desde el estado en caché (sin llamada extra a /api/dashboard;
+    // fetchStats() se invoca explícitamente cuando se necesita refrescar).
+    if (appState.stats) renderStats(appState.stats);
   } else if (hash === '#consultas') {
     renderDocumentsTable();
   } else if (hash === '#registro') {

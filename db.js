@@ -47,19 +47,22 @@ function generateTempPassword() {
 }
 
 function buildUri(uri) {
-  const hasParams = uri.includes('?');
-  const baseParams = 'retryWrites=true&w=majority';
-  if (!hasParams) return uri + '?' + baseParams;
+  // retryWrites ya se configura en MONGO_OPTIONS; aquí solo se garantiza w=majority
+  // y se normaliza la query para evitar '?&' malformado.
+  const trimmed = uri.split('?')[0];
   const query = uri.split('?')[1] || '';
+  const baseParams = ['w=majority'];
   const params = new Set(query.split('&').filter(Boolean).map(p => p.split('=')[0]));
-  const missing = baseParams.split('&').filter(p => !params.has(p.split('=')[0]));
-  return missing.length ? uri + '&' + missing.join('&') : uri;
+  const missing = baseParams.filter(p => !params.has(p.split('=')[0]));
+  if (!missing.length) return trimmed + (query ? '?' + query : '');
+  return trimmed + '?' + (query ? query + '&' : '') + missing.join('&');
 }
 
 let client = null;
 let db = null;
 let initPromise = null;
 let bucket = null;
+let reconnectInProgress = false;
 
 // col() seguro que no falla si db es null momentáneamente durante reconexión
 function col(name) {
@@ -121,21 +124,70 @@ async function runMigrations() {
   }
 }
 
-async function ensureIndexes() {
+// Crea un índice; si ya existe uno con la misma key pero opciones distintas
+// (p.ej. TTL cambiado), lo elimina primero para que MongoDB no rechace la
+// creación por conflicto de nombre (IndexOptionsConflict).
+async function ensureIndex(coll, keys, opts) {
+  const collection = db.collection(coll);
+  let existing = null;
   try {
-    await db.collection(COLLECTIONS.loginAttempts).createIndex({ identifier: 1, timestamp: -1 });
-    await db.collection(COLLECTIONS.loginAttempts).createIndex({ timestamp: 1 }, { expireAfterSeconds: 900 });
-    await db.collection(COLLECTIONS.passwordResetTokens).createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
-    await db.collection(COLLECTIONS.activationTokens).createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
-    await db.collection(COLLECTIONS.documents).createIndex({ employeeId: 1 });
-    await db.collection(COLLECTIONS.documents).createIndex({ filename: 1 });
-    await db.collection(COLLECTIONS.documents).createIndex({ id: 1 }, { unique: true, name: 'uniq_doc_id' });
-    await db.collection(COLLECTIONS.users).createIndex({ email: 1 }, { unique: true });
-    await db.collection(COLLECTIONS.employees).createIndex({ id: 1 }, { unique: true, name: 'uniq_emp_id' });
-    await db.collection(COLLECTIONS.employees).createIndex({ email: 1 }, { unique: true, name: 'uniq_emp_email' });
-    await db.collection(COLLECTIONS.auditLogs).createIndex({ timestamp: -1 });
-    await db.collection(COLLECTIONS.emailsInbox).createIndex({ id: 1 }, { unique: true, sparse: true });
-  } catch (e) { console.warn('[MONGO] Error creando índices:', e.message); }
+    const wanted = JSON.stringify(keys);
+    const indexes = await collection.indexes();
+    for (const idx of indexes) {
+      if (idx.key && JSON.stringify(idx.key) === wanted) { existing = idx; break; }
+    }
+  } catch (e) { existing = null; }
+
+  if (existing && !existing.name.startsWith('_id_')) {
+    const requestedName = opts.name || Object.keys(keys).map(k => `${k}_${keys[k]}`).join('_');
+    const sameOptions = (existing.expireAfterSeconds || null) === (opts.expireAfterSeconds || null) &&
+      (!!existing.unique) === (!!opts.unique);
+    if (!sameOptions || (opts.name && existing.name !== opts.name)) {
+      await collection.dropIndex(existing.name);
+    }
+  }
+
+  return collection.createIndex(keys, opts);
+}
+
+async function ensureIndexes() {
+  const errors = [];
+  const attempts = [
+    [COLLECTIONS.loginAttempts, { identifier: 1, timestamp: -1 }, {}],
+    [COLLECTIONS.loginAttempts, { timestamp: 1 }, { expireAfterSeconds: 1800 }],
+    [COLLECTIONS.passwordResetTokens, { expiresAt: 1 }, { expireAfterSeconds: 0 }],
+    [COLLECTIONS.activationTokens, { expiresAt: 1 }, { expireAfterSeconds: 0 }],
+    [COLLECTIONS.documents, { employeeId: 1 }, {}],
+    [COLLECTIONS.documents, { filename: 1 }, {}],
+    [COLLECTIONS.documents, { id: 1 }, { unique: true, name: 'uniq_doc_id' }],
+    [COLLECTIONS.users, { email: 1 }, { unique: true }],
+    [COLLECTIONS.employees, { id: 1 }, { unique: true, name: 'uniq_emp_id' }],
+    [COLLECTIONS.employees, { email: 1 }, { unique: true, name: 'uniq_emp_email' }],
+    [COLLECTIONS.auditLogs, { timestamp: -1 }, {}],
+    [COLLECTIONS.emailsInbox, { id: 1 }, { unique: true, sparse: true }]
+  ];
+  for (const [coll, keys, opts] of attempts) {
+    try {
+      await ensureIndex(coll, keys, opts);
+    } catch (e) {
+      errors.push(`${coll}: ${e.message}`);
+    }
+  }
+  if (errors.length > 0) {
+    console.error('[MONGO] Fallaron índices: ' + errors.join(' | '));
+    try {
+      await db.collection(COLLECTIONS.securityLogs).insertOne({
+        id: 'sec_index_' + Date.now() + '_' + crypto.randomBytes(4).toString('hex'),
+        timestamp: new Date().toISOString(),
+        event: 'INDICES_FALLIDOS',
+        details: 'Fallo creando índices: ' + errors.join(' | '),
+        ip: 'local',
+        email: 'sistema',
+        severity: 'high'
+      });
+    } catch (_) {}
+  }
+  return errors.length === 0;
 }
 
 async function connect() {
@@ -154,36 +206,38 @@ async function connect() {
 
       const MAX_RETRIES = 7;
       let lastError;
+      let newClient = null;
       for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
-          if (client) { try { await client.close(true); } catch (_) {} client = null; }
-
-          client = new MongoClient(uri, MONGO_OPTIONS);
-
-          client.on('error', (err) => {
+          newClient = new MongoClient(uri, MONGO_OPTIONS);
+          newClient.on('error', (err) => {
             console.warn('[MONGO] Error en el pool de conexiones:', err.message);
           });
-
-          await client.connect();
-          await client.db('admin').command({ ping: 1 });
+          await newClient.connect();
+          await newClient.db('admin').command({ ping: 1 });
           break;
         } catch (err) {
           lastError = err;
           console.warn(`Intento ${attempt}/${MAX_RETRIES} de conexión a MongoDB falló: ${err.message}`);
-          if (client) { try { await client.close(true); } catch (_) {} client = null; }
+          if (newClient) { try { await newClient.close(true); } catch (_) {} newClient = null; }
           if (attempt < MAX_RETRIES) {
             const delay = 1000 + Math.random() * 1500;
             await new Promise(r => setTimeout(r, delay));
           }
         }
       }
-      if (!client) {
+      if (!newClient) {
         throw lastError;
       }
 
+      // Intercambio atómico al final: durante los reintentos no se toca `client` global,
+      // así `reconnect()` no pierde su cliente recién creado (race corregida).
       const dbName = process.env.DATABASE_NAME || 'talento_humano';
-      db = client.db(dbName);
+      db = newClient.db(dbName);
       bucket = new GridFSBucket(db, { bucketName: BUCKET_NAME });
+      const oldClient = client;
+      client = newClient;
+      if (oldClient) setTimeout(() => { try { oldClient.close(false); } catch (_) {} }, 10000);
 
       // Sembrar desde database.json local si las colecciones están vacías
       // Crear índices ANTES del seed para que users.email (único) evite duplicados (race en arranque)
@@ -203,31 +257,41 @@ async function connect() {
           active: true
         }];
 
-        // Sin contraseña definida => contraseña temporal aleatoria de un solo uso (nunca una conocida)
+        // Sin contraseña definida => contraseña temporal aleatoria (nunca una conocida).
+        // Se marca mustChangePassword para forzar el cambio en el primer inicio.
         const tempPasswords = new Map();
         for (const u of seedUsers) {
           if (!u.password) {
             const temp = generateTempPassword();
             u.password = await bcrypt.hash(temp, 12);
+            u.mustChangePassword = true;
             tempPasswords.set(u.email, temp);
           }
         }
 
         seedUsers = enforceSingleAdmin(seedUsers);
         if (seedUsers.length > 0) {
-          await db.collection(COLLECTIONS.users).insertMany(seedUsers);
+          try {
+            await db.collection(COLLECTIONS.users).insertMany(seedUsers);
+          } catch (e) {
+            console.error('[SEED] Fallo insertando usuarios:', e.message);
+          }
         }
 
         if (tempPasswords.size > 0) {
           for (const [email, temp] of tempPasswords) {
-            console.warn(`[SEGU] Usuario sembrado sin contraseña definida (${email}). Contraseña temporal de un solo uso: ${temp} (cámbiela en el primer inicio).`);
+            if (process.env.NODE_ENV === 'development') {
+              console.warn(`[SEGU] Usuario sembrado sin contraseña (${email}). Contraseña temporal: ${temp} (cámbiela en el primer inicio).`);
+            } else {
+              console.warn(`[SEGU] Usuario sembrado sin contraseña (${email}). Se generó una contraseña temporal que se debe cambiar en el primer inicio.`);
+            }
           }
           try {
             await db.collection(COLLECTIONS.securityLogs).insertOne({
               id: 'sec_seed_' + Date.now() + '_' + crypto.randomBytes(4).toString('hex'),
               timestamp: new Date().toISOString(),
               event: 'SEED_INIT',
-              details: `Base de datos inicializada. Se generaron contraseñas temporales de un solo uso para ${tempPasswords.size} usuario(s) sin contraseña definida.`,
+              details: `Base de datos inicializada. Se generaron contraseñas temporales para ${tempPasswords.size} usuario(s) sin contraseña definida (deben cambiarse en el primer inicio).`,
               ip: 'local',
               email: 'sistema',
               severity: 'warning'
@@ -235,35 +299,24 @@ async function connect() {
           } catch (_) {}
         }
 
-        // Empleados
-        if (seed && Array.isArray(seed.employees) && seed.employees.length > 0) {
-          await db.collection(COLLECTIONS.employees).insertMany(seed.employees);
-        }
-
-        // Tipos de documento
-        if (seed && Array.isArray(seed.documentTypes) && seed.documentTypes.length > 0) {
-          await db.collection(COLLECTIONS.documentTypes).insertMany(seed.documentTypes);
-        }
-
-        // Categorías
-        if (seed && Array.isArray(seed.categories) && seed.categories.length > 0) {
-          await db.collection(COLLECTIONS.categories).insertMany(seed.categories);
-        }
-
-        // Documentos
-        if (seed && Array.isArray(seed.documents) && seed.documents.length > 0) {
-          await db.collection(COLLECTIONS.documents).insertMany(seed.documents);
-        }
-
-        // Registros de auditoría
-        if (seed && Array.isArray(seed.auditLogs) && seed.auditLogs.length > 0) {
-          await db.collection(COLLECTIONS.auditLogs).insertMany(seed.auditLogs);
-        }
-
-        // Bandeja de correos
-        if (seed && Array.isArray(seed.emailsInbox) && seed.emailsInbox.length > 0) {
-          await db.collection(COLLECTIONS.emailsInbox).insertMany(seed.emailsInbox);
-        }
+        // Empleados y catálogos: cada colección se inserta de forma aislada para que
+        // un fallo (p. ej. E11000 por datos duplicados de database.json) no deje la BD
+        // parcialmente sembrada sin recuperación.
+        const seedCollection = async (name, data) => {
+          if (data && Array.isArray(data) && data.length > 0) {
+            try {
+              await db.collection(name).insertMany(data);
+            } catch (e) {
+              console.error(`[SEED] Fallo insertando '${name}':`, e.message);
+            }
+          }
+        };
+        await seedCollection(COLLECTIONS.employees, seed && seed.employees);
+        await seedCollection(COLLECTIONS.documentTypes, seed && seed.documentTypes);
+        await seedCollection(COLLECTIONS.categories, seed && seed.categories);
+        await seedCollection(COLLECTIONS.documents, seed && seed.documents);
+        await seedCollection(COLLECTIONS.auditLogs, seed && seed.auditLogs);
+        await seedCollection(COLLECTIONS.emailsInbox, seed && seed.emailsInbox);
 
         console.log('Base de datos poblada exitosamente.');
       } else {
@@ -315,12 +368,15 @@ async function connect() {
   return initPromise;
 }
 
-// Verificar salud de la conexión
+// Verificar salud de la conexión (ping acotado a 4 s para no superponer sondeos)
 async function isHealthy() {
   try {
     if (!client || !db) return false;
-    await client.db('admin').command({ ping: 1 });
-    return true;
+    const pong = await Promise.race([
+      client.db('admin').command({ ping: 1 }).then(() => true, () => false),
+      new Promise(resolve => setTimeout(() => resolve(false), 4000))
+    ]);
+    return pong === true;
   } catch (e) {
     return false;
   }
@@ -335,19 +391,21 @@ function getBucket() {
 function storeFileBuffer(filename, buffer, metadata = {}) {
   return new Promise((resolve, reject) => {
     const us = getBucket().openUploadStream(filename, { metadata });
-    us.end(buffer);
+    const onErr = (err) => { try { us.destroy(); } catch (_) {} reject(err); };
     us.on('finish', () => resolve(us.id));
-    us.on('error', reject);
+    us.on('error', onErr);
+    us.end(buffer);
   });
 }
 
 function storeFileStream(filename, stream, metadata = {}) {
   return new Promise((resolve, reject) => {
     const us = getBucket().openUploadStream(filename, { metadata });
-    stream.pipe(us);
+    const onErr = (err) => { try { us.destroy(); stream.destroy(); } catch (_) {} reject(err); };
     us.on('finish', () => resolve(us.id));
-    us.on('error', reject);
-    stream.on('error', reject);
+    us.on('error', onErr);
+    stream.on('error', onErr);
+    stream.pipe(us);
   });
 }
 
@@ -376,11 +434,14 @@ async function listFilesBySource(source, registered = false) {
 
 async function markFileRegistered(filename) {
   const bucket = getBucket();
-  const cursor = bucket.find({ filename }).limit(1);
-  const file = await cursor.next();
-  if (!file) throw new Error(`Archivo '${filename}' no encontrado en GridFS`);
   const collection = db.collection(`${BUCKET_NAME}.files`);
-  await collection.updateOne({ _id: file._id }, { $set: { 'metadata.registered': true } });
+  // Marca TODOS los archivos con ese nombre (no solo el primero), ordenados por más reciente,
+  // para que un escaneo duplicado quede registrado y no vuelva a aparecer como pendiente.
+  const res = await collection.updateMany(
+    { filename, 'metadata.registered': { $ne: true } },
+    { $set: { 'metadata.registered': true } }
+  );
+  if (res.matchedCount === 0) throw new Error(`Archivo '${filename}' no encontrado en GridFS`);
 }
 
 async function closeDb() {
@@ -404,12 +465,15 @@ module.exports = {
   listFilesBySource,
   markFileRegistered,
   reconnect: async function() {
+    if (reconnectInProgress) return false;
+    reconnectInProgress = true;
+    let newClient = null;
     try {
       const uri = process.env.DATABASE_URL;
       if (!uri) return false;
       const fullUri = buildUri(uri);
 
-      const newClient = new MongoClient(fullUri, MONGO_OPTIONS);
+      newClient = new MongoClient(fullUri, MONGO_OPTIONS);
       newClient.on('error', err => console.warn('[MONGO] Error de pool en reconexión:', err.message || err));
 
       await newClient.connect();
@@ -419,21 +483,26 @@ module.exports = {
       const oldClient = client;
       client = newClient;
       db = newDb;
-      bucket = new GridFSBucket(db, { bucketName: 'documentos' });
+      bucket = new GridFSBucket(db, { bucketName: BUCKET_NAME });
       initPromise = null;
 
       await runMigrations().catch(() => {});
       await ensureIndexes().catch(() => {});
 
       if (oldClient) {
-        setTimeout(() => { try { oldClient.close(true); } catch(_){} }, 10000);
+        // Cierre graceful (sin force) para no abortar operaciones en vuelo
+        setTimeout(() => { try { oldClient.close(false); } catch(_){} }, 10000);
       }
 
       console.log('[MONGO] Reconexión exitosa (nuevo cliente creado).');
       return true;
     } catch(e) {
+      // No dejar sockets abiertos del cliente que falló
+      if (newClient) { try { await newClient.close(true); } catch(_){} }
       console.warn('[MONGO] Reconexión falló:', e.message);
       return false;
+    } finally {
+      reconnectInProgress = false;
     }
   }
 };

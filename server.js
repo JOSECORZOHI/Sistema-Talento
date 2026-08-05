@@ -10,7 +10,7 @@ const hpp = require('hpp');
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
-const { execSync, exec, spawn } = require('child_process');
+const { exec, spawn } = require('child_process');
 const os = require('os');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -123,9 +123,9 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: ["'self'", "'unsafe-inline'"],
-      styleSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       imgSrc: ["'self'", "data:", "blob:"],
-      fontSrc: ["'self'", "data:"],
+      fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
       connectSrc: ["'self'"],
       objectSrc: ["'none'"],
       frameAncestors: ["'none'"],
@@ -178,6 +178,14 @@ const scannerLimiter = rateLimit({
   message: { error: 'Demasiadas solicitudes de refresco de escáner. Intente de nuevo en 15 minutos.' }
 });
 
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Límite de subidas alcanzado. Intente de nuevo en una hora.' }
+});
+
 app.use('/api/', globalLimiter);
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/forgot-password', authLimiter);
@@ -226,6 +234,15 @@ function getMimeType(filename) {
 
 const INLINE_MIMES = new Set(['application/pdf','image/jpeg','image/png','image/gif','image/bmp','image/tiff']);
 function isInlineMime(mimeType) { return INLINE_MIMES.has(mimeType); }
+
+// Content-Disposition conforme a RFC 5987: filename ASCII seguro + filename* UTF-8
+// para caracteres especiales/acentuados.
+function buildContentDisposition(mimeType, filename) {
+  const mode = isInlineMime(mimeType) ? 'inline' : 'attachment';
+  const asciiName = (filename || '').replace(/[^\x20-\x7E]/g, '_').replace(/["\\]/g, '_');
+  const utf8Encoded = encodeURIComponent((filename || '').replace(/["\\]/g, '_'));
+  return `${mode}; filename="${asciiName}"; filename*=UTF-8''${utf8Encoded}`;
+}
 
 function isAllowedFile(filename) {
   const ext = path.extname(filename).toLowerCase();
@@ -355,8 +372,17 @@ function signToken(payload) {
 
 // --- AUTENTICACIÓN COMPARTIDA ---
 async function authenticateUser(user, collectionName, role, username, password, ip, res) {
+  // Iguala el tiempo de respuesta en todos los caminos de fallo (anti timing side-channel):
+  // siempre se ejecuta un bcrypt.compare (real o contra un hash ficticio).
+  const equalizeTiming = async () => {
+    const dummyHash = '$2b$12$C6UzMDM.H6dfI/f/IKcEeO7f5D5bJ9K6nXJ6kQxHjV7uWlPmQxI4y';
+    if (user.password) { try { await bcrypt.compare(password, user.password); } catch (_) {} }
+    else { try { await bcrypt.compare(password, dummyHash); } catch (_) {} }
+  };
+
   if (user.status === 'bloqueada' && user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
     // Respuesta unificada (anti-enumeración): idéntica a credenciales erróneas.
+    await equalizeTiming();
     return res.status(401).json({ error: 'Credenciales incorrectas.' });
   }
   if (user.status === 'bloqueada' && (!user.lockedUntil || new Date(user.lockedUntil) <= new Date())) {
@@ -366,10 +392,8 @@ async function authenticateUser(user, collectionName, role, username, password, 
   // Mensajes unificados: no revelar el estado de la cuenta (anti-enumeración).
   // Un usuario pendiente/suspendido/inactivo ve la misma respuesta que una credencial errónea.
   if (user.status === 'pendiente' || user.status === 'suspendida' || user.status === 'inactiva'
-    || (role === 'funcionario' && user.active === false)) {
-    return res.status(401).json({ error: 'Credenciales incorrectas.' });
-  }
-  if (user.status === 'bloqueada') {
+    || (role === 'funcionario' && user.active === false) || user.status === 'bloqueada') {
+    await equalizeTiming();
     return res.status(401).json({ error: 'Credenciales incorrectas.' });
   }
   if (user.password) {
@@ -383,6 +407,7 @@ async function authenticateUser(user, collectionName, role, username, password, 
       await addAuditLog('Inicio de Sesión', `El ${role === 'admin' ? 'usuario' : 'funcionario'} ${user.name} inició sesión en el sistema.`, user.name, ip);
       const responseUser = { email: user.email, name: user.name, role, department: user.department };
       if (role === 'funcionario') responseUser.employeeId = user.id;
+      if (user.mustChangePassword) responseUser.mustChangePassword = true;
       return res.json({ token, user: responseUser });
     }
     const result = await recordLoginAttempt(username, false, ip);
@@ -413,7 +438,7 @@ async function handleChangePasswordForRole(user, currentPassword, newPassword, r
   }
   const newHash = await bcrypt.hash(newPassword, 12);
   const newVersion = (doc.jwtVersion || 0) + 1;
-  await col(collectionName).updateOne({ _id: doc._id }, { $set: { password: newHash, jwtVersion: newVersion } });
+  await col(collectionName).updateOne({ _id: doc._id }, { $set: { password: newHash, jwtVersion: newVersion, mustChangePassword: false } });
   await addToPasswordHistory(doc.email, newHash, role);
   await addAuditLog('Cambio de Contraseña', `El ${role === 'admin' ? 'administrador' : 'funcionario'} ${doc.name} cambió su contraseña.`, doc.name, ip);
   return res.json({ message: 'Contraseña actualizada. Debe iniciar sesión nuevamente.', forceReauth: true });
@@ -528,7 +553,7 @@ function parseEmailFromHeader(fromHeader) {
 async function addAuditLog(action, details, userEmail, ip) {
   try {
     const newLog = {
-      id: 'log_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+      id: generateId('log'),
       timestamp: new Date().toISOString(),
       user: userEmail || 'Sistema',
       action,
@@ -558,7 +583,7 @@ async function validateDocumentReferences(documentTypeId, categoryId) {
 function getUniqueFilename(originalFilename) {
   const ext = path.extname(originalFilename);
   const base = path.basename(originalFilename, ext);
-  return `${base}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}${ext}`;
+  return `${base}_${Date.now()}_${crypto.randomBytes(5).toString('hex')}${ext}`;
 }
 
 // --- HELPERS COMPARTIDOS (anti-duplicación) ---
@@ -580,6 +605,32 @@ function requireFields(body, fields) {
 function validateDocStatus(status) {
   if (status !== undefined && !VALID_DOC_STATUSES.includes(status)) {
     return `Estado no válido. Valores permitidos: ${VALID_DOC_STATUSES.join(', ')}.`;
+  }
+  return null;
+}
+
+// Valida fechas de emisión/vencimiento en formato YYYY-MM-DD (o ISO) y que
+// expiryDate no sea anterior a issueDate. Devuelve null si todo es correcto.
+function validateDocDates(issueDate, expiryDate) {
+  const parseDate = (value) => {
+    if (value === undefined || value === null || String(value).trim() === '') return { ok: true, value: null };
+    const date = new Date(value);
+    if (isNaN(date.getTime())) return { ok: false };
+    return { ok: true, value: date };
+  };
+  const issue = parseDate(issueDate);
+  if (!issue.ok) return 'La fecha de emisión no es válida.';
+  const expiry = parseDate(expiryDate);
+  if (!expiry.ok) return 'La fecha de vencimiento no es válida.';
+  if (issue.value && expiry.value && expiry.value < issue.value) {
+    return 'La fecha de vencimiento no puede ser anterior a la fecha de emisión.';
+  }
+  return null;
+}
+
+function validateDescription(description) {
+  if (description !== undefined && description !== null && String(description).length > 2000) {
+    return 'La descripción no puede superar los 2000 caracteres.';
   }
   return null;
 }
@@ -665,12 +716,16 @@ async function getScannerFiles() {
   }
 }
 
+function generateId(prefix) {
+  return `${prefix}_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
+}
+
 function createDoc({ filename, originalName, employeeId, employeeName, documentTypeId, categoryId, description, issueDate, expiryDate, status, fileSize, uploadedBy, uploadedByEmployee, visibleToEmployee, sourceEmailId, sourceSenderEmail }) {
   if (status !== undefined && !VALID_DOC_STATUSES.includes(status)) {
     throw new Error(`Estado no válido para el documento: ${status}`);
   }
   return {
-    id: 'doc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+    id: generateId('doc'),
     filename, originalName: originalName || filename,
     employeeId, employeeName, documentTypeId, categoryId,
     description: description || '', issueDate, expiryDate: expiryDate || '',
@@ -684,6 +739,10 @@ function createDoc({ filename, originalName, employeeId, employeeName, documentT
 
 // Helper compartido para registro de documentos (local, escáner, correo)
 async function registerDocumentCore({ req, filename, employeeId, documentTypeId, categoryId, description, issueDate, expiryDate, status, sourceDir, mover, auditAction, auditMessageTemplate, extraDocFields, fileBuffer, gridFSSource, actor }) {
+  const datesError = validateDocDates(issueDate, expiryDate);
+  if (datesError) return { error: datesError, status: 400 };
+  const descError = validateDescription(description);
+  if (descError) return { error: descError, status: 400 };
   const employee = await col('employees').findOne({ id: employeeId });
   if (!employee) return { error: 'El funcionario seleccionado no existe.', status: 404 };
   const references = await validateDocumentReferences(documentTypeId, categoryId);
@@ -723,11 +782,14 @@ async function registerDocumentCore({ req, filename, employeeId, documentTypeId,
         deferredOriginalDelete = { type: 'gridfs', name: filename };
       } else {
         let buf;
+        try {
+          const stat = fs.statSync(sourcePath);
+          if (stat.size > MAX_REGISTER_BYTES) {
+            return { error: `El archivo '${filename}' supera el tamaño máximo permitido (${Math.round(MAX_REGISTER_BYTES / 1024 / 1024)} MB).`, status: 400 };
+          }
+        } catch (e) { return { error: `El archivo '${filename}' ya no está disponible en la bandeja.`, status: 404 }; }
         try { buf = fs.readFileSync(sourcePath); }
         catch (e) { return { error: `El archivo '${filename}' ya no está disponible en la bandeja.`, status: 404 }; }
-        if (buf.length > MAX_REGISTER_BYTES) {
-          return { error: `El archivo '${filename}' supera el tamaño máximo permitido (${Math.round(MAX_REGISTER_BYTES / 1024 / 1024)} MB).`, status: 400 };
-        }
         targetFilename = getUniqueFilename(filename);
         await storeFileBuffer(targetFilename, buf, { source: gridFSSource || sourceDir || 'upload', registered: true });
         stored = true;
@@ -743,6 +805,12 @@ async function registerDocumentCore({ req, filename, employeeId, documentTypeId,
       } else {
         const filePath = getSafeFilePath(sourceDir || DOCUMENTS_DIR, filename);
         if (filePath && fs.existsSync(filePath)) {
+          let fileSizeCheck = 0;
+          try { fileSizeCheck = fs.statSync(filePath).size; }
+          catch (e) { return { error: `El archivo '${filename}' ya no está disponible.`, status: 404 }; }
+          if (fileSizeCheck > MAX_REGISTER_BYTES) {
+            return { error: `El archivo '${filename}' supera el tamaño máximo permitido (${Math.round(MAX_REGISTER_BYTES / 1024 / 1024)} MB).`, status: 400 };
+          }
           targetFilename = filename;
           let buf;
           try { buf = fs.readFileSync(filePath); }
@@ -822,16 +890,27 @@ async function registerEmailAttachmentCore({ req, email, emailId, filename, empl
 // Eliminación compartida de un documento y su archivo físico (GridFS y/o disco).
 // El registro siempre se elimina; el archivo físico solo se borra si ningún otro
 // documento lo comparte, para no dejar documentos huérfanos.
+// Se serializa por filename (withRegisterLock) para evitar la race read-then-write
+// entre el conteo de copias y el borrado físico.
 async function deleteDocAndPhysicalFile(id, filename) {
-  const sharingDocs = await col('documents').countDocuments({ filename, id: { $ne: id } });
-  await col('documents').deleteOne({ id });
-  if (sharingDocs === 0) {
-    await deleteFileByName(filename);
-    const filePath = getSafeFilePath(DOCUMENTS_DIR, filename);
-    if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
-  } else {
-    console.warn(`[DEL] El archivo '${filename}' lo comparten ${sharingDocs} documento(s); no se elimina físicamente.`);
-  }
+  await withRegisterLock(filename, async () => {
+    const sharingDocs = await col('documents').countDocuments({ filename, id: { $ne: id } });
+    await col('documents').deleteOne({ id });
+    if (sharingDocs === 0) {
+      // Además de documentos, verificar que el archivo no lo referencie un adjunto de correo
+      const emailRefs = await col('emailsInbox').countDocuments({ 'attachments.filename': filename });
+      const fileRefs = await col('documents').countDocuments({ filename });
+      if (emailRefs > 0 || fileRefs > 0) {
+        console.warn(`[DEL] El archivo '${filename}' sigue referenciado (emails: ${emailRefs}, docs: ${fileRefs}); no se elimina físicamente.`);
+        return;
+      }
+      await deleteFileByName(filename);
+      const filePath = getSafeFilePath(DOCUMENTS_DIR, filename);
+      if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    } else {
+      console.warn(`[DEL] El archivo '${filename}' lo comparten ${sharingDocs} documento(s); no se elimina físicamente.`);
+    }
+  });
 }
 
 function createGmailAuthClient() {
@@ -853,7 +932,9 @@ function getGmailClient(refreshToken) {
   }
   const auth = createGmailAuthClient();
   auth.setCredentials({ refresh_token: token });
-  return getGoogleApis().gmail({ version: 'v1', auth });
+  // timeout acota cada llamada a la API de Google (evita que una llamada colgada
+  // deje la sincronización atascada para siempre).
+  return getGoogleApis().gmail({ version: 'v1', auth, timeout: 60000 });
 }
 
 function getHeader(headers, name) {
@@ -1005,10 +1086,11 @@ app.post('/api/auth/activate/:token', async (req, res) => {
   if (!passwordCheck.valid) return res.status(400).json({ error: passwordCheck.error });
 
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
-  const activationToken = await col('activationTokens').findOne({ tokenHash });
+  // Consumo atómico del token (findOneAndDelete): garantiza single-use aunque dos
+  // peticiones concurrentes envíen el mismo token.
+  const activationToken = await col('activationTokens').findOneAndDelete({ tokenHash });
   if (!activationToken) return res.status(400).json({ error: 'Token de activación inválido o ya utilizado.' });
   if (new Date(activationToken.expiresAt) < new Date()) {
-    await col('activationTokens').deleteOne({ _id: activationToken._id });
     return res.status(400).json({ error: 'El token de activación ha expirado. Solicite uno nuevo al administrador.' });
   }
 
@@ -1020,23 +1102,21 @@ app.post('/api/auth/activate/:token', async (req, res) => {
   const target = await col(targetCollection).findOne({ email: activationToken.email });
   if (!target) return res.status(404).json({ error: 'Cuenta no encontrada.' });
   if (target.status === 'suspendida' || target.status === 'bloqueada' || target.status === 'inactiva' || target.status === 'activa') {
-    await col('activationTokens').deleteOne({ _id: activationToken._id });
     return res.status(403).json({ error: 'Esta cuenta no está pendiente de activación.' });
   }
 
   if (activationToken.role === 'admin') {
     await col('users').updateOne(
       { email: activationToken.email },
-      { $set: { status: 'activa', password: hashedPassword } }
+      { $set: { status: 'activa', password: hashedPassword, mustChangePassword: false } }
     );
   } else {
     await col('employees').updateOne(
       { email: activationToken.email },
-      { $set: { status: 'activa', active: true, password: hashedPassword } }
+      { $set: { status: 'activa', active: true, password: hashedPassword, mustChangePassword: false } }
     );
   }
 
-  await col('activationTokens').deleteOne({ _id: activationToken._id });
   await addAuditLog('Activación de Cuenta', `El usuario ${activationToken.name} (${activationToken.email}) activó su cuenta exitosamente.`, activationToken.email, ip);
 
   res.json({ message: 'Cuenta activada exitosamente. Ahora puede iniciar sesión.' });
@@ -1116,7 +1196,9 @@ app.post('/api/auth/reset-password/:token', async (req, res) => {
   if (!passwordCheck.valid) return res.status(400).json({ error: passwordCheck.error });
 
   const tokenHash = crypto.createHash('sha256').update(req.params.token).digest('hex');
-  const resetToken = await col('passwordResetTokens').findOne({ tokenHash, used: false });
+  // Consumo atómico del token (findOneAndDelete): single-use garantizado aunque haya
+  // peticiones concurrentes con el mismo token.
+  const resetToken = await col('passwordResetTokens').findOneAndDelete({ tokenHash, used: false });
   if (!resetToken) return res.status(400).json({ error: 'Token inválido o ya utilizado.' });
   if (new Date(resetToken.expiresAt) < new Date()) return res.status(400).json({ error: 'El token ha expirado.' });
 
@@ -1128,24 +1210,21 @@ app.post('/api/auth/reset-password/:token', async (req, res) => {
   const currentUser = await col(getCollectionForRole(resetToken.role)).findOne({ email: resetToken.email });
   const currentStatus = currentUser?.status;
   if (currentStatus === 'suspendida' || currentStatus === 'inactiva' || (resetToken.role === 'funcionario' && !currentUser?.password)) {
-    await col('passwordResetTokens').updateOne({ _id: resetToken._id }, { $set: { used: true } });
     return res.status(403).json({ error: 'Su cuenta no puede restablecer la contraseña. Contacte al administrador.' });
   }
 
   // Evitar reutilizar una contraseña reciente al restablecer.
   if (await checkPasswordHistory(resetToken.email, password, resetToken.role)) {
-    await col('passwordResetTokens').updateOne({ _id: resetToken._id }, { $set: { used: true } });
     return res.status(400).json({ error: 'La nueva contraseña ya fue usada recientemente. Elija otra.' });
   }
 
   if (resetToken.role === 'admin') {
-    await col('users').updateOne({ email: resetToken.email }, { $set: { password: hashedPassword, lockedUntil: null, failedAttempts: 0 }, ...newVersion });
+    await col('users').updateOne({ email: resetToken.email }, { $set: { password: hashedPassword, mustChangePassword: false, lockedUntil: null, failedAttempts: 0 }, ...newVersion });
     await addToPasswordHistory(resetToken.email, hashedPassword, 'admin');
   } else {
-    await col('employees').updateOne({ email: resetToken.email }, { $set: { password: hashedPassword, lockedUntil: null, failedAttempts: 0 }, ...newVersion });
+    await col('employees').updateOne({ email: resetToken.email }, { $set: { password: hashedPassword, mustChangePassword: false, lockedUntil: null, failedAttempts: 0 }, ...newVersion });
     await addToPasswordHistory(resetToken.email, hashedPassword, 'funcionario');
   }
-  await col('passwordResetTokens').updateOne({ _id: resetToken._id }, { $set: { used: true } });
   await col('loginAttempts').deleteMany({ identifier: resetToken.email });
   await addAuditLog('Restablecimiento de Contraseña', `El usuario ${resetToken.email} restableció su contraseña exitosamente.`, resetToken.email, ip);
   await addSecurityLog('Contraseña Restablecida', `Contraseña restablecida para ${resetToken.email}. Todas las sesiones anteriores fueron invalidadas.`, ip, resetToken.email);
@@ -1187,7 +1266,7 @@ app.get('/api/funcionario/init', authMiddleware, async (req, res) => {
 
 
 
-app.post('/api/funcionario/subir-documento', authMiddleware, upload.single('file'), async (req, res) => {
+app.post('/api/funcionario/subir-documento', authMiddleware, upload.single('file'), uploadLimiter, async (req, res) => {
   if (req.user.role !== 'funcionario') return res.status(403).json({ error: 'Acceso denegado.' });
   if (!req.file) return res.status(400).json({ error: 'No se proporcionó ningún archivo o el formato no es válido.' });
 
@@ -1293,7 +1372,7 @@ app.post('/api/employees', authMiddleware, requirePermission('employees.create')
   if (!department || !email) {
     return res.status(400).json({ error: 'La dependencia y el correo electrónico son obligatorios.' });
   }
-  if (!id) id = email.split('@')[0].replace(/[^a-zA-Z0-9]/g, '') + Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+  if (!id) id = email.split('@')[0].replace(/[^a-zA-Z0-9]/g, '') + crypto.randomInt(0, 1000).toString().padStart(3, '0');
   if (!name) name = id.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[._-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase()).trim();
   if (!position) position = 'Sin asignar';
   if (!isAllowedInstitutionalEmail(email)) {
@@ -1304,6 +1383,9 @@ app.post('/api/employees', authMiddleware, requirePermission('employees.create')
   }
   if (await col('employees').findOne({ email: normalizeEmail(email) })) {
     return res.status(400).json({ error: 'Ya existe un empleado con este correo electrónico.' });
+  }
+  if (await col('users').findOne({ email: normalizeEmail(email) })) {
+    return res.status(400).json({ error: 'El correo electrónico ya pertenece a una cuenta de administrador.' });
   }
 
   const newEmployee = {
@@ -1316,7 +1398,15 @@ app.post('/api/employees', authMiddleware, requirePermission('employees.create')
     failedAttempts: 0,
     lockedUntil: null
   };
-  await col('employees').insertOne(newEmployee);
+  try {
+    await col('employees').insertOne(newEmployee);
+  } catch (insertErr) {
+    // Carrera con otro request: los índices únicos protegen; responder 400 en vez de 500
+    if (insertErr.code === 11000) {
+      return res.status(400).json({ error: 'Ya existe un empleado con esta identificación o correo electrónico.' });
+    }
+    throw insertErr;
+  }
 
   const activation = generateSecureToken(24);
   await col('activationTokens').insertOne({
@@ -1382,9 +1472,15 @@ app.patch('/api/employees/:id/toggle-active', authMiddleware, requirePermission(
 
     const newActive = !employee.active;
     const wasPending = employee.status === 'pendiente' || (!employee.password && !newActive);
-    const newStatus = wasPending ? 'pendiente' : (newActive ? 'activa' : 'inactiva');
+    // Al desactivar: si quedaba pendiente, se fuerza 'inactiva' y se invalidan sus tokens de
+    // activación/reset para que no pueda reactivarse solo con el enlace que ya recibió.
+    const newStatus = wasPending && !newActive ? 'inactiva' : (wasPending ? 'pendiente' : (newActive ? 'activa' : 'inactiva'));
     await col('employees').updateOne({ id }, { $set: { active: newActive, status: newStatus } });
     await col('employees').updateOne({ id }, { $inc: { jwtVersion: 1 } });
+    if (!newActive) {
+      await col('activationTokens').deleteMany({ email: employee.email });
+      await col('passwordResetTokens').deleteMany({ email: employee.email });
+    }
 
     const statusText = wasPending ? 'pendiente de activación' : (newActive ? 'activado' : 'desactivado');
     const statusEmoji = newActive ? '✓' : '✕';
@@ -1414,7 +1510,8 @@ app.patch('/api/users/:email/status', authMiddleware, requirePermission('employe
     const isSelf = targetUser && req.user.email && req.user.email === normalizedEmail;
     if (isSelf) return res.status(403).json({ error: 'No puede suspenderse a sí mismo.' });
     if (targetUser && targetUser.role === 'admin') {
-      const activeAdmins = await col('users').countDocuments({ role: 'admin', status: { $ne: 'suspendida' }, active: true });
+      // Solo cuentan administradores realmente activos (status 'activa')
+      const activeAdmins = await col('users').countDocuments({ role: 'admin', status: 'activa', active: true });
       if (activeAdmins <= 1) {
         return res.status(403).json({ error: 'No puede desactivar al último administrador activo.' });
       }
@@ -1445,13 +1542,14 @@ app.get('/api/config', authMiddleware, requirePermission('config.manage'), async
 // --- DASHBOARD CONSOLIDADO (1 sola llamada) ---
 app.get('/api/dashboard', authMiddleware, requirePermission('employees.read'), async (req, res) => {
   try {
-    // Consultas secuenciales para evitar limpieza del pool TLS bajo carga paralela
+    // Consultas secuenciales para evitar limpieza del pool TLS bajo carga paralela.
+    // Con límites para no cargar colecciones completas en memoria (paginación liviana).
     const documentTypes = await col('documentTypes').find().toArray();
     const categories = await col('categories').find().toArray();
     const employees = await col('employees').find({}, { projection: { password: 0, passwordHistory: 0 } }).toArray();
-    const documents = await col('documents').find().toArray();
-    const auditLogs = await col('auditLogs').find().sort({ timestamp: -1 }).toArray();
-    const deletionRequests = await col('deletionRequests').find().sort({ createdAt: -1 }).toArray();
+    const documents = await col('documents').find().sort({ registeredAt: -1 }).limit(1000).toArray();
+    const auditLogs = await col('auditLogs').find().sort({ timestamp: -1 }).limit(500).toArray();
+    const deletionRequests = await col('deletionRequests').find().sort({ createdAt: -1 }).limit(200).toArray();
     const typeDistribution = await col('documents').aggregate([
       { $group: { _id: '$documentTypeId', count: { $sum: 1 } } },
       { $sort: { count: -1 } }
@@ -1469,7 +1567,9 @@ app.get('/api/dashboard', authMiddleware, requirePermission('employees.read'), a
     const c = facet[0] || {};
     let unregisteredFiles = [];
     try {
-      unregisteredFiles = await getUnregisteredFiles(documents);
+      // Se consulta la lista completa de filenames registrados (distinct) para que el
+      // límite de `documents` no haga aparecer archivos antiguos como "no registrados".
+      unregisteredFiles = await getUnregisteredFiles();
     } catch (e) { console.warn('Error obteniendo archivos no registrados:', e.message); }
 
     let scannerFiles = [];
@@ -1479,7 +1579,7 @@ app.get('/api/dashboard', authMiddleware, requirePermission('employees.read'), a
 
     let emails = [];
     try {
-      emails = await col('emailsInbox').find().sort({ date: -1 }).toArray();
+      emails = await col('emailsInbox').find().sort({ date: -1 }).limit(200).toArray();
     } catch (e) { console.warn('Error obteniendo inbox:', e.message); }
 
     const typeNames = {};
@@ -1513,7 +1613,7 @@ app.get('/api/dashboard', authMiddleware, requirePermission('employees.read'), a
 
 // --- DOCUMENTOS ---
 app.get('/api/documents', authMiddleware, requirePermission('documents.read'), async (req, res) => {
-  res.json(await col('documents').find().toArray());
+  res.json(await col('documents').find().sort({ registeredAt: -1 }).limit(1000).toArray());
 });
 
 app.get('/api/documents/unregistered', authMiddleware, requirePermission('documents.read'), async (req, res) => {
@@ -1531,6 +1631,11 @@ app.post('/api/documents/register-local', authMiddleware, requirePermission('doc
   }
   const statusErr = validateDocStatus(status);
   if (statusErr) return res.status(400).json({ error: statusErr });
+  // Evitar registrar el mismo archivo dos veces (crearía documentos duplicados sobre el mismo PDF)
+  const existing = await col('documents').findOne({ filename });
+  if (existing) {
+    return res.status(409).json({ error: `El archivo '${filename}' ya está registrado (documento ${existing.id}).` });
+  }
   const result = await withRegisterLock(filename, () => registerDocumentCore({
     req, filename, employeeId, documentTypeId, categoryId, description, issueDate, expiryDate, status,
     sourceDir: DOCUMENTS_DIR, mover: false,
@@ -1543,7 +1648,7 @@ app.post('/api/documents/register-local', authMiddleware, requirePermission('doc
   res.status(201).json(result.doc);
 });
 
-app.post('/api/documents/upload', authMiddleware, requirePermission('documents.create'), upload.single('file'), async (req, res) => {
+app.post('/api/documents/upload', authMiddleware, requirePermission('documents.create'), upload.single('file'), uploadLimiter, async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No se proporcionó ningún archivo o el formato no es válido.' });
 
   const { employeeId, documentTypeId, categoryId, description, issueDate, expiryDate, status } = req.body;
@@ -1573,6 +1678,11 @@ app.put('/api/documents/:id', authMiddleware, requirePermission('documents.updat
 
   const doc = await col('documents').findOne({ id });
   if (!doc) return res.status(404).json({ error: 'Documento no encontrado.' });
+
+  const datesError = validateDocDates(issueDate, expiryDate);
+  if (datesError) return res.status(400).json({ error: datesError });
+  const descError = validateDescription(description);
+  if (descError) return res.status(400).json({ error: descError });
 
   const oldStatus = doc.status;
   const updates = { updatedAt: new Date().toISOString() };
@@ -1667,7 +1777,7 @@ app.post('/api/deletion-requests', authMiddleware, requirePermission('deletion.c
     }
 
     const request = {
-      id: 'delreq_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+      id: generateId('delreq'),
       documentId,
       documentFilename: doc.filename,
       employeeId: doc.employeeId,
@@ -1708,16 +1818,23 @@ app.patch('/api/deletion-requests/:id/approve', authMiddleware, requirePermissio
   try {
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Solo administradores pueden aprobar eliminaciones.' });
 
-    const request = await col('deletionRequests').findOne({ id: req.params.id });
-    if (!request) return res.status(404).json({ error: 'Solicitud no encontrada.' });
-    if (request.status !== 'Pendiente') return res.status(400).json({ error: 'Esta solicitud ya fue procesada.' });
+    // Consumo atómico de la solicitud: solo se procesa si sigue Pendiente (anti doble-aprobación)
+    const request = await col('deletionRequests').findOneAndUpdate(
+      { id: req.params.id, status: 'Pendiente' },
+      { $set: { status: 'Aprobada', processedBy: req.user.name || req.user.email, processedAt: new Date().toISOString() } },
+      { returnDocument: 'before' }
+    );
+    if (!request) {
+      const exists = await col('deletionRequests').findOne({ id: req.params.id });
+      if (!exists) return res.status(404).json({ error: 'Solicitud no encontrada.' });
+      return res.status(400).json({ error: 'Esta solicitud ya fue procesada.' });
+    }
 
     const doc = await col('documents').findOne({ id: request.documentId });
     if (doc) {
       await deleteDocAndPhysicalFile(doc.id, doc.filename);
     }
 
-    await col('deletionRequests').updateOne({ id: req.params.id }, { $set: { status: 'Aprobada', processedBy: req.user.name || req.user.email, processedAt: new Date().toISOString() } });
     await addAuditLog('Eliminación Aprobada', `El administrador ${req.user.name} aprobó la eliminación del documento '${request.documentFilename}' de ${request.employeeName}.`, req.user.name || req.user.email, getClientIp(req));
     res.json({ message: 'Solicitud aprobada. Documento eliminado.' });
   } catch (e) {
@@ -1730,11 +1847,17 @@ app.patch('/api/deletion-requests/:id/reject', authMiddleware, requirePermission
   try {
     if (req.user.role !== 'admin') return res.status(403).json({ error: 'Solo administradores pueden rechazar eliminaciones.' });
 
-    const request = await col('deletionRequests').findOne({ id: req.params.id });
-    if (!request) return res.status(404).json({ error: 'Solicitud no encontrada.' });
-    if (request.status !== 'Pendiente') return res.status(400).json({ error: 'Esta solicitud ya fue procesada.' });
+    const request = await col('deletionRequests').findOneAndUpdate(
+      { id: req.params.id, status: 'Pendiente' },
+      { $set: { status: 'Rechazada', processedBy: req.user.name || req.user.email, processedAt: new Date().toISOString() } },
+      { returnDocument: 'before' }
+    );
+    if (!request) {
+      const exists = await col('deletionRequests').findOne({ id: req.params.id });
+      if (!exists) return res.status(404).json({ error: 'Solicitud no encontrada.' });
+      return res.status(400).json({ error: 'Esta solicitud ya fue procesada.' });
+    }
 
-    await col('deletionRequests').updateOne({ id: req.params.id }, { $set: { status: 'Rechazada', processedBy: req.user.name || req.user.email, processedAt: new Date().toISOString() } });
     await addAuditLog('Eliminación Rechazada', `El administrador ${req.user.name} rechazó la eliminación del documento '${request.documentFilename}' de ${request.employeeName}.`, req.user.name || req.user.email, getClientIp(req));
     res.json({ message: 'Solicitud rechazada.' });
   } catch (e) {
@@ -1788,9 +1911,10 @@ app.get('/api/document-file/:filename', authMiddleware, async (req, res) => {
     if (r) {
       const mimeType = getMimeType(filename);
       res.setHeader('Content-Type', mimeType);
-      const safeFilename = (filename || '').replace(/["\r\n]/g, '');
-      res.setHeader('Content-Disposition', (isInlineMime(mimeType) ? 'inline' : 'attachment') + '; filename="' + safeFilename + '"');
+      res.setHeader('Content-Disposition', buildContentDisposition(mimeType, filename));
       r.stream.on('error', (err) => { console.warn('Error en stream de descarga:', err.message); res.destroy(); });
+      // Si el cliente aborta la descarga, destruir el stream para liberar el cursor de GridFS.
+      req.on('close', () => { if (!res.writableEnded) { try { r.stream.destroy(); } catch (e) {} } });
       r.stream.pipe(res);
       return;
     }
@@ -1800,8 +1924,7 @@ app.get('/api/document-file/:filename', authMiddleware, async (req, res) => {
   if (fs.existsSync(filePath)) {
     const mimeType = getMimeType(filename);
     res.setHeader('Content-Type', mimeType);
-    const safeFilename = (filename || '').replace(/["\r\n]/g, '');
-    res.setHeader('Content-Disposition', (isInlineMime(mimeType) ? 'inline' : 'attachment') + '; filename="' + safeFilename + '"');
+    res.setHeader('Content-Disposition', buildContentDisposition(mimeType, filename));
     res.sendFile(filePath);
   } else {
     res.status(404).json({ error: 'Archivo no encontrado en el servidor.' });
@@ -1810,7 +1933,8 @@ app.get('/api/document-file/:filename', authMiddleware, async (req, res) => {
 
 // --- REGISTROS DE AUDITORÍA ---
 app.get('/api/audit-logs', authMiddleware, requirePermission('audit.read'), async (req, res) => {
-  res.json(await col('auditLogs').find().sort({ timestamp: -1 }).toArray());
+  const limit = Math.max(1, Math.min(parseInt(req.query.limit) || 500, 1000));
+  res.json(await col('auditLogs').find().sort({ timestamp: -1 }).limit(limit).toArray());
 });
 
 app.get('/api/security-logs', authMiddleware, requirePermission('audit.read'), async (req, res) => {
@@ -1825,12 +1949,17 @@ app.get('/api/scanner-files', authMiddleware, requirePermission('scanner.read'),
 
 // --- ESTADO DEL ESCÁNER (Detección USB + Red + Monitoreo de bandeja) ---
 function runPs(cmd) {
-  try {
+  return new Promise((resolve) => {
     const full = `$ProgressPreference='SilentlyContinue';${cmd}`;
     const encoded = Buffer.from(full, 'utf16le').toString('base64');
-    const raw = execSync(`powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encoded}`, { timeout: 20000, encoding: 'utf8', windowsHide: true });
-    return raw.replace(/#< CLIXML[\s\S]*?<\/Objs>\s*/g, '').trim();
-  } catch (e) { console.warn('Error ejecutando PowerShell:', e.message); return ''; }
+    exec(`powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encoded}`,
+      { timeout: 20000, encoding: 'utf8', windowsHide: true, maxBuffer: 64 * 1024 * 1024 },
+      (error, stdout) => {
+        const raw = (stdout || '').replace(/#< CLIXML[\s\S]*?<\/Objs>\s*/g, '').trim();
+        if (error && !raw) { console.warn('Error ejecutando PowerShell:', error.message); return resolve(''); }
+        resolve(raw);
+      });
+  });
 }
 
 // Versión asíncrona: no bloquea el event loop y admite timeouts largos (escaneo WIA).
@@ -1848,8 +1977,8 @@ function runPsAsync(cmd, timeoutMs = 120000) {
   });
 }
 
-function detectUsbScanners() {
-  const raw = runPs(`
+async function detectUsbScanners() {
+  const raw = await runPs(`
     $scanners = @()
 
     # Método 1: WIA COM (WIA.DeviceManager; WIA.Devices ya no se registra en Windows moderno)
@@ -1916,9 +2045,9 @@ function getLocalSubnet() {
   return '192.168.1';
 }
 
-function detectNetworkScanners() {
+async function detectNetworkScanners() {
   const subnet = getLocalSubnet();
-  const raw = runPs(`
+  const raw = await runPs(`
     $subnet = '${subnet}';
     $results = @();
     for ($i = 1; $i -le 20; $i++) {
@@ -1943,22 +2072,25 @@ function detectNetworkScanners() {
   }
 
   const scanners = [];
-  for (const host of openHosts) {
-    const nameRaw = runPs(`try { $r = Invoke-WebRequest -Uri "http://${host.ip}:9100" -TimeoutSec 1 -UseBasicParsing -ErrorAction SilentlyContinue; $r.Headers['Server'] } catch {}`);
+  const names = await Promise.all(openHosts.map(async (host) => {
+    const nameRaw = await runPs(`try { $r = Invoke-WebRequest -Uri "http://${host.ip}:9100" -TimeoutSec 1 -UseBasicParsing -ErrorAction SilentlyContinue; $r.Headers['Server'] } catch {}`);
+    return nameRaw || `Escáner de Red (${host.ip})`;
+  }));
+  openHosts.forEach((host, i) => {
     scanners.push({
-      name: nameRaw || `Escáner de Red (${host.ip})`,
+      name: names[i],
       type: 'Red',
       status: 'Detectado',
       ip: host.ip,
       port: host.port,
       icon: '🌐'
     });
-  }
+  });
   return scanners;
 }
 
-function detectPrintersWithScanners() {
-  const raw = runPs(`
+async function detectPrintersWithScanners() {
+  const raw = await runPs(`
     $scanners = @()
     try {
       $printers = Get-CimInstance Win32_Printer | Where-Object { -not $_.WorkOffline -and $_.PrinterStatus -notin @(6,7) }
@@ -1993,10 +2125,12 @@ function detectPrintersWithScanners() {
   } catch (e) { console.warn('Error detectando impresoras con escáner:', e.message); return []; }
 }
 
-function detectAllScanners() {
-  const usb = detectUsbScanners();
-  const net = detectNetworkScanners();
-  const printers = detectPrintersWithScanners();
+async function detectAllScanners() {
+  const [usb, net, printers] = await Promise.all([
+    detectUsbScanners(),
+    detectNetworkScanners(),
+    detectPrintersWithScanners()
+  ]);
 
   const seen = new Set();
   const all = [];
@@ -2011,6 +2145,7 @@ let cachedScanners = [];
 let lastScanCheck = 0;
 const SCANNER_CACHE_MS = 20000;
 let scannerRefreshRunning = false;
+let scanInProgress = false;
 
 // Ubica el launcher de EPSON Scan 2 (impresoras multifunción sin driver WIA de escáner).
 // Se cachea porque la búsqueda es determinista y el costo es de una sola vez.
@@ -2035,16 +2170,10 @@ function refreshScannerCacheAsync() {
   if (scannerRefreshRunning) return;
   if ((Date.now() - lastScanCheck) <= SCANNER_CACHE_MS) return;
   scannerRefreshRunning = true;
-  setImmediate(() => {
-    try {
-      cachedScanners = detectAllScanners();
-      lastScanCheck = Date.now();
-    } catch (e) {
-      console.error('[SCANNER] Error detecting scanners:', e.message);
-    } finally {
-      scannerRefreshRunning = false;
-    }
-  });
+  detectAllScanners()
+    .then(scanners => { cachedScanners = scanners; lastScanCheck = Date.now(); })
+    .catch(e => console.error('[SCANNER] Error detecting scanners:', e.message))
+    .finally(() => { scannerRefreshRunning = false; });
 }
 
 app.get('/api/scanner/status', authMiddleware, requirePermission('scanner.read'), async (req, res) => {
@@ -2082,9 +2211,17 @@ app.post('/api/scanner/refresh', authMiddleware, requireAnyPermission('scanner.m
 async function scanWithScanner(customName) {
   const escapedDir = SCANNER_DIR.replace(/\\/g, '\\\\');
   const timestamp = Date.now();
-  const baseName = (customName || `Escaner_Folio_${timestamp.toString().slice(-4)}`)
+  // Nombre base único: el sufijo aleatorio evita colisiones de archivos en la bandeja
+  // (antes usaba los últimos 4 dígitos de Date.now(), que colisionaban cada 10 segundos).
+  let baseName = (customName || `Escaner_Folio_${timestamp}_${crypto.randomBytes(3).toString('hex')}`)
     .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').substring(0, 200);
-  const pdfBase = `${baseName}.pdf`;
+  let pdfBase = `${baseName}.pdf`;
+  // Si el nombre ya existe en la bandeja (GridFS o disco), generar un sufijo único
+  const trayNames = new Set((await getScannerFiles()).map(f => f.filename));
+  if (trayNames.has(pdfBase)) {
+    pdfBase = `${baseName}_${crypto.randomBytes(4).toString('hex')}.pdf`;
+  }
+  const tempToken = crypto.randomBytes(4).toString('hex');
   const raw = await runPsAsync(`
     try {
       $deviceManager = New-Object -ComObject WIA.DeviceManager
@@ -2099,8 +2236,8 @@ async function scanWithScanner(customName) {
         if ($prop.PropertyID -eq 6147 -or $prop.PropertyID -eq 6148) { $prop.Value = 200 }
       }
       # El driver EPSON entrega BMP aunque se pida PNG; se convierte a JPG para el PDF.
-      $bmpPath = '${escapedDir}\\_temp_${timestamp}.bmp'
-      $jpgPath = '${escapedDir}\\_temp_${timestamp}.jpg'
+      $bmpPath = '${escapedDir}\\_temp_${timestamp}_${tempToken}.bmp'
+      $jpgPath = '${escapedDir}\\_temp_${timestamp}_${tempToken}.jpg'
       $image = $item.Transfer('{B96B3CAF-0728-11D3-9D7B-0000F81EF32E}')
       $image.SaveFile($bmpPath)
       Add-Type -AssemblyName System.Drawing
@@ -2144,27 +2281,36 @@ async function scanWithScanner(customName) {
   }
 }
 
-app.post('/api/scanner/scan', authMiddleware, requireAnyPermission('scanner.manage', 'scanner.scan'), async (req, res) => {
+app.post('/api/scanner/scan', authMiddleware, requireAnyPermission('scanner.manage', 'scanner.scan'), scannerLimiter, async (req, res) => {
   try {
+    if (scanInProgress) {
+      return res.status(409).json({ error: 'Ya hay un escaneo en curso. Espere a que termine.' });
+    }
     if ((Date.now() - lastScanCheck) > SCANNER_CACHE_MS) refreshScannerCacheAsync();
     if (cachedScanners.length === 0) {
       return res.status(400).json({ error: 'No hay escáner conectado.' });
     }
-    const customName = req.body.filename ? req.body.filename.trim() : '';
-    const result = await scanWithScanner(customName);
-    if (!result || result.startsWith('ERROR:')) {
-      return res.status(500).json({ error: result ? result.replace('ERROR:', '') : 'Error al escanear.' });
+    scanInProgress = true;
+    try {
+      const customName = req.body.filename ? req.body.filename.trim() : '';
+      const result = await scanWithScanner(customName);
+      if (!result || result.startsWith('ERROR:')) {
+        return res.status(500).json({ error: result ? result.replace('ERROR:', '') : 'Error al escanear.' });
+      }
+      const filename = result.trim();
+      await addAuditLog('Escáner Real', `Documento escaneado: '${filename}'`, req.user.name || 'Sistema', getClientIp(req));
+      res.json({ success: true, filename });
+    } finally {
+      scanInProgress = false;
     }
-    const filename = result.trim();
-    await addAuditLog('Escáner Real', `Documento escaneado: '${filename}'`, req.user.name || 'Sistema', getClientIp(req));
-    res.json({ success: true, filename });
   } catch (e) {
+    scanInProgress = false;
     console.error('[SCAN]', e);
     res.status(500).json({ error: 'Error al ejecutar el escáner.' });
   }
 });
 
-app.post('/api/scanner/launch-epson-scan', authMiddleware, requireAnyPermission('scanner.manage', 'scanner.scan'), async (req, res) => {
+app.post('/api/scanner/launch-epson-scan', authMiddleware, requireAnyPermission('scanner.manage', 'scanner.scan'), scannerLimiter, async (req, res) => {
   try {
     const launcher = findEpsonScanLauncher();
     if (!launcher) {
@@ -2264,17 +2410,21 @@ app.get('/api/gmail/oauth2callback', async (req, res) => {
 });
 
 app.get('/api/email-inbox', authMiddleware, requirePermission('email.manage'), async (req, res) => {
-  res.json(await col('emailsInbox').find().sort({ date: -1 }).toArray());
+  res.json(await col('emailsInbox').find().sort({ date: -1 }).limit(200).toArray());
 });
 
 // Mutex simple: evita dos sincronizaciones concurrentes que dupliquen archivos/correos
 let gmailSyncInProgress = false;
+const GMAIL_SYNC_TIMEOUT_MS = 10 * 60 * 1000;
 
 app.post('/api/email-inbox/sync', authMiddleware, requirePermission('email.manage'), async (req, res) => {
   if (gmailSyncInProgress) {
     return res.status(409).json({ error: 'Ya hay una sincronización de correo en curso.' });
   }
   gmailSyncInProgress = true;
+  // Watchdog: si una llamada a Google se cuelga pese al timeout, liberar el mutex
+  const watchdog = setTimeout(() => { gmailSyncInProgress = false; }, GMAIL_SYNC_TIMEOUT_MS);
+  if (watchdog.unref) watchdog.unref();
   try {
     const gmail = getGmailClient();
     const knownEmailIds = new Set((await col('emailsInbox').find().toArray()).map(e => e.id));
@@ -2391,6 +2541,7 @@ app.post('/api/email-inbox/sync', authMiddleware, requirePermission('email.manag
         : 'No se pudo sincronizar la bandeja de Gmail.'
     });
   } finally {
+    clearTimeout(watchdog);
     gmailSyncInProgress = false;
   }
 });
@@ -2419,12 +2570,29 @@ app.post('/api/documents/register-email-attachment', authMiddleware, requirePerm
 app.use((error, req, res, next) => {
   if (res.headersSent) return next(error);
 
-  if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
-    return res.status(413).json({ error: 'El archivo supera el tamaño máximo permitido de 20 MB.' });
+  if (error instanceof multer.MulterError) {
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return res.status(413).json({ error: 'El archivo supera el tamaño máximo permitido de 20 MB.' });
+    }
+    // Otros errores de multer (campos inesperados, archivos no esperados, etc.)
+    const multerMessages = {
+      LIMIT_UNEXPECTED_FILE: 'Se recibió un archivo no esperado.',
+      LIMIT_FIELD_KEY: 'Nombre de campo no válido.',
+      LIMIT_FIELD_VALUE: 'Valor de campo demasiado grande.',
+      LIMIT_FIELD_COUNT: 'Demasiados campos.',
+      LIMIT_FILE_COUNT: 'Demasiados archivos.',
+      LIMIT_PART_COUNT: 'Demasiadas partes en la petición.'
+    };
+    return res.status(400).json({ error: multerMessages[error.code] || 'Error al procesar el archivo subido.' });
   }
 
   if (error.code === 'INVALID_FILE_TYPE') {
     return res.status(400).json({ error: error.message });
+  }
+
+  // Cuerpo JSON demasiado grande (express.json)
+  if (error.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'La petición supera el tamaño máximo permitido.' });
   }
 
   const isTransient = error.name === 'MongoNetworkError' || error.label === 'PoolClearedError' || error.label === 'PoolRequestRetry' || (error.message || '').includes('ERR_SSL_TLSV1') || (error.message || '').includes('PoolCleared');
