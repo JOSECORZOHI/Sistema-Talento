@@ -84,11 +84,12 @@ function getMailTransporter() {
   });
 }
 
-// URL pública del sistema. En producción debe definirse APP_BASE_URL en .env
-// para evitar que un atacante manipule el header Host y envenene los enlaces.
+// URL pública del sistema. En producción/servicio debe definirse APP_BASE_URL en .env
+// para que los enlaces de reset/activación sean correctos y no envenenables.
+// El header Host solo se confía en modo development explícito.
 function getAppBaseUrl(req) {
   if (process.env.APP_BASE_URL) return process.env.APP_BASE_URL.replace(/\/$/, '');
-  if (process.env.NODE_ENV !== 'production') return `${req.protocol}://${req.get('host')}`;
+  if (process.env.NODE_ENV === 'development') return `${req.protocol}://${req.get('host')}`;
   return null;
 }
 
@@ -118,11 +119,25 @@ function escapeHtml(value) {
 }
 
 app.use(helmet({
-  contentSecurityPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      fontSrc: ["'self'", "data:"],
+      connectSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      frameAncestors: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+      upgradeInsecureRequests: null
+    }
+  },
   crossOriginEmbedderPolicy: false
 }));
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : false,
+  origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()).filter(Boolean) : false,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true,
@@ -155,6 +170,14 @@ const createLimiter = rateLimit({
   message: { error: 'Límite de creación alcanzado. Intente de nuevo en una hora.' }
 });
 
+const scannerLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 12,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiadas solicitudes de refresco de escáner. Intente de nuevo en 15 minutos.' }
+});
+
 app.use('/api/', globalLimiter);
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/forgot-password', authLimiter);
@@ -165,6 +188,8 @@ app.use(express.static(path.join(__dirname, 'public'), { etag: true, maxAge: '1h
 // Middleware: rechazar APIs si la BD no está conectada aún
 app.use('/api', (req, res, next) => {
   if (req.path === '/auth/login') return next();
+  // El callback OAuth es una URL pública requerida por Google; no puede depender de la BD.
+  if (req.path === '/gmail/oauth2callback') return next();
   try { col('users'); } catch (e) {
     return res.status(503).json({ error: 'Base de datos conectándose. Espere unos segundos e intente de nuevo.' });
   }
@@ -331,8 +356,8 @@ function signToken(payload) {
 // --- AUTENTICACIÓN COMPARTIDA ---
 async function authenticateUser(user, collectionName, role, username, password, ip, res) {
   if (user.status === 'bloqueada' && user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
-    const minsLeft = Math.ceil((new Date(user.lockedUntil) - new Date()) / 60000);
-    return res.status(423).json({ error: `Cuenta bloqueada temporalmente. Intente de nuevo en ${minsLeft} minuto(s).` });
+    // Respuesta unificada (anti-enumeración): idéntica a credenciales erróneas.
+    return res.status(401).json({ error: 'Credenciales incorrectas.' });
   }
   if (user.status === 'bloqueada' && (!user.lockedUntil || new Date(user.lockedUntil) <= new Date())) {
     await col(collectionName).updateOne({ _id: user._id }, { $set: { status: 'activa', lockedUntil: null, failedAttempts: 0 } });
@@ -345,7 +370,7 @@ async function authenticateUser(user, collectionName, role, username, password, 
     return res.status(401).json({ error: 'Credenciales incorrectas.' });
   }
   if (user.status === 'bloqueada') {
-    return res.status(423).json({ error: 'Su cuenta ha sido bloqueada. Contacte al administrador.' });
+    return res.status(401).json({ error: 'Credenciales incorrectas.' });
   }
   if (user.password) {
     const valid = await bcrypt.compare(password, user.password);
@@ -364,7 +389,7 @@ async function authenticateUser(user, collectionName, role, username, password, 
     if (result.locked) {
       await addAuditLog('Cuenta Bloqueada', `La cuenta del ${role === 'admin' ? 'usuario' : 'funcionario'} ${user.name} fue bloqueada por ${MAX_LOGIN_ATTEMPTS} intentos fallidos.`, user.name, ip);
       await addSecurityLog('Cuenta Bloqueada', `Cuenta ${user.email} bloqueada por ${MAX_LOGIN_ATTEMPTS} intentos fallidos.`, ip, user.email);
-      return res.status(423).json({ error: 'Demasiados intentos fallidos. Intente de nuevo más tarde.' });
+      return res.status(401).json({ error: 'Credenciales incorrectas.' });
     }
     await addSecurityLog('Login Fallido', `Contraseña incorrecta para ${user.email}.`, ip, user.email);
     return res.status(401).json({ error: 'Credenciales incorrectas.' });
@@ -994,7 +1019,7 @@ app.post('/api/auth/activate/:token', async (req, res) => {
   const targetCollection = getCollectionForRole(activationToken.role);
   const target = await col(targetCollection).findOne({ email: activationToken.email });
   if (!target) return res.status(404).json({ error: 'Cuenta no encontrada.' });
-  if (target.status === 'suspendida' || target.status === 'bloqueada' || target.status === 'activa') {
+  if (target.status === 'suspendida' || target.status === 'bloqueada' || target.status === 'inactiva' || target.status === 'activa') {
     await col('activationTokens').deleteOne({ _id: activationToken._id });
     return res.status(403).json({ error: 'Esta cuenta no está pendiente de activación.' });
   }
@@ -1765,6 +1790,7 @@ app.get('/api/document-file/:filename', authMiddleware, async (req, res) => {
       res.setHeader('Content-Type', mimeType);
       const safeFilename = (filename || '').replace(/["\r\n]/g, '');
       res.setHeader('Content-Disposition', (isInlineMime(mimeType) ? 'inline' : 'attachment') + '; filename="' + safeFilename + '"');
+      r.stream.on('error', (err) => { console.warn('Error en stream de descarga:', err.message); res.destroy(); });
       r.stream.pipe(res);
       return;
     }
@@ -1788,7 +1814,7 @@ app.get('/api/audit-logs', authMiddleware, requirePermission('audit.read'), asyn
 });
 
 app.get('/api/security-logs', authMiddleware, requirePermission('audit.read'), async (req, res) => {
-  const limit = Math.min(parseInt(req.query.limit) || 100, 500);
+  const limit = Math.max(1, Math.min(parseInt(req.query.limit) || 100, 500));
   res.json(await col('securityLogs').find().sort({ timestamp: -1 }).limit(limit).toArray());
 });
 
@@ -2003,19 +2029,6 @@ function findEpsonScanLauncher() {
   return epsonScanLauncher;
 }
 
-function refreshScannerCache() {
-  if (scannerRefreshRunning) return;
-  scannerRefreshRunning = true;
-  try {
-    cachedScanners = detectAllScanners();
-    lastScanCheck = Date.now();
-  } catch (e) {
-    console.error('[SCANNER] Error detecting scanners:', e.message);
-  } finally {
-    scannerRefreshRunning = false;
-  }
-}
-
 // Refresco en segundo plano: no bloquea el event loop durante la detección
 // (detectAllScanners ejecuta PowerShell/consultas de red de forma síncrona).
 function refreshScannerCacheAsync() {
@@ -2037,13 +2050,9 @@ function refreshScannerCacheAsync() {
 app.get('/api/scanner/status', authMiddleware, requirePermission('scanner.read'), async (req, res) => {
   const now = Date.now();
   const stale = (now - lastScanCheck) > SCANNER_CACHE_MS;
-  if (stale && cachedScanners.length === 0) {
-    // Primera consulta del proceso: refresco síncrono único.
-    refreshScannerCache();
-  } else if (stale) {
-    // Caché vencida: refrescar en segundo plano y responder con lo último conocido.
-    refreshScannerCacheAsync();
-  }
+  // Refresco siempre en segundo plano: la detección ejecuta PowerShell síncrono
+  // (escaneo de red) y no debe bloquear el event loop.
+  if (stale) refreshScannerCacheAsync();
 
   const trayFiles = await getScannerFiles();
 
@@ -2062,9 +2071,12 @@ app.get('/api/scanner/status', authMiddleware, requirePermission('scanner.read')
   });
 });
 
-app.post('/api/scanner/refresh', authMiddleware, requireAnyPermission('scanner.manage', 'scanner.refresh'), (req, res) => {
-  refreshScannerCache();
-  res.json({ message: 'Escáneres actualizados.', scanners: cachedScanners, count: cachedScanners.length });
+app.post('/api/scanner/refresh', authMiddleware, requireAnyPermission('scanner.manage', 'scanner.refresh'), scannerLimiter, (req, res) => {
+  // Forzar refresco en segundo plano; nunca bloquear el event loop.
+  scannerRefreshRunning = false;
+  lastScanCheck = 0;
+  refreshScannerCacheAsync();
+  res.json({ message: 'Actualización de escáneres iniciada. El estado se actualizará en unos segundos.', scanners: cachedScanners, count: cachedScanners.length, refreshing: true });
 });
 
 async function scanWithScanner(customName) {
@@ -2240,7 +2252,7 @@ app.get('/api/gmail/oauth2callback', async (req, res) => {
     await addAuditLog('Autorización Gmail', 'Se completó la autorización OAuth con Google para la sincronización de correos.', 'Sistema', ip);
     // El refresh token solo se muestra en la consola del servidor, no en el navegador.
     // Solo en desarrollo/ejecución local: en producción nunca se imprime.
-    if (tokens.refresh_token && process.env.NODE_ENV !== 'production') {
+    if (tokens.refresh_token && process.env.NODE_ENV === 'development') {
       console.log('[GMAIL] Autorización completada. Agregue al .env:');
       console.log('GMAIL_REFRESH_TOKEN=' + tokens.refresh_token);
     }

@@ -263,7 +263,7 @@ function renderPortalDocs() {
       <div class="doc-meta">${sanitize(catName)} · Emisión: ${fechaEmision} · ${sizeKB} KB</div>
       </div>
       <div class="doc-footer">
-        <span class="badge-status ${['pendiente','activo','aprobado','rechazado'].includes((doc.status || '').toLowerCase()) ? (doc.status || '').toLowerCase() : ''}">${sanitize(doc.status)}</span>
+        <span class="badge-status ${['pendiente','activo','aprobado','rechazado','archivado'].includes((doc.status || '').toLowerCase()) ? (doc.status || '').toLowerCase() : ''}">${sanitize(doc.status)}</span>
         <div style="display:flex;gap:6px;align-items:center;">
           <button class="btn-ver-doc" onclick="openPortalPdf('${safeFn}')">Ver</button>
           <button class="btn-delete-doc" onclick="openDeleteRequest('${safeId}', '${safeFn}')" title="Solicitar eliminación">

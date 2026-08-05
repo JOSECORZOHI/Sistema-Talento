@@ -1993,6 +1993,18 @@ textarea:focus {
   display: none;
 }
 
+.login-error {
+  background-color: var(--danger-soft);
+  color: var(--danger-text);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 16px;
+  display: none;
+}
+
 .login-field {
   margin-bottom: 20px;
 }

@@ -24,10 +24,10 @@ const COLLECTIONS = {
 };
 
 const MONGO_OPTIONS = {
-  serverSelectionTimeoutMS: 5000,
+  serverSelectionTimeoutMS: 30000,
   heartbeatFrequencyMS: 8000,
   socketTimeoutMS: 15000,
-  connectTimeoutMS: 5000,
+  connectTimeoutMS: 15000,
   family: 4,
   maxPoolSize: 5,
   minPoolSize: 1,
@@ -126,9 +126,13 @@ async function ensureIndexes() {
     await db.collection(COLLECTIONS.loginAttempts).createIndex({ identifier: 1, timestamp: -1 });
     await db.collection(COLLECTIONS.loginAttempts).createIndex({ timestamp: 1 }, { expireAfterSeconds: 900 });
     await db.collection(COLLECTIONS.passwordResetTokens).createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+    await db.collection(COLLECTIONS.activationTokens).createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
     await db.collection(COLLECTIONS.documents).createIndex({ employeeId: 1 });
     await db.collection(COLLECTIONS.documents).createIndex({ filename: 1 });
+    await db.collection(COLLECTIONS.documents).createIndex({ id: 1 }, { unique: true, name: 'uniq_doc_id' });
     await db.collection(COLLECTIONS.users).createIndex({ email: 1 }, { unique: true });
+    await db.collection(COLLECTIONS.employees).createIndex({ id: 1 }, { unique: true, name: 'uniq_emp_id' });
+    await db.collection(COLLECTIONS.employees).createIndex({ email: 1 }, { unique: true, name: 'uniq_emp_email' });
     await db.collection(COLLECTIONS.auditLogs).createIndex({ timestamp: -1 });
     await db.collection(COLLECTIONS.emailsInbox).createIndex({ id: 1 }, { unique: true, sparse: true });
   } catch (e) { console.warn('[MONGO] Error creando índices:', e.message); }
