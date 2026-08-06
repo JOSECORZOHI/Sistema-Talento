@@ -330,12 +330,16 @@ async function recordLoginAttempt(identifier, success, ip) {
     });
     if (recentFails >= MAX_LOGIN_ATTEMPTS) {
       const lockedUntil = new Date(Date.now() + LOCK_TIME_MS);
+      const lockFilter = {
+        email: normalizedId,
+        $or: [{ lockedUntil: null }, { lockedUntil: { $lt: new Date() } }]
+      };
       await col('users').updateOne(
-        { email: normalizedId, lockedUntil: { $lt: new Date() } },
+        lockFilter,
         { $set: { status: 'bloqueada', lockedUntil } }
       );
       await col('employees').updateOne(
-        { email: normalizedId, lockedUntil: { $lt: new Date() } },
+        lockFilter,
         { $set: { status: 'bloqueada', lockedUntil } }
       );
       recordIpLockoutEvent(ip);
