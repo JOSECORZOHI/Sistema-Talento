@@ -60,9 +60,8 @@ async function apiFetch(url, options = {}) {
       logout();
       return res;
     }
-    if (res.status === 503) {
-      throw new Error('503 Base de datos conectándose');
-    }
+    // 503 (BD temporalmente no disponible) se devuelve como respuesta normal;
+    // cada llamador decide si reintenta (apiFetchWithRetry) o muestra el error.
     return res;
   } finally {
     clearTimeout(timeout);

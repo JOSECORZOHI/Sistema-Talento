@@ -993,7 +993,12 @@ async function authMiddleware(req, res, next) {
     if (err.name === 'TokenExpiredError') {
       return res.status(401).json({ error: 'Sesión expirada. Inicie sesión nuevamente.' });
     }
-    return res.status(401).json({ error: 'Token inválido. Inicie sesión nuevamente.' });
+    if (err.name === 'JsonWebTokenError' || err.name === 'NotBeforeError') {
+      return res.status(401).json({ error: 'Token inválido. Inicie sesión nuevamente.' });
+    }
+    // Error de BD/red (p. ej. TLS transitorio de Atlas): 503 en vez de 401,
+    // para que el frontend no fuerce un logout ante un problema temporal.
+    return res.status(503).json({ error: 'Error temporal de base de datos. Intente de nuevo en unos segundos.' });
   }
 }
 

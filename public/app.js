@@ -1958,11 +1958,14 @@ async function refreshScannerStatus() {
   try {
     const res = await apiFetch('/api/scanner/status');
     const data = await res.json();
+    if (!data || typeof data !== 'object') return;
+    const scanners = Array.isArray(data.scanners) ? data.scanners : [];
+    const epsonScanAvailable = !!data.epsonScanAvailable;
     const hwCount = document.getElementById('portal-scanner-count');
     const dot = document.getElementById('portal-scanner-dot');
     const dotText = document.getElementById('portal-scanner-dot-text');
     const list = document.getElementById('portal-scanner-device-list');
-    const count = data.scanners.length;
+    const count = scanners.length;
     const isConnected = count > 0;
 
     if (hwCount) hwCount.textContent = `${count} dispositivo(s)`;
@@ -1988,7 +1991,7 @@ async function refreshScannerStatus() {
     }
 
     const btnEpsonScan = document.getElementById('btn-portal-epson-scan');
-    if (btnEpsonScan) btnEpsonScan.style.display = data.epsonScanAvailable ? 'inline-flex' : 'none';
+    if (btnEpsonScan) btnEpsonScan.style.display = epsonScanAvailable ? 'inline-flex' : 'none';
 
     if (!list) return;
 
@@ -2003,7 +2006,7 @@ async function refreshScannerStatus() {
     }
 
     let html = '';
-    data.scanners.forEach(s => {
+    scanners.forEach(s => {
       const typeColor = s.type === 'USB' ? '#8E44AD' : '#2980B9';
       const typeBg = s.type === 'USB' ? 'rgba(142,68,173,0.12)' : 'rgba(41,128,185,0.12)';
       const statusColor = s.status === 'Conectado' || s.status === 'Detectado' ? '#27AE60' : '#F39C12';
