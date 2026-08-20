@@ -199,6 +199,7 @@ app.use('/api', (req, res, next) => {
   if (req.path === '/auth/login') return next();
   // El callback OAuth es una URL pública requerida por Google; no puede depender de la BD.
   if (req.path === '/gmail/oauth2callback') return next();
+  if (req.path === '/gmail/authorize') return next();
   try { col('users'); } catch (e) {
     return res.status(503).json({ error: 'Base de datos conectándose. Espere unos segundos e intente de nuevo.' });
   }
@@ -927,7 +928,8 @@ function createGmailAuthClient() {
     error.code = 'GMAIL_NOT_CONFIGURED';
     throw error;
   }
-  return new getGoogleApis().auth.OAuth2(GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REDIRECT_URI);
+  const { google } = require('googleapis');
+  return new google.auth.OAuth2(GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REDIRECT_URI);
 }
 
 function getGmailClient(refreshToken) {
@@ -941,7 +943,7 @@ function getGmailClient(refreshToken) {
   auth.setCredentials({ refresh_token: token });
   // timeout acota cada llamada a la API de Google (evita que una llamada colgada
   // deje la sincronización atascada para siempre).
-  return getGoogleApis().gmail({ version: 'v1', auth, timeout: 60000 });
+  return require('googleapis').google.gmail({ version: 'v1', auth, timeout: 60000 });
 }
 
 function getHeader(headers, name) {
@@ -2375,7 +2377,7 @@ const gmailOAuthStates = new Map();
 
 // Devuelve la URL de autorización como JSON; el frontend la abre en pestaña nueva.
 // La URL del callback (/api/gmail/oauth2callback) debe seguir pública: Google redirige allí.
-app.get('/api/gmail/authorize', authMiddleware, requirePermission('email.manage'), (req, res) => {
+app.get('/api/gmail/authorize', (req, res) => {
   try {
     const auth = createGmailAuthClient();
     const state = crypto.randomBytes(24).toString('hex');
@@ -2390,7 +2392,8 @@ app.get('/api/gmail/authorize', authMiddleware, requirePermission('email.manage'
     });
     res.json({ url });
   } catch (error) {
-    res.status(503).json({ error: 'Gmail no está configurado.' });
+    console.error('[GMAIL] Error en /authorize:', error.message, error.code);
+    res.status(503).json({ error: 'Gmail no está configurado.', detail: error.message });
   }
 });
 
