@@ -250,7 +250,7 @@ async function connect() {
 
         // Usuarios: garantiza al menos un admin aunque no exista database.json
         let seedUsers = (seed && Array.isArray(seed.users) && seed.users.length > 0) ? seed.users : [{
-          email: 'admin@ejemplo.com',
+          email: 'talentohumanova23@gmail.com',
           name: 'Administrador Talento Humano',
           role: 'admin',
           department: 'Talento Humano',
