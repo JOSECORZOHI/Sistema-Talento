@@ -932,6 +932,34 @@
     </div>
   </div>
 
+  <!-- Modal cambio forzado de contraseña (sin botón cerrar) -->
+  <div class="modal-backdrop" id="modal-force-change-password" style="z-index:9999;">
+    <div class="modal-container modal-small">
+      <div class="modal-header">
+        <h3>Cambio de Contraseña Obligatorio</h3>
+      </div>
+      <div class="modal-body-scroll">
+        <p style="margin-bottom:16px; color:var(--text-secondary);">Es su primer inicio de sesión. Debe cambiar su contraseña para continuar.</p>
+        <form id="form-force-change-password">
+          <div class="form-field">
+            <label for="fcp-current">Contraseña actual *</label>
+            <input type="password" id="fcp-current" required>
+          </div>
+          <div class="form-field">
+            <label for="fcp-new">Nueva contraseña *</label>
+            <input type="password" id="fcp-new" required minlength="12" placeholder="Mínimo 12 caracteres">
+          </div>
+          <div class="form-field">
+            <label for="fcp-confirm">Confirmar nueva contraseña *</label>
+            <input type="password" id="fcp-confirm" required minlength="12" placeholder="Repita la contraseña">
+          </div>
+          <div class="login-error" id="fcp-error" style="display:none; margin-bottom:12px;"></div>
+          <button type="submit" class="btn-submit-upload">Actualizar Contraseña</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <!-- JS Logic -->
   <script src="utils.js?v=2"></script>
   <script src="app.js?v=6"></script>

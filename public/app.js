@@ -6,6 +6,36 @@
     .catch(() => {});
 })();
 
+// --- CAMBIO FORZADO DE CONTRASEÑA ---
+(function initForceChangePassword() {
+  const user = getUser();
+  if (!user || !user.mustChangePassword) return;
+  const modal = document.getElementById('modal-force-change-password');
+  if (!modal) return;
+  modal.classList.add('show');
+  document.addEventListener('keydown', function blockEsc(e) { if (e.key === 'Escape') e.stopPropagation(); }, true);
+  modal.addEventListener('click', function blockBg(e) { if (e.target === modal) e.stopPropagation(); }, true);
+  document.getElementById('form-force-change-password').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const errDiv = document.getElementById('fcp-error');
+    errDiv.style.display = 'none';
+    const currentPassword = document.getElementById('fcp-current').value;
+    const newPassword = document.getElementById('fcp-new').value;
+    const confirm = document.getElementById('fcp-confirm').value;
+    if (newPassword !== confirm) { errDiv.textContent = 'Las contraseñas nuevas no coinciden.'; errDiv.style.display = 'block'; return; }
+    if (newPassword === currentPassword) { errDiv.textContent = 'La nueva contraseña debe ser diferente a la actual.'; errDiv.style.display = 'block'; return; }
+    try {
+      const res = await apiFetch('/api/auth/change-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ currentPassword, newPassword }) });
+      const data = await res.json();
+      if (!res.ok) { errDiv.textContent = data.error || 'Error al cambiar contraseña.'; errDiv.style.display = 'block'; return; }
+      user.mustChangePassword = false;
+      localStorage.setItem('th_user', JSON.stringify(user));
+      modal.classList.remove('show');
+      showToast('Contraseña actualizada. Bienvenido al sistema.', 'success');
+    } catch (err) { errDiv.textContent = 'Error de conexión.'; errDiv.style.display = 'block'; }
+  });
+})();
+
 // GLOBALES Y ESTADO
 let appState = {
   employees: [],
