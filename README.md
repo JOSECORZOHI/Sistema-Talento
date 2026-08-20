@@ -1,6 +1,6 @@
 # Sistema de Gestión Documental — Talento Humano
 
-Aplicativo web para registrar, clasificar, consultar y hacer seguimiento a los documentos digitales de los funcionarios de la Alcaldía de Valledupar.
+Aplicativo web para registrar, clasificar, consultar y hacer seguimiento a los documentos digitales de los funcionarios de una organización.
 
 ## Funcionalidades
 
@@ -18,7 +18,7 @@ Requiere Node.js 18 o superior y una instancia MongoDB accesible.
 
 ```powershell
 npm.cmd install
-# Copie .env.example a .env y complete DATABASE_URL, JWT_SECRET y ALLOWED_EMAIL_DOMAIN.
+# Copie .env.example a .env y complete DATABASE_URL y JWT_SECRET.
 npm.cmd start
 ```
 
@@ -37,13 +37,11 @@ La configuración se lee de `.env` (ver `.env.example`). `JWT_SECRET` es obligat
 
 El sistema incluye catálogos y usuarios de ejemplo para facilitar la capacitación inicial. Sustitúyalos por los datos institucionales antes del despliegue.
 
-## Acceso por correo institucional
+## Acceso por correo electrónico
 
-Los usuarios ingresan con su correo `@valledupar-cesar.gov.co`. El sistema valida que el correo exista en la lista de usuarios autorizados o coincida con el correo de un funcionario registrado.
+Los usuarios ingresan con su correo electrónico registrado. El sistema valida que el correo exista en la lista de usuarios autorizados o coincida con el correo de un funcionario registrado.
 
-Correos de prueba incluidos en la carga inicial:
-- `admin@valledupar-cesar.gov.co`
-- `maria.lopez@valledupar-cesar.gov.co`
+Opcionalmente, puede restringir el dominio de correo permitido configurando `ALLOWED_EMAIL_DOMAIN` en `.env`.
 
 ## Flujo de trabajo
 

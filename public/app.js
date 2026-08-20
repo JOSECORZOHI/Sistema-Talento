@@ -1904,7 +1904,7 @@ function renderEmailDetail(emailId) {
   document.getElementById('email-detail-subject').textContent = email.subject;
   document.getElementById('email-detail-date').textContent = new Date(email.date).toLocaleString();
   document.getElementById('email-detail-sender-name').textContent = email.senderName;
-  document.getElementById('email-detail-sender-email').textContent = email.senderEmail || email.sender || 'sin-correo@valledupar-cesar.gov.co';
+  document.getElementById('email-detail-sender-email').textContent = email.senderEmail || email.sender || 'correo@ejemplo.com';
   document.getElementById('email-detail-body').textContent = email.body;
 
   const grid = document.getElementById('email-attachments-grid');

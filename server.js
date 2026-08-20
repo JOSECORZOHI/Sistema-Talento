@@ -54,7 +54,7 @@ const MAX_REGISTER_BYTES = 50 * 1024 * 1024;
 const DOCUMENTS_DIR = path.join(__dirname, 'storage', 'documentos');
 const SCANNER_DIR = path.join(__dirname, 'bandeja_escaner');
 const GMAIL_INBOX_DIR = path.join(__dirname, 'storage', 'gmail_adjuntos');
-const ALLOWED_EMAIL_DOMAIN = (process.env.ALLOWED_EMAIL_DOMAIN || 'valledupar-cesar.gov.co').toLowerCase();
+const ALLOWED_EMAIL_DOMAIN = (process.env.ALLOWED_EMAIL_DOMAIN || '').toLowerCase();
 [DOCUMENTS_DIR, SCANNER_DIR, GMAIL_INBOX_DIR].forEach(directory => {
   if (!fs.existsSync(directory)) fs.mkdirSync(directory, { recursive: true });
 });
@@ -268,7 +268,9 @@ function normalizeEmail(email) {
 }
 
 function isAllowedInstitutionalEmail(email) {
-  return normalizeEmail(email).endsWith(`@${ALLOWED_EMAIL_DOMAIN}`);
+  const e = normalizeEmail(email);
+  if (!ALLOWED_EMAIL_DOMAIN) return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+  return e.endsWith(`@${ALLOWED_EMAIL_DOMAIN}`);
 }
 
 // --- FUNCIONES DE SEGURIDAD ---
@@ -1386,7 +1388,8 @@ app.post('/api/employees', authMiddleware, requirePermission('employees.create')
   if (!name) name = id.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[._-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase()).trim();
   if (!position) position = 'Sin asignar';
   if (!isAllowedInstitutionalEmail(email)) {
-    return res.status(400).json({ error: `El correo del funcionario debe ser institucional (@${ALLOWED_EMAIL_DOMAIN}).` });
+    const hint = ALLOWED_EMAIL_DOMAIN ? ` (@${ALLOWED_EMAIL_DOMAIN})` : '';
+    return res.status(400).json({ error: `El correo del funcionario no es válido${hint}.` });
   }
   if (await col('employees').findOne({ id })) {
     return res.status(400).json({ error: 'Ya existe un empleado con esta identificación (Cédula).' });
