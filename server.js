@@ -19,6 +19,16 @@ const PDFDocument = require('pdfkit');
 const nodemailer = require('nodemailer');
 const { connect, col, isHealthy, reconnect, closeDb, storeFileBuffer, readFileStream, deleteFileByName, listFilesBySource, markFileRegistered } = require('./db');
 
+// Generador de contraseñas temporales para nuevos funcionarios
+function generateTempPassword() {
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lower = 'abcdefghjkmnpqrstuvwxyz';
+  const digits = '23456789';
+  const symbols = '!@#$%^&*_-+=?';
+  const pick = (set, n) => Array.from({ length: n }, () => set[crypto.randomInt(set.length)]).join('');
+  return pick(upper, 2) + pick(lower, 2) + pick(digits, 2) + pick(symbols, 2) + pick(upper + lower + digits + symbols, 8);
+}
+
 // Prevenir caídas por errores no controlados
 process.on('unhandledRejection', (err) => {
   console.error('[PROCESS] Unhandled rejection:', err.message || err);
@@ -93,15 +103,28 @@ function getAppBaseUrl(req) {
   return null;
 }
 
-async function sendEmail({ to, subject, html }) {
+async function sendEmail({ to, subject, html, text }) {
+  console.log('[MAIL] Intentando enviar a:', to, '| SMTP_ENABLED:', SMTP_ENABLED);
   if (!SMTP_ENABLED) {
     console.warn('[MAIL] SMTP no configurado; no se envió correo a', to);
     return false;
   }
   const transporter = getMailTransporter();
-  if (!transporter) return false;
+  if (!transporter) { console.warn('[MAIL] No se creó transporter'); return false; }
   try {
-    await transporter.sendMail({ from: SMTP_FROM, to, subject, html });
+    const info = await transporter.sendMail({
+      from: SMTP_FROM,
+      to,
+      subject,
+      html,
+      text: text || subject,
+      headers: {
+        'List-Unsubscribe': `<mailto:${SMTP_CONFIG.user}?subject=Cancelar%20suscripci%C3%B3n>`,
+        'X-Mailer': 'SistemaTalentoHumano',
+        'Precedence': 'bulk'
+      }
+    });
+    console.log('[MAIL] Correo enviado a', to, '| messageId:', info.messageId);
     return true;
   } catch (err) {
     console.error('[MAIL] Error enviando correo:', err.message || err);
@@ -1460,11 +1483,16 @@ app.post('/api/employees', authMiddleware, requirePermission('employees.create')
     return res.status(400).json({ error: 'El correo electrónico ya pertenece a una cuenta de administrador.' });
   }
 
+  const tempPassword = generateTempPassword();
+  const tempHash = await bcrypt.hash(tempPassword, 12);
+
   const newEmployee = {
     id, name, department, position,
     email: normalizeEmail(email),
-    status: 'pendiente',
-    active: false,
+    status: 'activa',
+    active: true,
+    mustChangePassword: true,
+    password: tempHash,
     registeredAt: new Date().toISOString(),
     registeredBy: 'Administrador',
     failedAttempts: 0,
@@ -1473,101 +1501,30 @@ app.post('/api/employees', authMiddleware, requirePermission('employees.create')
   try {
     await col('employees').insertOne(newEmployee);
   } catch (insertErr) {
-    // Carrera con otro request: los índices únicos protegen; responder 400 en vez de 500
     if (insertErr.code === 11000) {
       return res.status(400).json({ error: 'Ya existe un empleado con esta identificación o correo electrónico.' });
     }
     throw insertErr;
   }
 
-  const activation = generateSecureToken(24);
-  await col('activationTokens').insertOne({
-    tokenHash: activation.hash,
-    email: normalizeEmail(email),
-    name,
-    role: 'funcionario',
-    expiresAt: activation.expiresAt,
-    createdAt: new Date()
-  });
+  await addAuditLog('Crear Empleado', `Se registró al funcionario ${name} con C.C. ${id}. Contraseña temporal generada y enviada por correo.`, 'Administrador', ip);
 
-  await addAuditLog('Crear Empleado', `Se registró al funcionario ${name} con C.C. ${id}. Token de activación generado.`, 'Administrador', ip);
-
-  const activationBase = getAppBaseUrl(req);
-  const activationUrl = activationBase ? `${activationBase}/activate.html?token=${activation.raw}` : null;
-  const logoUrl = activationBase ? `${activationBase}/Escudo_Valledupar.png` : 'Escudo_Valledupar.png';
-  const activationSent = activationUrl ? await sendEmail({
+  const baseUrl = getAppBaseUrl(req);
+  const logoUrl = baseUrl ? `${baseUrl}/Escudo_Valledupar.png` : 'Escudo_Valledupar.png';
+  const loginUrl = baseUrl || '#';
+  const emailSent = await sendEmail({
     to: normalizeEmail(email),
-    subject: 'Activación de cuenta — Sistema de Talento Humano',
-    html: `<!DOCTYPE html>
-<html lang="es">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background-color:#f4f6f8;font-family:Arial,Helvetica,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f8;padding:40px 20px;">
-    <tr><td align="center">
-      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);">
-        <!-- Header -->
-        <tr>
-          <td style="background:linear-gradient(135deg,#1A5276 0%,#154360 50%,#0E2F44 100%);padding:32px 40px;text-align:center;">
-            <img src="${logoUrl}" alt="Escudo de Valledupar" width="72" height="72" style="display:block;margin:0 auto 16px;border-radius:14px;background:rgba(255,255,255,0.12);padding:8px;">
-            <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;">Sistema de Talento Humano</h1>
-            <p style="margin:6px 0 0;color:rgba(255,255,255,0.8);font-size:13px;">Alcaldía de Valledupar</p>
-          </td>
-        </tr>
-        <!-- Body -->
-        <tr>
-          <td style="padding:36px 40px;">
-            <p style="margin:0 0 16px;color:#333;font-size:15px;">Hola <strong>${escapeHtml(name)}</strong>,</p>
-            <p style="margin:0 0 20px;color:#555;font-size:14px;line-height:1.6;">
-              Se creó su cuenta en el Sistema de Gestión Documental de la Alcaldía de Valledupar.
-              A continuación sus credenciales de acceso:
-            </p>
-            <!-- Credenciales -->
-            <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f7fb;border:1px solid #d6e8f2;border-radius:8px;margin-bottom:24px;">
-              <tr>
-                <td style="padding:20px 24px;">
-                  <p style="margin:0 0 4px;color:#888;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Correo electrónico</p>
-                  <p style="margin:0 0 16px;color:#1A5276;font-size:16px;font-weight:700;">${escapeHtml(normalizeEmail(email))}</p>
-                  <p style="margin:0 0 4px;color:#888;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Estado</p>
-                  <p style="margin:0;color:#e67e22;font-size:14px;font-weight:600;">Pendiente de activación</p>
-                </td>
-              </tr>
-            </table>
-            <!-- Botón activar -->
-            <p style="margin:0 0 12px;color:#555;font-size:14px;line-height:1.6;">
-              Para acceder al sistema, primero debe activar su cuenta y definir una contraseña:
-            </p>
-            <table width="100%" cellpadding="0" cellspacing="0">
-              <tr>
-                <td align="center" style="padding:8px 0 24px;">
-                  <a href="${activationUrl}" style="display:inline-block;background:#1A5276;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;padding:14px 36px;border-radius:8px;">Activar mi cuenta</a>
-                </td>
-              </tr>
-            </table>
-            <p style="margin:0;color:#999;font-size:12px;line-height:1.5;">El enlace de activación es válido por <strong>24 horas</strong>. Si no solicitó esta cuenta, ignore este correo.</p>
-          </td>
-        </tr>
-        <!-- Footer -->
-        <tr>
-          <td style="background:#f8f9fa;border-top:1px solid #eee;padding:20px 40px;text-align:center;">
-            <p style="margin:0;color:#aaa;font-size:11px;">Sistema de Gestión Documental — Talento Humano · Alcaldía de Valledupar</p>
-          </td>
-        </tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`
-  }) : false;
+    subject: 'Credenciales de acceso — Sistema de Talento Humano',
+    html: `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head><body style="margin:0;padding:0;background:#f4f6f8;font-family:Arial,Helvetica,sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f8;padding:40px 20px;"><tr><td align="center"><table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);"><tr><td style="background:linear-gradient(135deg,#1A5276 0%,#154360 50%,#0E2F44 100%);padding:32px 40px;text-align:center;"><img src="${logoUrl}" alt="Escudo" width="72" height="72" style="display:block;margin:0 auto 16px;border-radius:14px;background:rgba(255,255,255,0.12);padding:8px;"><h1 style="margin:0;color:#fff;font-size:22px;font-weight:700;">Sistema de Talento Humano</h1><p style="margin:6px 0 0;color:rgba(255,255,255,0.8);font-size:13px;">Alcald&iacute;a de Valledupar</p></td></tr><tr><td style="padding:36px 40px;"><p style="margin:0 0 16px;color:#333;font-size:15px;">Hola <strong>${escapeHtml(name)}</strong>,</p><p style="margin:0 0 20px;color:#555;font-size:14px;line-height:1.6;">Se cre&oacute; su cuenta en el Sistema de Gesti&oacute;n Documental de la Alcald&iacute;a de Valledupar. A continuaci&oacute;n sus credenciales de acceso iniciales:</p><table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f7fb;border:1px solid #d6e8f2;border-radius:8px;margin-bottom:24px;"><tr><td style="padding:20px 24px;"><p style="margin:0 0 4px;color:#888;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Correo electr&oacute;nico</p><p style="margin:0 0 16px;color:#1A5276;font-size:16px;font-weight:700;">${escapeHtml(normalizeEmail(email))}</p><p style="margin:0 0 4px;color:#888;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Contrase&ntilde;a temporal</p><p style="margin:0 0 4px;color:#c0392b;font-size:18px;font-weight:700;font-family:Consolas,Monaco,monospace;letter-spacing:1px;">${escapeHtml(tempPassword)}</p><p style="margin:8px 0 0;color:#e67e22;font-size:12px;font-weight:600;">Debe cambiar esta contrase&ntilde;a en su primer inicio de sesi&oacute;n.</p></td></tr></table><p style="margin:0 0 12px;color:#555;font-size:14px;line-height:1.6;">Ingrese al sistema con las credenciales anteriores. Ser&aacute; obligatorio crear una nueva contrase&ntilde;a.</p><table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:8px 0 24px;"><a href="${loginUrl}" style="display:inline-block;background:#1A5276;color:#fff;text-decoration:none;font-size:15px;font-weight:600;padding:14px 36px;border-radius:8px;">Ingresar al sistema</a></td></tr></table><p style="margin:0;color:#999;font-size:12px;line-height:1.5;">Por seguridad, cambie su contrase&ntilde;a lo antes posible. Si no solicit&oacute; esta cuenta, ignore este correo.</p></td></tr><tr><td style="background:#f8f9fa;border-top:1px solid #eee;padding:20px 40px;text-align:center;"><p style="margin:0;color:#aaa;font-size:11px;">Sistema de Gesti&oacute;n Documental &mdash; Talento Humano &middot; Alcald&iacute;a de Valledupar</p></td></tr></table></td></tr></table></body></html>`,
+    text: `Hola ${name},\n\nSe creó su cuenta en el Sistema de Gestión Documental de la Alcaldía de Valledupar.\n\nCorreo: ${normalizeEmail(email)}\nContraseña temporal: ${tempPassword}\n\nDebe cambiar esta contraseña en su primer inicio de sesión.\nInicie sesión en: ${loginUrl}\n\nSi no solicitó esta cuenta, ignore este correo.`
+  });
 
   res.status(201).json({
     ...newEmployee,
-    // El token solo se expone cuando el correo no pudo enviarse (no hay SMTP),
-    // para que el administrador lo comparta manualmente. Si el correo se envió,
-    // el token nunca se devuelve al navegador.
-    ...(activationSent ? { activationSent } : { activationToken: activation.raw, activationSent: false }),
-    message: activationSent
-      ? `Empleado creado. Se envió el enlace de activación al correo del funcionario.`
-      : `Empleado creado. Comparta este enlace de activación con el funcionario: /activate.html?token=${activation.raw}`
+    password: undefined,
+    ...(emailSent
+      ? { emailSent: true, message: 'Empleado creado. Se enviaron las credenciales de acceso al correo del funcionario.' }
+      : { emailSent: false, tempPassword, message: `Empleado creado. No se pudo enviar el correo. Contraseña temporal: ${tempPassword}` })
   });
 });
 
