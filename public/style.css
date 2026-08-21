@@ -2199,11 +2199,15 @@ textarea:focus {
   margin: 24px 0 10px;
 }
 .fcp-brand-content p { font-size: 15px; opacity: 0.85; line-height: 1.6; margin-bottom: 32px; }
-.fcp-icon-shield {
-  width: 80px; height: 80px; border-radius: 20px;
+.fcp-brand-escudo {
+  width: 100px; height: 100px; border-radius: 20px;
   background: rgba(255,255,255,0.12); backdrop-filter: blur(8px);
   border: 1px solid rgba(255,255,255,0.15);
   display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+}
+.fcp-brand-escudo img {
+  width: 80px; height: 80px; object-fit: contain;
 }
 .fcp-features { display: flex; flex-direction: column; gap: 14px; }
 .fcp-feature {
@@ -2223,7 +2227,10 @@ textarea:focus {
   width: 60px; height: 60px; border-radius: 50%;
   background: var(--primary-soft);
   display: flex; align-items: center; justify-content: center;
-  margin: 0 auto 18px;
+  margin: 0 auto 18px; overflow: hidden;
+}
+.fcp-lock-circle img {
+  width: 42px; height: 42px; object-fit: contain;
 }
 .fcp-card-header h3 {
   font-family: var(--font-display); font-size: 22px; font-weight: 700;
