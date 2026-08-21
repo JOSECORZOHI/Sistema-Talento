@@ -932,29 +932,61 @@
     </div>
   </div>
 
-  <!-- Modal cambio forzado de contraseña (sin botón cerrar) -->
-  <div class="modal-backdrop" id="modal-force-change-password" style="z-index:9999;">
-    <div class="modal-container modal-small">
-      <div class="modal-header">
-        <h3>Cambio de Contraseña Obligatorio</h3>
+  <!-- Modal cambio forzado de contraseña (sin botón cerrar, pantalla completa) -->
+  <div class="fcp-overlay" id="modal-force-change-password">
+    <div class="fcp-brand-panel">
+      <div class="fcp-brand-content">
+        <div class="fcp-icon-shield">
+          <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="white" stroke-width="1.5"><path stroke-linecap="round" stroke-linejoin="round" d="M12 2l7 4v5c0 5.25-3.5 9.74-7 11-3.5-1.26-7-5.75-7-11V6l7-4z"/><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4"/></svg>
+        </div>
+        <h2>Sistema Talento Humano</h2>
+        <p>Por su seguridad, debe actualizar su contraseña antes de continuar.</p>
+        <div class="fcp-features">
+          <div class="fcp-feature">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+            <span>Use una contraseña segura de al menos 12 caracteres</span>
+          </div>
+          <div class="fcp-feature">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+            <span>Protege la información de los funcionarios</span>
+          </div>
+        </div>
       </div>
-      <div class="modal-body-scroll">
-        <p style="margin-bottom:16px; color:var(--text-secondary);">Es su primer inicio de sesión. Debe cambiar su contraseña para continuar.</p>
+      <div class="bandera-stripe"><span></span><span></span><span></span></div>
+    </div>
+    <div class="fcp-form-panel">
+      <div class="fcp-form-card">
+        <div class="fcp-card-header">
+          <div class="fcp-lock-circle">
+            <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="var(--primary)" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+          </div>
+          <h3>Cambiar Contraseña</h3>
+          <p>Actualice su contraseña para acceder al sistema</p>
+        </div>
         <form id="form-force-change-password">
-          <div class="form-field">
-            <label for="fcp-current">Contraseña actual *</label>
-            <input type="password" id="fcp-current" required>
+          <div class="login-field">
+            <label for="fcp-current">Contraseña actual</label>
+            <div class="login-input-wrapper">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+              <input type="password" id="fcp-current" placeholder="Ingrese su contraseña actual" required autocomplete="current-password">
+            </div>
           </div>
-          <div class="form-field">
-            <label for="fcp-new">Nueva contraseña *</label>
-            <input type="password" id="fcp-new" required minlength="12" placeholder="Mínimo 12 caracteres">
+          <div class="login-field">
+            <label for="fcp-new">Nueva contraseña</label>
+            <div class="login-input-wrapper">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+              <input type="password" id="fcp-new" placeholder="Mínimo 12 caracteres" required minlength="12" autocomplete="new-password">
+            </div>
           </div>
-          <div class="form-field">
-            <label for="fcp-confirm">Confirmar nueva contraseña *</label>
-            <input type="password" id="fcp-confirm" required minlength="12" placeholder="Repita la contraseña">
+          <div class="login-field">
+            <label for="fcp-confirm">Confirmar nueva contraseña</label>
+            <div class="login-input-wrapper">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              <input type="password" id="fcp-confirm" placeholder="Repita la nueva contraseña" required minlength="12" autocomplete="new-password">
+            </div>
           </div>
-          <div class="login-error" id="fcp-error" style="display:none; margin-bottom:12px;"></div>
-          <button type="submit" class="btn-submit-upload">Actualizar Contraseña</button>
+          <div class="login-error-msg" id="fcp-error" style="display:none;"></div>
+          <button type="submit" class="fcp-submit-btn">Actualizar y Continuar</button>
         </form>
       </div>
     </div>
@@ -962,6 +994,6 @@
 
   <!-- JS Logic -->
   <script src="utils.js?v=2"></script>
-  <script src="app.js?v=6"></script>
+  <script src="app.js?v=7"></script>
 </body>
 </html>
