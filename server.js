@@ -194,16 +194,36 @@ app.use('/api/auth/activate', authLimiter);
 app.use('/api/auth/reset-password', authLimiter);
 app.use(express.static(path.join(__dirname, 'public'), { etag: true, maxAge: '1h' }));
 
+// Estado de reconexión (compartido con health check más abajo)
+let isReconnecting = false;
+
 // Middleware: rechazar APIs si la BD no está conectada aún
-app.use('/api', (req, res, next) => {
+// Si la BD se cayó, intenta reconectar automáticamente (espera hasta 12s).
+app.use('/api', async (req, res, next) => {
   if (req.path === '/auth/login') return next();
-  // El callback OAuth es una URL pública requerida por Google; no puede depender de la BD.
   if (req.path === '/gmail/oauth2callback') return next();
   if (req.path === '/gmail/authorize') return next();
-  try { col('users'); } catch (e) {
-    return res.status(503).json({ error: 'Base de datos conectándose. Espere unos segundos e intente de nuevo.' });
+  try {
+    col('users');
+    return next();
+  } catch (e) {
+    // BD caída: intentar reconexión automática (máx 1 intento a la vez)
+    if (!isReconnecting) {
+      isReconnecting = true;
+      console.warn('[MONGO] Middleware detectó BD caída, intentando reconexión...');
+      reconnect().then(ok => {
+        isReconnecting = false;
+        if (ok) console.log('[MONGO] Reconexión desde middleware exitosa.');
+        else console.warn('[MONGO] Reconexión desde middleware falló.');
+      }).catch(() => { isReconnecting = false; });
+    }
+    // Esperar hasta 12s a que la BD se recupere
+    for (let i = 0; i < 24; i++) {
+      await new Promise(r => setTimeout(r, 500));
+      try { col('users'); return next(); } catch (_) {}
+    }
+    return res.status(503).json({ error: 'Base de datos temporalmente no disponible. Intente de nuevo en unos segundos.' });
   }
-  next();
 });
 
 const ALLOWED_EXTENSIONS = new Set([
@@ -2630,7 +2650,6 @@ app.get('*', (req, res) => {
 });
 
 // --- Verificador de salud de conexión: reconexión automática al morir el pool ---
-let isReconnecting = false;
 let lastReconnectAttempt = 0;
 const RECONNECT_COOLDOWN_MS = 10000;
 
