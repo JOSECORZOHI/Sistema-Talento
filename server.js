@@ -1395,10 +1395,7 @@ app.get('/api/funcionario/init', authMiddleware, async (req, res) => {
 
     let emails = [];
     try {
-      const emp = await col('employees').findOne({ id: empId });
-      if (emp && emp.email) {
-        emails = await col('emailsInbox').find({ senderEmail: emp.email }).sort({ date: -1 }).toArray();
-      }
+      emails = await col('emailsInbox').find().sort({ date: -1 }).toArray();
     } catch (e) { console.warn('Error obteniendo inbox de correo:', e.message); }
 
     res.json({ docs, config: { documentTypes: dtResult, categories: catResult }, scannerFiles, emails });
@@ -2567,16 +2564,7 @@ app.get('/api/gmail/oauth2callback', async (req, res) => {
 
 app.get('/api/email-inbox', authMiddleware, requireAnyPermission('email.manage', 'email.read'), async (req, res) => {
   try {
-    let filter = {};
-    if (req.user.role === 'funcionario') {
-      const emp = await col('employees').findOne({ id: req.user.employeeId });
-      if (emp && emp.email) {
-        filter.senderEmail = emp.email;
-      } else {
-        filter.senderEmail = '__none__';
-      }
-    }
-    const emails = await col('emailsInbox').find(filter).sort({ date: -1 }).limit(200).toArray();
+    const emails = await col('emailsInbox').find().sort({ date: -1 }).limit(200).toArray();
     res.json(emails);
   } catch (e) {
     console.error('[EMAIL-INBOX] Error:', e.message);
