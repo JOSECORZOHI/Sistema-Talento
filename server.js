@@ -106,33 +106,69 @@ function getAppBaseUrl(req) {
   return null;
 }
 
-async function sendEmail({ to, subject, html, text }) {
-  console.log('[MAIL] Intentando enviar a:', to, '| SMTP_ENABLED:', SMTP_ENABLED);
-  if (!SMTP_ENABLED) {
-    console.warn('[MAIL] SMTP no configurado; no se envió correo a', to);
-    return false;
-  }
-  const transporter = getMailTransporter();
-  if (!transporter) { console.warn('[MAIL] No se creó transporter'); return false; }
+async function sendViaGmailApi({ to, subject, html, text }) {
   try {
-    const info = await transporter.sendMail({
-      from: SMTP_FROM,
-      to,
-      subject,
-      html,
-      text: text || subject,
-      headers: {
-        'List-Unsubscribe': `<mailto:${SMTP_CONFIG.user}?subject=Cancelar%20suscripci%C3%B3n>`,
-        'X-Mailer': 'SistemaTalentoHumano',
-        'Precedence': 'bulk'
-      }
+    const gmail = getGmailClient();
+    const mimeMessage = [
+      `From: ${SMTP_FROM}`,
+      `To: ${to}`,
+      `Subject: ${subject}`,
+      `MIME-Version: 1.0`,
+      `Content-Type: text/html; charset=UTF-8`,
+      ``,
+      html || text || subject
+    ].join('\r\n');
+    const encodedMessage = Buffer.from(mimeMessage)
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+    await gmail.users.messages.send({
+      userId: 'me',
+      requestBody: { raw: encodedMessage }
     });
-    console.log('[MAIL] Correo enviado a', to, '| messageId:', info.messageId);
+    console.log('[MAIL-GAPI] Correo enviado a', to);
     return true;
   } catch (err) {
-    console.error('[MAIL] Error enviando correo:', err.message || err);
+    console.error('[MAIL-GAPI] Error:', err.message || err);
     return false;
   }
+}
+
+async function sendEmail({ to, subject, html, text }) {
+  console.log('[MAIL] Intentando enviar a:', to, '| SMTP_ENABLED:', SMTP_ENABLED);
+
+  if (SMTP_ENABLED) {
+    const transporter = getMailTransporter();
+    if (transporter) {
+      try {
+        const info = await transporter.sendMail({
+          from: SMTP_FROM,
+          to,
+          subject,
+          html,
+          text: text || subject,
+          headers: {
+            'List-Unsubscribe': `<mailto:${SMTP_CONFIG.user}?subject=Cancelar%20suscripci%C3%B3n>`,
+            'X-Mailer': 'SistemaTalentoHumano',
+            'Precedence': 'bulk'
+          }
+        });
+        console.log('[MAIL] Correo enviado a', to, '| messageId:', info.messageId);
+        return true;
+      } catch (err) {
+        console.warn('[MAIL] SMTP falló, intentando Gmail API:', err.message || err);
+      }
+    }
+  }
+
+  if (process.env.GMAIL_REFRESH_TOKEN) {
+    const sent = await sendViaGmailApi({ to, subject, html, text });
+    if (sent) return true;
+  }
+
+  console.error('[MAIL] No se pudo enviar correo a', to);
+  return false;
 }
 
 function escapeHtml(value) {
