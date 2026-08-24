@@ -587,7 +587,10 @@
       <div class="portal-panel" id="panel-correo">
         <div class="portal-docs-header">
           <h3>Bandeja de Correo</h3>
-          <span id="portal-email-count">0 correos</span>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span id="portal-email-count">0 correos</span>
+            <button class="btn btn-secondary" id="btn-portal-sync-email" style="padding:6px 12px;font-size:12px;" onclick="syncFuncionarioEmails()">Sincronizar correo</button>
+          </div>
         </div>
         <div id="portal-email-list" class="portal-email-list"></div>
       </div>

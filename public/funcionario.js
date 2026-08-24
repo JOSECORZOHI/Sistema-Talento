@@ -374,6 +374,25 @@ function renderPortalScannerFiles() {
 }
 
 // ============================================================
+// SINCRONIZAR CORREO
+// ============================================================
+window.syncFuncionarioEmails = async function() {
+  const btn = document.getElementById('btn-portal-sync-email');
+  if (btn) { btn.disabled = true; btn.textContent = 'Sincronizando...'; }
+  try {
+    const res = await apiFetchWithRetry('/api/email-inbox/sync', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) { showToast(data.error || 'Error al sincronizar.', 'error'); return; }
+    showToast(data.message || 'Correo sincronizado.', 'success');
+    await loadPortalData();
+  } catch (e) {
+    showToast('Error de conexión al sincronizar.', 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Sincronizar correo'; }
+  }
+};
+
+// ============================================================
 // RENDERIZAR BANDEJA DE CORREO
 // ============================================================
 function renderPortalEmailInbox() {
