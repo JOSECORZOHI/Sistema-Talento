@@ -215,7 +215,15 @@ app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/forgot-password', authLimiter);
 app.use('/api/auth/activate', authLimiter);
 app.use('/api/auth/reset-password', authLimiter);
-app.use(express.static(path.join(__dirname, 'public'), { etag: true, maxAge: '1h' }));
+app.use(express.static(path.join(__dirname, 'public'), {
+  etag: true,
+  maxAge: '1h',
+  setHeaders(res, filePath) {
+    if (filePath.endsWith('.html')) {
+      res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+    }
+  }
+}));
 
 // Estado de reconexión (compartido con health check más abajo)
 let isReconnecting = false;
@@ -225,7 +233,6 @@ let isReconnecting = false;
 app.use('/api', async (req, res, next) => {
   if (req.path === '/auth/login') return next();
   if (req.path === '/gmail/oauth2callback') return next();
-  if (req.path === '/gmail/authorize') return next();
   try {
     col('users');
     return next();
@@ -1023,7 +1030,7 @@ async function authMiddleware(req, res, next) {
     const collection = getCollectionForRole(decoded.role);
     const dbUser = await col(collection).findOne(
       { email: decoded.email },
-      { projection: { jwtVersion: 1, status: 1, active: 1, id: 1, name: 1 } }
+      { projection: { jwtVersion: 1, status: 1, active: 1, id: 1, name: 1, mustChangePassword: 1 } }
     );
     if (!dbUser) {
       return res.status(401).json({ error: 'Usuario no encontrado. Inicie sesión nuevamente.' });
@@ -1033,6 +1040,9 @@ async function authMiddleware(req, res, next) {
     }
     if (dbUser.status === 'suspendida' || dbUser.status === 'inactiva' || dbUser.status === 'bloqueada' || (decoded.role === 'funcionario' && dbUser.active === false)) {
       return res.status(401).json({ error: 'Su cuenta no está activa. Contacte al administrador.' });
+    }
+    if (dbUser.mustChangePassword && !req.originalUrl.includes('/auth/change-password')) {
+      return res.status(403).json({ error: 'Debe cambiar su contraseña antes de continuar.', mustChangePassword: true });
     }
     req.user = decoded;
     next();
@@ -1360,7 +1370,7 @@ app.get('/api/funcionario/init', authMiddleware, async (req, res) => {
 
 
 
-app.post('/api/funcionario/subir-documento', authMiddleware, upload.single('file'), uploadLimiter, async (req, res) => {
+app.post('/api/funcionario/subir-documento', authMiddleware, uploadLimiter, upload.single('file'), async (req, res) => {
   if (req.user.role !== 'funcionario') return res.status(403).json({ error: 'Acceso denegado.' });
   if (!req.file) return res.status(400).json({ error: 'No se proporcionó ningún archivo o el formato no es válido.' });
 
@@ -1468,7 +1478,7 @@ app.post('/api/employees', authMiddleware, requirePermission('employees.create')
   }
   if (!id) id = email.split('@')[0].replace(/[^a-zA-Z0-9]/g, '') + crypto.randomInt(0, 1000).toString().padStart(3, '0');
   if (!name) name = id.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[._-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase()).trim();
-  if (!position) position = 'Sin asignar';
+  if (!position) position = 'Funcionario';
   if (!isAllowedInstitutionalEmail(email)) {
     const hint = ALLOWED_EMAIL_DOMAIN ? ` (@${ALLOWED_EMAIL_DOMAIN})` : '';
     return res.status(400).json({ error: `El correo del funcionario no es válido${hint}.` });
@@ -1574,6 +1584,26 @@ app.patch('/api/employees/:id/toggle-active', authMiddleware, requirePermission(
   } catch (error) {
     console.error('[TOGGLE-ACTIVE] Error:', error);
     res.status(500).json({ error: 'Error al cambiar estado del funcionario.' });
+  }
+});
+
+// --- FUNCIONARIO: ACTUALIZAR PROPIO NOMBRE ---
+app.put('/api/employees/profile', authMiddleware, async (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ error: 'El nombre es obligatorio.' });
+    const trimmed = name.trim();
+    if (trimmed.length < 3 || trimmed.length > 100) return res.status(400).json({ error: 'El nombre debe tener entre 3 y 100 caracteres.' });
+
+    const employee = await col('employees').findOne({ email: req.user.email });
+    if (!employee) return res.status(404).json({ error: 'Funcionario no encontrado.' });
+
+    await col('employees').updateOne({ _id: employee._id }, { $set: { name: trimmed } });
+    await addAuditLog('Actualizar Nombre', `El funcionario ${employee.name} actualizó su nombre a "${trimmed}".`, employee.email, req.ip);
+    res.json({ message: 'Nombre actualizado exitosamente.', name: trimmed });
+  } catch (error) {
+    console.error('[PROFILE] Error:', error);
+    res.status(500).json({ error: 'Error al actualizar el nombre.' });
   }
 });
 
@@ -1733,7 +1763,7 @@ app.post('/api/documents/register-local', authMiddleware, requirePermission('doc
   res.status(201).json(result.doc);
 });
 
-app.post('/api/documents/upload', authMiddleware, requirePermission('documents.create'), upload.single('file'), uploadLimiter, async (req, res) => {
+app.post('/api/documents/upload', authMiddleware, requirePermission('documents.create'), uploadLimiter, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No se proporcionó ningún archivo o el formato no es válido.' });
 
   const { employeeId, documentTypeId, categoryId, description, issueDate, expiryDate, status } = req.body;
@@ -2447,7 +2477,7 @@ const gmailOAuthStates = new Map();
 
 // Devuelve la URL de autorización como JSON; el frontend la abre en pestaña nueva.
 // La URL del callback (/api/gmail/oauth2callback) debe seguir pública: Google redirige allí.
-app.get('/api/gmail/authorize', (req, res) => {
+app.get('/api/gmail/authorize', authMiddleware, requirePermission('email.manage'), (req, res) => {
   try {
     const auth = createGmailAuthClient();
     const state = crypto.randomBytes(24).toString('hex');
@@ -2689,6 +2719,17 @@ app.use((error, req, res, next) => {
 
   console.error('Error no controlado:', error.message || error);
   res.status(500).json({ error: 'Error interno del servidor.' });
+});
+
+// --- HEALTH CHECK ---
+app.get('/api/health', async (req, res) => {
+  try {
+    const healthy = await isHealthy();
+    if (healthy) return res.json({ status: 'ok', db: 'connected' });
+    res.status(503).json({ status: 'degraded', db: 'disconnected' });
+  } catch (_) {
+    res.status(503).json({ status: 'error', db: 'unknown' });
+  }
 });
 
 // Respaldo SPA — solo para rutas que no sean API

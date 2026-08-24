@@ -26,33 +26,10 @@ function checkAuthFuncionario() { return checkAuth('funcionario'); }
 // ============================================================
 document.addEventListener('DOMContentLoaded', () => {
   // --- CAMBIO FORZADO DE CONTRASEÑA (primer login) ---
-  const fcpUser = getUser();
-  if (fcpUser && fcpUser.mustChangePassword) {
-    const fcpModal = document.getElementById('modal-force-change-password');
-    if (fcpModal) {
-      fcpModal.classList.add('show');
-      document.addEventListener('keydown', function blockEsc(e) { if (e.key === 'Escape') e.stopPropagation(); }, true);
-      fcpModal.addEventListener('click', function blockBg(e) { if (e.target === fcpModal) e.stopPropagation(); }, true);
-      document.getElementById('form-force-change-password').addEventListener('submit', async function(e) {
-        e.preventDefault();
-        const errDiv = document.getElementById('fcp-error');
-        errDiv.style.display = 'none';
-        const currentPassword = document.getElementById('fcp-current').value;
-        const newPassword = document.getElementById('fcp-new').value;
-        const confirm = document.getElementById('fcp-confirm').value;
-        if (newPassword !== confirm) { errDiv.textContent = 'Las contraseñas nuevas no coinciden.'; errDiv.style.display = 'block'; return; }
-        if (newPassword === currentPassword) { errDiv.textContent = 'La nueva contraseña debe ser diferente a la actual.'; errDiv.style.display = 'block'; return; }
-        try {
-          const res = await apiFetch('/api/auth/change-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ currentPassword, newPassword }) });
-          const data = await res.json();
-          if (!res.ok) { errDiv.textContent = data.error || 'Error al cambiar contraseña.'; errDiv.style.display = 'block'; return; }
-          fcpUser.mustChangePassword = false;
-          localStorage.setItem('th_user', JSON.stringify(fcpUser));
-          fcpModal.classList.remove('show');
-          showToast('Contraseña actualizada. Bienvenido al sistema.', 'success');
-        } catch (err) { errDiv.textContent = 'Error de conexión.'; errDiv.style.display = 'block'; }
-      });
-    }
+  // Manejado por script inline en funcionario.html (independiente de cache JS externo).
+  // Verificar: si el overlay FCP sigue visible, NO inicializar el portal.
+  if (document.getElementById('fcp-overlay') && document.getElementById('fcp-overlay').style.display !== 'none') {
+    return;
   }
   if (!checkAuthFuncionario()) return;
 
@@ -147,6 +124,53 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Botón de cambiar contraseña
   document.getElementById('btn-change-password').addEventListener('click', () => openModal('modal-change-password'));
+
+  // Botón de editar nombre
+  document.getElementById('btn-edit-name').addEventListener('click', () => {
+    const nameEl = document.getElementById('portal-user-name');
+    const currentName = nameEl.textContent.trim();
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = currentName;
+    input.style.cssText = 'font-size:14px;font-weight:600;padding:2px 6px;border:1px solid var(--primary);border-radius:4px;outline:none;width:180px;background:var(--surface);color:var(--text-primary);';
+    const saveBtn = document.createElement('button');
+    saveBtn.textContent = '✓';
+    saveBtn.style.cssText = 'background:var(--primary);color:white;border:none;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:13px;font-weight:600;';
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = '✕';
+    cancelBtn.style.cssText = 'background:var(--error,#dc3545);color:white;border:none;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:13px;font-weight:600;';
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = 'display:flex;align-items:center;gap:4px;';
+    wrapper.appendChild(input);
+    wrapper.appendChild(saveBtn);
+    wrapper.appendChild(cancelBtn);
+    nameEl.replaceWith(wrapper);
+    wrapper.id = 'portal-user-name';
+    input.focus();
+    input.select();
+    const restore = () => { wrapper.replaceWith(nameEl); };
+    cancelBtn.addEventListener('click', restore);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Escape') restore(); if (e.key === 'Enter') saveBtn.click(); });
+    saveBtn.addEventListener('click', async () => {
+      const newName = input.value.trim();
+      if (!newName || newName.length < 3) { input.style.borderColor = 'var(--error,#dc3545)'; return; }
+      saveBtn.disabled = true;
+      saveBtn.textContent = '...';
+      try {
+        const res = await apiFetch('/api/employees/profile', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newName }) });
+        const data = await res.json();
+        if (!res.ok) { input.style.borderColor = 'var(--error,#dc3545)'; input.title = data.error; saveBtn.disabled = false; saveBtn.textContent = '✓'; return; }
+        portalState.employee.name = data.name;
+        const u = getUser(); if (u) { u.name = data.name; localStorage.setItem('th_user', JSON.stringify(u)); }
+        nameEl.textContent = data.name;
+        wrapper.replaceWith(nameEl);
+        document.getElementById('portal-avatar').textContent = getInitials(data.name);
+        const welcomeName = document.getElementById('portal-welcome-name');
+        if (welcomeName) welcomeName.textContent = (data.name || '').split(' ')[0];
+        showToast('Nombre actualizado.', 'success');
+      } catch (_) { input.style.borderColor = 'var(--error,#dc3545)'; saveBtn.disabled = false; saveBtn.textContent = '✓'; }
+    });
+  });
 
   // Formulario de cambiar contraseña
   document.getElementById('form-change-password').addEventListener('submit', handleChangePassword);

@@ -280,11 +280,7 @@ async function connect() {
 
         if (tempPasswords.size > 0) {
           for (const [email, temp] of tempPasswords) {
-            if (process.env.NODE_ENV === 'development') {
-              console.warn(`[SEGU] Usuario sembrado sin contraseña (${email}). Contraseña temporal: ${temp} (cámbiela en el primer inicio).`);
-            } else {
-              console.warn(`[SEGU] Usuario sembrado sin contraseña (${email}). Se generó una contraseña temporal que se debe cambiar en el primer inicio.`);
-            }
+            console.warn(`[SEED] Contraseña temporal para ${email}: ${temp}`);
           }
           try {
             await db.collection(COLLECTIONS.securityLogs).insertOne({

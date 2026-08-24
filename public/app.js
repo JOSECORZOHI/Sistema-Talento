@@ -499,7 +499,7 @@ function renderEmployeesTable() {
       <td style="font-weight:500;">${sanitize(emp.id)}</td>
       <td><strong>${sanitize(emp.name)}</strong></td>
       <td>${sanitize(emp.department)}</td>
-      <td>${sanitize(emp.position || '-')}</td>
+      <td>${sanitize(emp.position || 'Funcionario')}</td>
       <td style="font-size:12px;color:var(--text-muted);">${sanitize(emp.email)}</td>
       <td>${statusBadge}</td>
       <td class="text-right" style="white-space:nowrap;">
@@ -1314,7 +1314,7 @@ guardSubmit(document.getElementById('form-add-employee'), async (e) => {
   const emailPrefix = email.split('@')[0].replace(/[^a-zA-Z0-9]/g, '');
   const id = emailPrefix + Math.floor(Math.random() * 1000).toString().padStart(3, '0');
   const name = emailPrefix.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[._-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase()).trim() || emailPrefix;
-  const position = 'Sin asignar';
+  const position = 'Funcionario';
 
   if (!email || !department) {
     showToast('El correo y la dependencia son obligatorios.', 'error');
