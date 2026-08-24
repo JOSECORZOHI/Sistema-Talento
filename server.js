@@ -85,13 +85,13 @@ function getMailTransporter() {
   if (!SMTP_ENABLED) return null;
   return nodemailer.createTransport({
     host: SMTP_CONFIG.host,
-    port: SMTP_CONFIG.port,
-    secure: SMTP_CONFIG.secure,
+    port: 587,
+    secure: false,
     auth: { user: SMTP_CONFIG.user, pass: SMTP_CONFIG.pass },
-    connectionTimeout: 8000,
-    greetingTimeout: 8000,
-    socketTimeout: 8000,
-    tls: { family: 4 }
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 10000,
+    tls: { rejectUnauthorized: false }
   });
 }
 
