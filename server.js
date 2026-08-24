@@ -90,7 +90,8 @@ function getMailTransporter() {
     auth: { user: SMTP_CONFIG.user, pass: SMTP_CONFIG.pass },
     connectionTimeout: 8000,
     greetingTimeout: 8000,
-    socketTimeout: 8000
+    socketTimeout: 8000,
+    tls: { family: 4 }
   });
 }
 
