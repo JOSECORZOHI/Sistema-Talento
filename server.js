@@ -648,6 +648,12 @@ function parseEmailFromHeader(fromHeader) {
   return { senderName: (match[1] || match[2] || fromHeader).trim(), senderEmail: normalizeEmail(match[2] || fromHeader) };
 }
 
+function parseToEmailHeader(toHeader) {
+  if (!toHeader) return '';
+  const match = toHeader.match(/<?([^>]+@[^>]+)>?/);
+  return match ? normalizeEmail(match[1]) : normalizeEmail(toHeader);
+}
+
 async function addAuditLog(action, details, userEmail, ip) {
   try {
     const newLog = {
@@ -1395,7 +1401,11 @@ app.get('/api/funcionario/init', authMiddleware, async (req, res) => {
 
     let emails = [];
     try {
-      emails = await col('emailsInbox').find().sort({ date: -1 }).toArray();
+      const emp = await col('employees').findOne({ id: empId });
+      const myEmail = emp ? normalizeEmail(emp.email) : null;
+      if (myEmail) {
+        emails = await col('emailsInbox').find({ toEmail: myEmail }).sort({ date: -1 }).toArray();
+      }
     } catch (e) { console.warn('Error obteniendo inbox de correo:', e.message); }
 
     res.json({ docs, config: { documentTypes: dtResult, categories: catResult }, scannerFiles, emails });
@@ -2564,7 +2574,17 @@ app.get('/api/gmail/oauth2callback', async (req, res) => {
 
 app.get('/api/email-inbox', authMiddleware, requireAnyPermission('email.manage', 'email.read'), async (req, res) => {
   try {
-    const emails = await col('emailsInbox').find().sort({ date: -1 }).limit(200).toArray();
+    let filter = {};
+    if (req.user.role === 'funcionario') {
+      const emp = await col('employees').findOne({ id: req.user.employeeId });
+      const myEmail = emp ? normalizeEmail(emp.email) : null;
+      if (myEmail) {
+        filter.toEmail = myEmail;
+      } else {
+        filter.toEmail = '__none__';
+      }
+    }
+    const emails = await col('emailsInbox').find(filter).sort({ date: -1 }).limit(200).toArray();
     res.json(emails);
   } catch (e) {
     console.error('[EMAIL-INBOX] Error:', e.message);
@@ -2663,6 +2683,7 @@ app.post('/api/email-inbox/sync', authMiddleware, requireAnyPermission('email.ma
         newEmails.push({
           id: messageRef.id, sender: senderEmail || fromHeader,
           senderName, senderEmail,
+          toEmail: parseToEmailHeader(getHeader(headers, 'To')),
           subject: getHeader(headers, 'Subject') || '(Sin asunto)',
           body: message.data.snippet || '',
           date: parseDateHeader(getHeader(headers, 'Date')),
