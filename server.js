@@ -2726,9 +2726,9 @@ app.get('/api/health', async (req, res) => {
   try {
     const healthy = await isHealthy();
     if (healthy) return res.json({ status: 'ok', db: 'connected' });
-    res.status(503).json({ status: 'degraded', db: 'disconnected' });
+    res.status(200).json({ status: 'degraded', db: 'disconnected' });
   } catch (_) {
-    res.status(503).json({ status: 'error', db: 'unknown' });
+    res.status(200).json({ status: 'error', db: 'unknown' });
   }
 });
 
