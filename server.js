@@ -2574,16 +2574,15 @@ app.get('/api/gmail/oauth2callback', async (req, res) => {
 
 app.get('/api/email-inbox', authMiddleware, requireAnyPermission('email.manage', 'email.read'), async (req, res) => {
   try {
-    let filter = {};
-    if (req.user.role === 'funcionario') {
+    let myEmail = null;
+    if (req.user.role === 'admin') {
+      const user = await col('users').findOne({ email: normalizeEmail(req.user.email) });
+      myEmail = user ? normalizeEmail(user.email) : null;
+    } else {
       const emp = await col('employees').findOne({ id: req.user.employeeId });
-      const myEmail = emp ? normalizeEmail(emp.email) : null;
-      if (myEmail) {
-        filter.toEmail = myEmail;
-      } else {
-        filter.toEmail = '__none__';
-      }
+      myEmail = emp ? normalizeEmail(emp.email) : null;
     }
+    const filter = myEmail ? { toEmail: myEmail } : { toEmail: '__none__' };
     const emails = await col('emailsInbox').find(filter).sort({ date: -1 }).limit(200).toArray();
     res.json(emails);
   } catch (e) {
