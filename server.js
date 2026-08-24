@@ -1404,7 +1404,11 @@ app.get('/api/funcionario/init', authMiddleware, async (req, res) => {
       const emp = await col('employees').findOne({ id: empId });
       const myEmail = emp ? normalizeEmail(emp.email) : null;
       if (myEmail) {
-        emails = await col('emailsInbox').find({ toEmail: myEmail }).sort({ date: -1 }).toArray();
+        emails = await col('emailsInbox').find({
+          $or: [{ toEmail: myEmail }, { toEmail: { $exists: false } }, { toEmail: '' }]
+        }).sort({ date: -1 }).toArray();
+      } else {
+        emails = await col('emailsInbox').find().sort({ date: -1 }).toArray();
       }
     } catch (e) { console.warn('Error obteniendo inbox de correo:', e.message); }
 
@@ -2582,7 +2586,9 @@ app.get('/api/email-inbox', authMiddleware, requireAnyPermission('email.manage',
       const emp = await col('employees').findOne({ id: req.user.employeeId });
       myEmail = emp ? normalizeEmail(emp.email) : null;
     }
-    const filter = myEmail ? { toEmail: myEmail } : { toEmail: '__none__' };
+    const filter = myEmail
+      ? { $or: [{ toEmail: myEmail }, { toEmail: { $exists: false } }, { toEmail: '' }] }
+      : {};
     const emails = await col('emailsInbox').find(filter).sort({ date: -1 }).limit(200).toArray();
     res.json(emails);
   } catch (e) {
