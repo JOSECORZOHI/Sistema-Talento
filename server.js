@@ -99,7 +99,9 @@ function getMailTransporter() {
 // El header Host solo se confía en modo development explícito.
 function getAppBaseUrl(req) {
   if (process.env.APP_BASE_URL) return process.env.APP_BASE_URL.replace(/\/$/, '');
-  if (process.env.NODE_ENV === 'development') return `${req.protocol}://${req.get('host')}`;
+  const proto = req.get('x-forwarded-proto') || req.protocol;
+  const host = req.get('x-forwarded-host') || req.get('host');
+  if (proto && host) return `${proto}://${host}`;
   return null;
 }
 
