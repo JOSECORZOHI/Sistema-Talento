@@ -339,6 +339,8 @@ input, select, textarea, button {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
 }
 
 /* ESTILOS DE ENCABEZADO */
@@ -416,6 +418,8 @@ input, select, textarea, button {
   padding: 32px 40px;
   flex: 1;
   position: relative;
+  overflow: hidden;
+  min-width: 0;
 }
 
 .app-section {
@@ -874,14 +878,17 @@ textarea:focus {
 .table-container.grid-card {
   overflow-x: auto;
   padding: 0;
-}
-
-.table-container.grid-card > .table-header {
-  padding: 20px 24px 16px;
+  max-width: 100%;
 }
 
 .table-container.grid-card > .table-scroll {
   padding: 0 24px 20px;
+  max-width: 100%;
+}
+
+.table-container.grid-card > .table-scroll > .data-table {
+  width: 100%;
+  min-width: 700px;
 }
 
 .table-header {
