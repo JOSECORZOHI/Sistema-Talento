@@ -375,6 +375,7 @@ input, select, textarea, button {
   display: flex;
   align-items: center;
   gap: 16px;
+  flex-wrap: wrap;
 }
 
 .user-profile {
@@ -771,10 +772,21 @@ input, select, textarea, button {
 }
 
 .filter-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 16px;
   margin-bottom: 12px;
+  align-items: flex-end;
+}
+
+.filter-row > .filter-group {
+  flex: 1 1 0;
+  min-width: 160px;
+}
+
+.filter-row > .filter-group.text-search {
+  flex: 2 1 0;
+  min-width: 220px;
 }
 
 .filter-row-sub {
@@ -1594,7 +1606,13 @@ textarea:focus {
     overflow-y: visible;
   }
   .filter-row {
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+  }
+  .filter-row > .filter-group {
+    min-width: 140px;
+  }
+  .filter-row > .filter-group.text-search {
+    min-width: 180px;
   }
   .data-table {
     min-width: 700px;
@@ -1606,11 +1624,23 @@ textarea:focus {
     flex-wrap: wrap;
     gap: 8px;
   }
+  .user-info span.contact-email {
+    display: none;
+  }
   .user-info h4, .user-info span {
     max-width: 120px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  .user-profile {
+    gap: 8px;
+    padding-left: 12px;
+  }
+  .user-profile .avatar {
+    width: 32px;
+    height: 32px;
+    font-size: 12px;
   }
 }
 
@@ -1660,6 +1690,19 @@ textarea:focus {
   }
   .form-row {
     grid-template-columns: 1fr;
+  }
+  .header-title h2 {
+    font-size: 18px;
+  }
+  .header-title p {
+    display: none;
+  }
+  .user-info {
+    display: none;
+  }
+  .user-profile {
+    border-left: none;
+    padding-left: 0;
   }
 }
 
