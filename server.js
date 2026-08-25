@@ -464,7 +464,7 @@ async function addSecurityLog(event, details, ip, email) {
 
 // --- JWT VERSIONING ---
 function signToken(payload) {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: '12h', algorithm: 'HS256' });
+  return jwt.sign(payload, JWT_SECRET, { expiresIn: '8h', algorithm: 'HS256' });
 }
 
 // --- AUTENTICACIÓN COMPARTIDA ---
@@ -487,9 +487,11 @@ async function authenticateUser(user, collectionName, role, username, password, 
     user.status = 'activa';
   }
   // Mensajes unificados: no revelar el estado de la cuenta (anti-enumeración).
-  // Un usuario pendiente/suspendido/inactivo ve la misma respuesta que una credencial errónea.
-  if (user.status === 'pendiente' || user.status === 'suspendida' || user.status === 'inactiva'
-    || (role === 'funcionario' && user.active === false) || user.status === 'bloqueada') {
+  // Un usuario suspendido/inactivo ve la misma respuesta que una credencial errónea.
+  // Los pendientes SÍ pueden entrar para cambiar su contraseña inicial.
+  if (user.status === 'suspendida' || user.status === 'inactiva'
+    || (role === 'funcionario' && user.active === false && user.status !== 'pendiente')
+    || user.status === 'bloqueada') {
     await equalizeTiming();
     return res.status(401).json({ error: 'Credenciales incorrectas.' });
   }
@@ -535,7 +537,10 @@ async function handleChangePasswordForRole(user, currentPassword, newPassword, r
   }
   const newHash = await bcrypt.hash(newPassword, 12);
   const newVersion = (doc.jwtVersion || 0) + 1;
-  await col(collectionName).updateOne({ _id: doc._id }, { $set: { password: newHash, jwtVersion: newVersion, mustChangePassword: false } });
+  const activateFields = (doc.mustChangePassword && collectionName === 'employees')
+    ? { status: 'activa', active: true }
+    : {};
+  await col(collectionName).updateOne({ _id: doc._id }, { $set: { password: newHash, jwtVersion: newVersion, mustChangePassword: false, ...activateFields } });
   await addToPasswordHistory(doc.email, newHash, role);
   await addAuditLog('Cambio de Contraseña', `El ${role === 'admin' ? 'administrador' : 'funcionario'} ${doc.name} cambió su contraseña.`, doc.name, ip);
   return res.json({ message: 'Contraseña actualizada. Debe iniciar sesión nuevamente.', forceReauth: true });
@@ -1084,7 +1089,10 @@ async function authMiddleware(req, res, next) {
     if (decoded.v !== (dbUser.jwtVersion || 0)) {
       return res.status(401).json({ error: 'Sesión expirada por cambio de contraseña. Inicie sesión nuevamente.' });
     }
-    if (dbUser.status === 'suspendida' || dbUser.status === 'inactiva' || dbUser.status === 'bloqueada' || (decoded.role === 'funcionario' && dbUser.active === false)) {
+    if (dbUser.status === 'suspendida' || dbUser.status === 'inactiva' || dbUser.status === 'bloqueada') {
+      return res.status(401).json({ error: 'Su cuenta no está activa. Contacte al administrador.' });
+    }
+    if (decoded.role === 'funcionario' && dbUser.active === false && !req.originalUrl.includes('/auth/change-password')) {
       return res.status(401).json({ error: 'Su cuenta no está activa. Contacte al administrador.' });
     }
     if (dbUser.mustChangePassword && !req.originalUrl.includes('/auth/change-password')) {
@@ -1550,8 +1558,8 @@ app.post('/api/employees', authMiddleware, requirePermission('employees.create')
   const newEmployee = {
     id, name, department, position,
     email: normalizeEmail(email),
-    status: 'activa',
-    active: true,
+    status: 'pendiente',
+    active: false,
     mustChangePassword: true,
     password: tempHash,
     registeredAt: new Date().toISOString(),
@@ -1617,10 +1625,9 @@ app.patch('/api/employees/:id/toggle-active', authMiddleware, requirePermission(
     if (!employee) return res.status(404).json({ error: 'Funcionario no encontrado.' });
 
     const newActive = !employee.active;
-    const wasPending = employee.status === 'pendiente' || (!employee.password && !newActive);
-    // Al desactivar: si quedaba pendiente, se fuerza 'inactiva' y se invalidan sus tokens de
-    // activación/reset para que no pueda reactivarse solo con el enlace que ya recibió.
-    const newStatus = wasPending && !newActive ? 'inactiva' : (wasPending ? 'pendiente' : (newActive ? 'activa' : 'inactiva'));
+    const wasPending = employee.status === 'pendiente';
+    // Pendientes activados por admin se marcan como activa directamente
+    const newStatus = wasPending && newActive ? 'activa' : (wasPending && !newActive ? 'inactiva' : (newActive ? 'activa' : 'inactiva'));
     await col('employees').updateOne({ id }, { $set: { active: newActive, status: newStatus } });
     await col('employees').updateOne({ id }, { $inc: { jwtVersion: 1 } });
     if (!newActive) {

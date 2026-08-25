@@ -31,7 +31,8 @@
       user.mustChangePassword = false;
       localStorage.setItem('th_user', JSON.stringify(user));
       modal.classList.remove('show');
-      showToast('Contraseña actualizada. Bienvenido al sistema.', 'success');
+      showToast('Contraseña actualizada. Debe iniciar sesión nuevamente.', 'success');
+      setTimeout(() => { logout(); }, 1500);
     } catch (err) { errDiv.textContent = 'Error de conexión.'; errDiv.style.display = 'block'; }
   });
 })();
@@ -1076,9 +1077,10 @@ window.approveDeletionRequest = async function(id) {
   try {
     const res = await apiFetch(`/api/deletion-requests/${id}/approve`, { method: 'PATCH' });
     const data = await res.json();
-    if (!res.ok) { alert(data.error || 'Error al aprobar.'); return; }
+    if (!res.ok) { showToast(data.error || 'Error al aprobar.', 'error'); return; }
+    showToast('Eliminación aprobada.', 'success');
     await loadAllData();
-  } catch (e) { alert('Error de conexión.'); }
+  } catch (e) { showToast('Error de conexión.', 'error'); }
 };
 
 window.rejectDeletionRequest = async function(id) {
@@ -1086,9 +1088,10 @@ window.rejectDeletionRequest = async function(id) {
   try {
     const res = await apiFetch(`/api/deletion-requests/${id}/reject`, { method: 'PATCH' });
     const data = await res.json();
-    if (!res.ok) { alert(data.error || 'Error al rechazar.'); return; }
+    if (!res.ok) { showToast(data.error || 'Error al rechazar.', 'error'); return; }
+    showToast('Solicitud rechazada.', 'success');
     await loadAllData();
-  } catch (e) { alert('Error de conexión.'); }
+  } catch (e) { showToast('Error de conexión.', 'error'); }
 };
 
 // 5. LÓGICA DE MODALES (ABRIR Y CERRAR)
@@ -1334,28 +1337,8 @@ guardSubmit(document.getElementById('form-add-employee'), async (e) => {
       return;
     }
 
-    let msg = `Funcionario ${name} registrado con éxito. Estado: pendiente.`;
-    if (data.activationToken) {
-      const activationUrl = `${window.location.origin}/activate.html?token=${encodeURIComponent(data.activationToken)}`;
-      msg += `\n\nComparta este enlace de activación:\n${activationUrl}`;
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(activationUrl)
-          .then(() => { msg += '\n(Enlace copiado al portapapeles)'; })
-          .catch(() => {});
-      } else {
-        try {
-          const el = document.createElement('textarea');
-          el.value = activationUrl;
-          document.body.appendChild(el);
-          el.select();
-          document.execCommand('copy');
-          document.body.removeChild(el);
-          msg += '\n(Enlace copiado al portapapeles)';
-        } catch (_) { /* sin portapapeles disponible */ }
-      }
-    }
-    alert(msg);
-    showToast(`Funcionario ${name} registrado. Estado: pendiente de activación.`, 'success');
+    const emailInfo = data.emailSent ? ' Se enviaron las credenciales al correo del funcionario.' : '';
+    showToast(`Funcionario ${name} creado. Debe iniciar sesión para activar su cuenta.${emailInfo}`, 'success');
     closeModal(modalAddEmp);
     e.target.reset();
     

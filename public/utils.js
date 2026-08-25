@@ -364,3 +364,75 @@ function setupDragDrop(dropAreaId, fileInputId, previewId) {
 
 // --- BRAND PANEL HTML (Login pages) ---
 
+// --- TIMEOUT POR INACTIVIDAD ---
+(function initInactivityTimeout() {
+  const TIMEOUT_MS = 15 * 60 * 1000; // 15 minutos
+  const WARNING_MS = 30 * 1000;       // Aviso 30 segundos antes
+  let timer = null;
+  let warningTimer = null;
+  let warningEl = null;
+
+  function resetTimer() {
+    clearTimeout(timer);
+    clearTimeout(warningTimer);
+    removeWarning();
+    timer = setTimeout(showWarning, TIMEOUT_MS);
+  }
+
+  function showWarning() {
+    if (warningEl) return;
+    warningEl = document.createElement('div');
+    warningEl.id = 'inactivity-warning';
+    warningEl.innerHTML = `
+      <div style="position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:99998;" id="inactivity-backdrop"></div>
+      <div style="position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:12px;padding:32px 36px;z-index:99999;box-shadow:0 12px 40px rgba(0,0,0,0.25);text-align:center;max-width:400px;width:90%;">
+        <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="#f39c12" stroke-width="2" style="margin-bottom:12px;">
+          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+        </svg>
+        <h3 style="margin:0 0 8px;color:#333;font-size:18px;">Sesión por expirar</h3>
+        <p style="margin:0 0 20px;color:#666;font-size:14px;">Su sesión se cerrará en <strong id="inactivity-countdown">30</strong> segundos por inactividad.</p>
+        <div style="display:flex;gap:12px;justify-content:center;">
+          <button class="btn btn-secondary" id="inactivity-stay" style="padding:10px 24px;">Continuar</button>
+          <button class="btn btn-primary" id="inactivity-logout" style="padding:10px 24px;">Cerrar sesión</button>
+        </div>
+      </div>`;
+    document.body.appendChild(warningEl);
+
+    let remaining = 30;
+    const countdownEl = document.getElementById('inactivity-countdown');
+    const countdownInterval = setInterval(() => {
+      remaining--;
+      if (countdownEl) countdownEl.textContent = remaining;
+      if (remaining <= 0) {
+        clearInterval(countdownInterval);
+        logout();
+      }
+    }, 1000);
+
+    document.getElementById('inactivity-stay').addEventListener('click', () => {
+      clearInterval(countdownInterval);
+      resetTimer();
+    });
+    document.getElementById('inactivity-logout').addEventListener('click', () => {
+      clearInterval(countdownInterval);
+      logout();
+    });
+  }
+
+  function removeWarning() {
+    if (warningEl) { warningEl.remove(); warningEl = null; }
+  }
+
+  function isLoggedIn() {
+    return !!getToken();
+  }
+
+  ['mousemove', 'keydown', 'scroll', 'touchstart', 'click'].forEach(event => {
+    document.addEventListener(event, () => {
+      if (isLoggedIn()) resetTimer();
+    }, { passive: true });
+  });
+
+  if (isLoggedIn()) resetTimer();
+})();
+

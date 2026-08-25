@@ -70,7 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnPortalScan) {
     btnPortalScan.addEventListener('click', async () => {
       if (btnPortalScan.disabled) {
-        alert('No hay escáner conectado. Verifique las conexiones USB o de red.');
+        showToast('No hay escáner conectado. Verifique las conexiones USB o de red.', 'error');
         return;
       }
       const filenameInput = document.getElementById('input-scan-filename');
@@ -82,14 +82,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const data = await res.json();
         if (res.ok) {
           if (filenameInput) filenameInput.value = '';
-          alert('Documento escaneado: ' + data.filename);
+          showToast('Documento escaneado: ' + data.filename, 'success');
           await loadPortalData();
           refreshPortalScannerStatus();
         } else {
-          alert(data.error || 'Error al escanear.');
+          showToast(data.error || 'Error al escanear.', 'error');
         }
       } catch (e) {
-        alert('Error de red al escanear.');
+        showToast('Error de red al escanear.', 'error');
       } finally {
         btnPortalScan.disabled = false;
         btnPortalScan.textContent = 'Escanear Documento';
@@ -106,13 +106,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const res = await apiFetch('/api/scanner/launch-epson-scan', { method: 'POST' });
         const data = await res.json();
         if (res.ok) {
-          alert(data.message || 'EPSON Scan 2 abierto.');
+          showToast(data.message || 'EPSON Scan 2 abierto.', 'success');
           await loadPortalData();
         } else {
-          alert(data.error || 'Error al abrir EPSON Scan 2.');
+          showToast(data.error || 'Error al abrir EPSON Scan 2.', 'error');
         }
       } catch (e) {
-        alert('Error de red al abrir EPSON Scan 2.');
+        showToast('Error de red al abrir EPSON Scan 2.', 'error');
       } finally {
         btnEpsonScan.disabled = false;
       }
@@ -196,13 +196,13 @@ document.addEventListener('DOMContentLoaded', () => {
         body: JSON.stringify({ documentId, reason })
       });
       const data = await res.json();
-      if (!res.ok) { alert(data.error || 'Error al enviar solicitud.'); return; }
+      if (!res.ok) { showToast(data.error || 'Error al enviar solicitud.', 'error'); return; }
 
       showToast('Solicitud de eliminación enviada. Esperando aprobación del administrador.', 'info');
       closeModal('modal-delete-request');
       await loadPortalData();
     } catch (err) {
-      alert('Error de conexión.');
+      showToast('Error de conexión.', 'error');
     } finally {
       hideLoader();
       submittingDeleteReq = false;
@@ -464,7 +464,7 @@ async function handlePortalUpload(e) {
   e.preventDefault();
   const fileInput = document.getElementById('portal-upload-file');
   if (!fileInput.files || fileInput.files.length === 0) {
-    alert('Seleccione un archivo para subir.');
+    showToast('Seleccione un archivo para subir.', 'error');
     return;
   }
 
@@ -485,7 +485,7 @@ async function handlePortalUpload(e) {
     const data = await res.json();
 
     if (!res.ok) {
-      alert(data.error || 'No se pudo subir el documento.');
+      showToast(data.error || 'No se pudo subir el documento.', 'error');
       return;
     }
 
@@ -495,7 +495,7 @@ async function handlePortalUpload(e) {
     portalShowTab('mis-docs');
     await loadPortalData();
   } catch (err) {
-    alert('Error de conexión. Intente nuevamente.');
+    showToast('Error de conexión. Intente nuevamente.', 'error');
   } finally {
     btn.disabled = false;
     btn.textContent = 'Enviar Documento';
@@ -535,13 +535,13 @@ async function handleRegisterScanner(e) {
       body: JSON.stringify({ filename, documentTypeId, categoryId, issueDate, description, status: 'Pendiente' })
     });
     const data = await res.json();
-    if (!res.ok) { alert(data.error || 'Error al registrar.'); return; }
+    if (!res.ok) { showToast(data.error || 'Error al registrar.', 'error'); return; }
 
     showToast('Documento escaneado registrado exitosamente.', 'success');
     closeModal('modal-register-scanner');
     await loadPortalData();
   } catch (err) {
-    alert('Error de conexión.');
+    showToast('Error de conexión.', 'error');
   } finally {
     hideLoader();
     submittingScannerReg = false;
@@ -582,13 +582,13 @@ async function handleRegisterEmailAttachment(e) {
       body: JSON.stringify({ emailId, filename, documentTypeId, categoryId, issueDate, description, status: 'Pendiente' })
     });
     const data = await res.json();
-    if (!res.ok) { alert(data.error || 'Error al registrar.'); return; }
+    if (!res.ok) { showToast(data.error || 'Error al registrar.', 'error'); return; }
 
     showToast('Adjunto de correo registrado exitosamente.', 'success');
     closeModal('modal-register-email');
     await loadPortalData();
   } catch (err) {
-    alert('Error de conexión.');
+    showToast('Error de conexión.', 'error');
   } finally {
     hideLoader();
     submittingEmailReg = false;
