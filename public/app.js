@@ -505,7 +505,7 @@ function renderEmployeesTable() {
       <td>${statusBadge}</td>
       <td class="text-right" style="white-space:nowrap;">
         <button class="btn btn-text btn-sm" onclick="window.location.hash='#expedientes';setTimeout(()=>selectEmployeeForFolder('${escOnclick(emp.id)}'),100)" title="Ver expediente">Expediente</button>
-        <button class="btn btn-text btn-sm" style="color:${isActive ? 'var(--danger)' : 'var(--success)'};" onclick="toggleEmployeeStatus('${escOnclick(emp.id)}')">${isActive ? 'Desactivar' : 'Activar'}</button>
+        ${status !== 'pendiente' ? `<button class="btn btn-text btn-sm" style="color:${isActive ? 'var(--danger)' : 'var(--success)'};" onclick="toggleEmployeeStatus('${escOnclick(emp.id)}')">${isActive ? 'Desactivar' : 'Activar'}</button>` : ''}
         <button class="btn btn-danger-text btn-sm" onclick="deleteEmployee('${escOnclick(emp.id)}','${escOnclick(emp.name)}')" title="Eliminar funcionario">Eliminar</button>
       </td>
     `;
