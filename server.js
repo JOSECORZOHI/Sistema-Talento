@@ -2623,9 +2623,11 @@ app.post('/api/email-inbox/sync', authMiddleware, requireAnyPermission('email.ma
         ...(pageToken ? { pageToken } : {})
       });
       messageRefs.push(...(list.data.messages || []));
+      console.log(`[GMAIL-SYNC] Página ${page + 1}: ${(list.data.messages || []).length} mensajes, nextToken: ${list.data.nextPageToken ? 'sí' : 'no'}`);
       pageToken = list.data.nextPageToken || null;
       if (!pageToken) break;
     }
+    console.log(`[GMAIL-SYNC] Total mensajes con adjuntos: ${messageRefs.length}, conocidos: ${knownEmailIds.size}`);
     const newEmails = [];
     let attachmentsDownloaded = 0;
 
@@ -2635,7 +2637,11 @@ app.post('/api/email-inbox/sync', authMiddleware, requireAnyPermission('email.ma
 
     try {
       for (const messageRef of messageRefs) {
-        if (knownEmailIds.has(messageRef.id)) continue;
+        if (knownEmailIds.has(messageRef.id)) {
+          console.log(`[GMAIL-SYNC] Saltando ID ${messageRef.id} (ya conocido)`);
+          continue;
+        }
+        console.log(`[GMAIL-SYNC] Procesando ID ${messageRef.id}...`);
         const message = await gmail.users.messages.get({ userId: 'me', id: messageRef.id, format: 'full' });
         const payload = message.data.payload || {};
         const attachmentParts = getAttachmentParts(payload);
