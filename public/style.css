@@ -871,6 +871,19 @@ textarea:focus {
   overflow-x: auto;
 }
 
+.table-container.grid-card {
+  overflow: visible;
+  padding: 0;
+}
+
+.table-container.grid-card > .table-header {
+  padding: 20px 24px 16px;
+}
+
+.table-container.grid-card > .table-scroll {
+  padding: 0 24px 20px;
+}
+
 .table-header {
   display: flex;
   justify-content: space-between;
