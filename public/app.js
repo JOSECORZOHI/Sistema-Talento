@@ -798,10 +798,9 @@ function renderEmployeeDirectory() {
     const statusCounts = {
       activos: appState.employees.filter(e => e.status === 'activa').length,
       pendientes: appState.employees.filter(e => e.status === 'pendiente').length,
-      suspendidos: appState.employees.filter(e => e.status === 'suspendida').length,
       inactivos: appState.employees.filter(e => e.status === 'inactiva' || e.active === false).length
     };
-    countEl.textContent = `${filtered.length} de ${appState.employees.length} | ✓ ${statusCounts.activos} activos | ⏳ ${statusCounts.pendientes} pendientes | ⊘ ${statusCounts.suspendidos} suspendidos | ✕ ${statusCounts.inactivos} inactivos`;
+    countEl.textContent = `${filtered.length} de ${appState.employees.length} | ✓ ${statusCounts.activos} activos | ⏳ ${statusCounts.pendientes} pendientes | ✕ ${statusCounts.inactivos} inactivos`;
   }
 }
 
