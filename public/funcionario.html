@@ -400,6 +400,14 @@
     .portal-muted { color: var(--text-muted); font-size: 12px; }
 
     /* --- RESPONSIVE --- */
+    @media (max-width: 1024px) {
+      .portal-topbar-user { gap: 8px; }
+      .portal-user-info { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .portal-user-info h4 { max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .portal-user-info span { max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .btn-portal-action:not(#btn-theme-toggle):not(#btn-edit-name) span { display: none; }
+      .btn-portal-action:not(#btn-theme-toggle):not(#btn-edit-name) svg { margin-right: 0; }
+    }
     @media (max-width: 768px) {
       .portal-topbar { padding: 0 14px; height: 56px; }
       .portal-main { padding: 0 14px 20px; }

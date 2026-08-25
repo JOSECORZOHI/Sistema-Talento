@@ -856,7 +856,7 @@ textarea:focus {
 
 /* SISTEMA DE TABLA DE DATOS */
 .table-container {
-  overflow: hidden;
+  overflow-x: auto;
 }
 
 .table-header {
@@ -882,6 +882,7 @@ textarea:focus {
 
 .data-table {
   width: 100%;
+  min-width: 700px;
   border-collapse: collapse;
   text-align: left;
   font-size: 14px;
@@ -1566,6 +1567,50 @@ textarea:focus {
   }
   .modal-container.modal-lg {
     height: 95vh;
+  }
+  .content-header {
+    padding: 0 20px;
+  }
+  .sections-container {
+    padding: 20px;
+  }
+  .stats-grid {
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+  }
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+  .modal-body-split {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .pdf-viewer-frame {
+    height: 400px;
+    flex: none;
+  }
+  .pdf-details-sidebar {
+    flex: none;
+    overflow-y: visible;
+  }
+  .filter-row {
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  }
+  .data-table {
+    min-width: 700px;
+  }
+  .table-container {
+    overflow-x: auto;
+  }
+  .header-actions {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .user-info h4, .user-info span {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 

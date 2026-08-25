@@ -16,10 +16,14 @@
     .login-page { display: flex !important; flex-direction: row !important; width: 100vw !important; height: 100vh !important; min-height: 100vh !important; overflow: hidden !important; }
     .login-form-panel { flex: 0 0 45% !important; display: flex !important; align-items: center !important; justify-content: center !important; padding: 60px !important; background-color: var(--background) !important; }
     .login-brand-panel { flex: 1 1 55% !important; display: flex !important; align-items: center !important; justify-content: center !important; padding: 60px !important; background: linear-gradient(135deg, #1A5276 0%, #154360 50%, #0E2F44 100%) !important; position: relative !important; overflow: hidden !important; }
+    @media (max-width: 768px) {
+      .login-form-panel { flex: 0 0 50% !important; padding: 40px !important; }
+      .login-brand-panel { padding: 40px !important; }
+    }
     @media (max-width: 600px) {
       .login-page { flex-direction: column !important; }
-      .login-form-panel { flex: none !important; }
-      .login-brand-panel { flex: none !important; }
+      .login-form-panel { flex: none !important; padding: 30px 20px !important; }
+      .login-brand-panel { flex: none !important; padding: 30px 20px !important; }
     }
   </style>
 </head>
