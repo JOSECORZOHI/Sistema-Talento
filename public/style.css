@@ -872,7 +872,7 @@ textarea:focus {
 }
 
 .table-container.grid-card {
-  overflow: visible;
+  overflow-x: auto;
   padding: 0;
 }
 
