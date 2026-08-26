@@ -417,7 +417,7 @@ function renderPortalEmailInbox() {
   for (let i = 0; i < emails.length; i++) {
     const email = emails[i];
     const unregisteredAttachments = (email.attachments || []).filter(a => !a.registered);
-    if (unregisteredAttachments.length === 0) continue;
+    const hasAttachments = unregisteredAttachments.length > 0;
 
     let attachHtml = '';
     for (let j = 0; j < unregisteredAttachments.length; j++) {
@@ -439,6 +439,9 @@ function renderPortalEmailInbox() {
           <button class="btn-register-item" onclick="openPortalPdf('${safeAttFn}', 'gmail')" title="Ver archivo" style="background:var(--primary-soft);color:var(--primary);">Ver</button>
           <button class="btn-register-item" onclick="openRegisterEmail('${safeEmailId}', '${safeAttFn}')">Registrar</button>
         </div></div>`;
+    }
+    if (!hasAttachments) {
+      attachHtml = `<div style="margin-top:6px;padding:8px 14px;color:var(--text-secondary);font-size:0.85rem;">Sin adjuntos pendientes</div>`;
     }
     html += `<div class="portal-item-card" style="flex-direction:column;align-items:stretch;gap:0;">
       <div style="display:flex;align-items:center;gap:12px;padding:2px 0;">

@@ -1061,6 +1061,12 @@ function parseDateHeader(value) {
 function getAttachmentParts(part, attachmentParts = []) {
   if (part.filename && isAllowedFile(part.filename) && part.body && part.body.attachmentId) {
     attachmentParts.push(part);
+  } else if (!part.filename && part.body && part.body.attachmentId && part.mimeType) {
+    const extFromMime = { 'application/pdf': '.pdf', 'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif', 'text/plain': '.txt', 'text/csv': '.csv', 'application/msword': '.doc', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx' };
+    const ext = extFromMime[part.mimeType];
+    if (ext && isAllowedFile('file' + ext)) {
+      attachmentParts.push({ ...part, filename: `adjunto${ext}` });
+    }
   }
   (part.parts || []).forEach(child => getAttachmentParts(child, attachmentParts));
   return attachmentParts;
@@ -2655,7 +2661,7 @@ app.post('/api/email-inbox/sync', authMiddleware, requireAnyPermission('email.ma
     let pageToken = null;
     for (let page = 0; page < 5; page++) {
       const list = await gmail.users.messages.list({
-        userId: 'me', labelIds: ['INBOX'], q: 'has:attachment', maxResults: 100,
+        userId: 'me', maxResults: 100,
         ...(pageToken ? { pageToken } : {})
       });
       messageRefs.push(...(list.data.messages || []));
@@ -2663,7 +2669,7 @@ app.post('/api/email-inbox/sync', authMiddleware, requireAnyPermission('email.ma
       pageToken = list.data.nextPageToken || null;
       if (!pageToken) break;
     }
-    console.log(`[GMAIL-SYNC] Total mensajes con adjuntos: ${messageRefs.length}, conocidos: ${knownEmailIds.size}`);
+    console.log(`[GMAIL-SYNC] Total mensajes encontrados: ${messageRefs.length}, conocidos: ${knownEmailIds.size}`);
     const newEmails = [];
     let attachmentsDownloaded = 0;
 
@@ -2674,44 +2680,44 @@ app.post('/api/email-inbox/sync', authMiddleware, requireAnyPermission('email.ma
     try {
       for (const messageRef of messageRefs) {
         if (knownEmailIds.has(messageRef.id)) {
-          console.log(`[GMAIL-SYNC] Saltando ID ${messageRef.id} (ya conocido)`);
           continue;
         }
-        console.log(`[GMAIL-SYNC] Procesando ID ${messageRef.id}...`);
         const message = await gmail.users.messages.get({ userId: 'me', id: messageRef.id, format: 'full' });
         const payload = message.data.payload || {};
         const attachmentParts = getAttachmentParts(payload);
-        if (!attachmentParts.length) continue;
 
-        // 1) Descargar y conservar en memoria TODOS los adjuntos del correo antes de escribir nada.
         const buffered = [];
-        let skipEmail = false;
         for (const part of attachmentParts) {
-          if (!part.body || !part.body.attachmentId) { skipEmail = true; break; }
+          if (!part.body || !part.body.attachmentId) {
+            console.warn(`[GMAIL-SYNC] Adjunto '${part.filename}' sin attachmentId, se omite.`);
+            continue;
+          }
           let attachment;
           try {
             attachment = await gmail.users.messages.attachments.get({ userId: 'me', messageId: messageRef.id, id: part.body.attachmentId });
-          } catch (e) { skipEmail = true; break; }
-          if (!attachment.data || !attachment.data.data) { skipEmail = true; break; }
+          } catch (e) {
+            console.warn(`[GMAIL-SYNC] Error descargando '${part.filename}': ${e.message}`);
+            continue;
+          }
+          if (!attachment.data || !attachment.data.data) {
+            console.warn(`[GMAIL-SYNC] Adjunto '${part.filename}' sin datos, se omite.`);
+            continue;
+          }
           const content = Buffer.from(attachment.data.data, 'base64url');
           if (content.length > MAX_GMAIL_ATTACHMENT_BYTES) {
-            console.warn(`[GMAIL] Adjunto '${part.filename}' excede ${MAX_GMAIL_ATTACHMENT_BYTES} bytes; se omite.`);
-            skipEmail = true;
-            break;
+            console.warn(`[GMAIL-SYNC] Adjunto '${part.filename}' excede ${MAX_GMAIL_ATTACHMENT_BYTES} bytes; se omite.`);
+            continue;
           }
           buffered.push({ filename: path.basename(part.filename), content });
         }
-        if (skipEmail || !buffered.length) continue;
 
-        // 2) Re-verificar dedup antes de escribir (por si otro proceso insertó mientras tanto).
         if (await col('emailsInbox').findOne({ id: messageRef.id })) continue;
 
-        // 3) Persistir adjuntos en GridFS y construir el registro.
         const attachments = [];
         for (const b of buffered) {
           const contentErr = validateFileContent(b.filename, b.content);
           if (contentErr) {
-            console.warn(`[GMAIL] Adjunto '${b.filename}' omitido: ${contentErr}`);
+            console.warn(`[GMAIL-SYNC] Adjunto '${b.filename}' omitido: ${contentErr}`);
             continue;
           }
           const filename = getUniqueFilename(b.filename);
@@ -2720,7 +2726,6 @@ app.post('/api/email-inbox/sync', authMiddleware, requireAnyPermission('email.ma
           storedAttachmentFilenames.add(filename);
           attachmentsDownloaded++;
         }
-        if (!attachments.length) continue;
 
         const headers = payload.headers || [];
         const fromHeader = getHeader(headers, 'From');
@@ -2746,7 +2751,7 @@ app.post('/api/email-inbox/sync', authMiddleware, requireAnyPermission('email.ma
     }
 
     if (!newEmails.length) {
-      return res.json({ message: 'Bandeja de entrada al día.', updated: false });
+      return res.json({ message: 'No hay correos nuevos para sincronizar.', updated: false });
     }
 
     try {
@@ -2758,7 +2763,7 @@ app.post('/api/email-inbox/sync', authMiddleware, requireAnyPermission('email.ma
     }
 
     await addAuditLog('Sincronización de Correo', `Se descargaron ${attachmentsDownloaded} archivo(s) desde ${newEmails.length} correo(s) de Gmail.`, req.user.name || 'Sistema', getClientIp(req));
-    res.json({ message: `Se recibieron ${attachmentsDownloaded} archivo(s) desde Gmail.`, updated: true, emails: newEmails });
+    res.json({ message: `${newEmails.length} correo(s) sincronizado(s), ${attachmentsDownloaded} archivo(s) descargado(s).`, updated: true, emails: newEmails });
   } catch (error) {
     console.error('Error al sincronizar Gmail:', error);
     const status = error.code === 'GMAIL_NOT_CONFIGURED' ? 503 : 502;
