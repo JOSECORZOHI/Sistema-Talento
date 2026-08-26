@@ -2080,9 +2080,13 @@ app.get('/api/document-file/:filename', authMiddleware, async (req, res) => {
       const mimeType = getMimeType(filename);
       res.setHeader('Content-Type', mimeType);
       res.setHeader('Content-Disposition', buildContentDisposition(mimeType, filename));
-      r.stream.on('error', (err) => { console.warn('Error en stream de descarga:', err.message); res.destroy(); });
-      // Si el cliente aborta la descarga, destruir el stream para liberar el cursor de GridFS.
-      req.on('close', () => { if (!res.writableEnded) { try { r.stream.destroy(); } catch (e) {} } });
+      let finished = false;
+      r.stream.on('error', (err) => {
+        console.warn('Error en stream de descarga:', err.message);
+        if (!finished) { finished = true; try { res.end(); } catch (_) {} }
+      });
+      r.stream.on('end', () => { finished = true; });
+      req.on('close', () => { if (!finished) { finished = true; try { r.stream.destroy(); } catch (_) {} } });
       r.stream.pipe(res);
       return;
     }
