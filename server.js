@@ -29,13 +29,13 @@ function generateTempPassword() {
   return pick(upper, 2) + pick(lower, 2) + pick(digits, 2) + pick(symbols, 2) + pick(upper + lower + digits + symbols, 8);
 }
 
-// Prevenir caídas por errores no controlados
+// Prevenir caídas por errores no controlados — NO exit para que Railway
+// no reinicie el proceso y cause "connection refused" en requests en curso.
 process.on('unhandledRejection', (err) => {
-  console.error('[PROCESS] Unhandled rejection:', err.message || err);
+  console.error('[PROCESS] Unhandled rejection:', err && err.stack ? err.stack : err);
 });
 process.on('uncaughtException', (err) => {
-  console.error('[PROCESS] Uncaught exception:', err.message || err);
-  process.exit(1);
+  console.error('[PROCESS] Uncaught exception:', err && err.stack ? err.stack : err);
 });
 
 function getGoogleApis() {
@@ -2045,6 +2045,7 @@ function fileAuthMiddleware(req, res, next) {
 }
 app.get('/api/document-file/:filename', fileAuthMiddleware, async (req, res) => {
   const filename = req.params.filename;
+  console.log(`[FILE-SERVE] Solicitud: user=${req.user.email} filename="${filename}" folder=${req.query.folder || '(none)'}`);
   const folder = req.query.folder;
   let targetDir = DOCUMENTS_DIR;
   if (folder === 'scanner') targetDir = SCANNER_DIR;
@@ -2088,25 +2089,74 @@ app.get('/api/document-file/:filename', fileAuthMiddleware, async (req, res) => 
       res.setHeader('Content-Type', mimeType);
       res.setHeader('Content-Disposition', buildContentDisposition(mimeType, filename));
       let finished = false;
-      r.stream.on('error', (err) => {
-        console.warn('Error en stream de descarga:', err.message);
-        if (!finished) { finished = true; try { res.end(); } catch (_) {} }
-      });
+
+      // Capturar errores del stream ANTES de pipe para evitar que escapen al uncaughtException
+      const streamErrorHandler = (err) => {
+        console.error(`[FILE-SERVE] Stream error para '${filename}':`, err.message);
+        if (!finished) {
+          finished = true;
+          try { r.stream.destroy(); } catch (_) {}
+          try { if (!res.headersSent) { res.status(500).json({ error: 'Error al transmitir archivo.' }); } else { res.end(); } } catch (_) {}
+        }
+      };
+      r.stream.on('error', streamErrorHandler);
+
       r.stream.on('end', () => { finished = true; });
-      req.on('close', () => { if (!finished) { finished = true; try { r.stream.destroy(); } catch (_) {} } });
+      r.stream.on('close', () => { if (!finished) { finished = true; } });
+
+      // Si el cliente cierra la conexión, destruir el stream GridFS
+      req.on('close', () => {
+        if (!finished) {
+          finished = true;
+          try { r.stream.destroy(); } catch (_) {}
+        }
+      });
+
+      // Si el socket se cierra abruptamente
+      if (res.socket) {
+        res.socket.on('close', () => {
+          if (!finished) {
+            finished = true;
+            try { r.stream.destroy(); } catch (_) {}
+          }
+        });
+      }
+
       r.stream.pipe(res);
+
+      // Timeout de seguridad: si el stream no termina en 60s, abortar
+      const streamTimeout = setTimeout(() => {
+        if (!finished) {
+          console.error(`[FILE-SERVE] Timeout de 60s para '${filename}', abortando stream.`);
+          finished = true;
+          try { r.stream.destroy(); } catch (_) {}
+          try { if (!res.headersSent) { res.status(504).json({ error: 'Timeout al transmitir archivo.' }); } else { res.end(); } } catch (_) {}
+        }
+      }, 60000);
+      if (streamTimeout.unref) streamTimeout.unref();
+      r.stream.on('end', () => clearTimeout(streamTimeout));
+      r.stream.on('error', () => clearTimeout(streamTimeout));
+
       return;
     }
-  } catch (e) { console.warn('Error al leer archivo de GridFS para descarga:', e.message); }
+  } catch (e) {
+    console.error(`[FILE-SERVE] Error leyendo '${filename}' de GridFS:`, e.message);
+  }
 
-  const filePath = path.join(targetDir, filename);
-  if (fs.existsSync(filePath)) {
-    const mimeType = getMimeType(filename);
-    res.setHeader('Content-Type', mimeType);
-    res.setHeader('Content-Disposition', buildContentDisposition(mimeType, filename));
-    res.sendFile(filePath);
-  } else {
-    res.status(404).json({ error: 'Archivo no encontrado en el servidor.' });
+  try {
+    const filePath = path.join(targetDir, filename);
+    if (fs.existsSync(filePath)) {
+      const mimeType = getMimeType(filename);
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Content-Disposition', buildContentDisposition(mimeType, filename));
+      res.sendFile(filePath);
+    } else {
+      res.status(404).json({ error: 'Archivo no encontrado en el servidor.' });
+    }
+  } catch (e) {
+    console.error(`[FILE-SERVE] Error sirviendo archivo local '${filename}':`, e.message);
+    if (!res.headersSent) res.status(500).json({ error: 'Error al servir archivo.' });
+  }
   }
 });
 
@@ -2844,7 +2894,7 @@ app.use((error, req, res, next) => {
     return res.status(503).json({ error: 'Error temporal de base de datos. Intente de nuevo en unos segundos.' });
   }
 
-  console.error('Error no controlado:', error.message || error);
+  console.error('Error no controlado:', error.stack || error.message || error);
   res.status(500).json({ error: 'Error interno del servidor.' });
 });
 

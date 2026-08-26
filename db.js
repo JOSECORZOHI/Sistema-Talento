@@ -406,11 +406,21 @@ function storeFileStream(filename, stream, metadata = {}) {
 }
 
 async function readFileStream(filename) {
-  const bucket = getBucket();
-  const cursor = bucket.find({ filename }).sort({ uploadDate: -1 }).limit(1);
-  const file = await cursor.next();
-  if (!file) return null;
-  return { stream: bucket.openDownloadStream(file._id), file };
+  try {
+    const bucket = getBucket();
+    const cursor = bucket.find({ filename }).sort({ uploadDate: -1 }).limit(1);
+    const file = await cursor.next();
+    if (!file) return null;
+    const stream = bucket.openDownloadStream(file._id);
+    // Capturar errores del stream GridFS antes de que escapen al uncaughtException
+    stream.on('error', (err) => {
+      console.error(`[GRIDFS] Error en download stream '${filename}':`, err.message);
+    });
+    return { stream, file };
+  } catch (err) {
+    console.error(`[GRIDFS] Error en readFileStream('${filename}'):`, err.message);
+    return null;
+  }
 }
 
 async function deleteFileByName(filename) {
