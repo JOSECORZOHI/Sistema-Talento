@@ -1409,15 +1409,7 @@ app.get('/api/funcionario/init', authMiddleware, async (req, res) => {
 
     let emails = [];
     try {
-      const emp = await col('employees').findOne({ id: empId });
-      const myEmail = emp ? normalizeEmail(emp.email) : null;
-      if (myEmail) {
-        emails = await col('emailsInbox').find({
-          $or: [{ toEmail: myEmail }, { toEmail: { $exists: false } }, { toEmail: '' }]
-        }).sort({ date: -1 }).toArray();
-      } else {
-        emails = await col('emailsInbox').find().sort({ date: -1 }).toArray();
-      }
+      emails = await col('emailsInbox').find().sort({ date: -1 }).toArray();
     } catch (e) { console.warn('Error obteniendo inbox de correo:', e.message); }
 
     res.json({ docs, config: { documentTypes: dtResult, categories: catResult }, scannerFiles, emails });
@@ -1489,9 +1481,7 @@ app.post('/api/funcionario/register-email-attachment', authMiddleware, async (re
   }
   const email = await col('emailsInbox').findOne({ id: emailId });
   if (!email) return res.status(404).json({ error: 'Correo electrónico no encontrado.' });
-  if (email.suggestedEmployeeId && email.suggestedEmployeeId !== req.user.employeeId) {
-    return res.status(403).json({ error: 'No tiene permisos para registrar adjuntos de este correo.' });
-  }
+  // Bandeja compartida: cualquier funcionario puede registrar adjuntos
 
   // Un funcionario solo puede dejar el documento en revisión; el estado lo fija el administrador.
   const result = await registerEmailAttachmentCore({
@@ -2070,8 +2060,7 @@ app.get('/api/document-file/:filename', authMiddleware, async (req, res) => {
       }
     } else if ((folder === 'gmail' || folder === 'email') && hasPermission(req.user.role, 'scanner.read')) {
       const email = await col('emailsInbox').findOne({ 'attachments.filename': filename });
-      const assignedToMe = email && (!email.suggestedEmployeeId || email.suggestedEmployeeId === req.user.employeeId);
-      if (!assignedToMe) {
+      if (!email) {
         return res.status(403).json({ error: 'No tiene permisos para acceder a este archivo.' });
       }
     } else {
@@ -2636,18 +2625,7 @@ app.get('/api/gmail/oauth2callback', async (req, res) => {
 
 app.get('/api/email-inbox', authMiddleware, requireAnyPermission('email.manage', 'email.read'), async (req, res) => {
   try {
-    let myEmail = null;
-    if (req.user.role === 'admin') {
-      const user = await col('users').findOne({ email: normalizeEmail(req.user.email) });
-      myEmail = user ? normalizeEmail(user.email) : null;
-    } else {
-      const emp = await col('employees').findOne({ id: req.user.employeeId });
-      myEmail = emp ? normalizeEmail(emp.email) : null;
-    }
-    const filter = myEmail
-      ? { $or: [{ toEmail: myEmail }, { toEmail: { $exists: false } }, { toEmail: '' }] }
-      : {};
-    const emails = await col('emailsInbox').find(filter).sort({ date: -1 }).limit(200).toArray();
+    const emails = await col('emailsInbox').find().sort({ date: -1 }).limit(200).toArray();
     res.json(emails);
   } catch (e) {
     console.error('[EMAIL-INBOX] Error:', e.message);

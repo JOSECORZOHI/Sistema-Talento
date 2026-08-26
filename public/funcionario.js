@@ -436,6 +436,7 @@ function renderPortalEmailInbox() {
           <span>${sizeKB} KB</span>
         </div>
         <div class="portal-item-actions">
+          <button class="btn-register-item" onclick="openPortalPdf('${safeAttFn}', 'gmail')" title="Ver archivo" style="background:var(--primary-soft);color:var(--primary);">Ver</button>
           <button class="btn-register-item" onclick="openRegisterEmail('${safeEmailId}', '${safeAttFn}')">Registrar</button>
         </div></div>`;
     }
