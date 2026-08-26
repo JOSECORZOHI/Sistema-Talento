@@ -815,10 +815,15 @@
           u.mustChangePassword = false;
           localStorage.setItem('th_user', JSON.stringify(u));
           overlay.remove();
-          alert('Contraseña actualizada. Debe iniciar sesión nuevamente.');
-          localStorage.removeItem('th_token');
-          localStorage.removeItem('th_user');
-          window.location.href = '/';
+          var msg = document.createElement('div');
+          msg.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:99999;';
+          msg.innerHTML = '<div style="background:#fff;border-radius:12px;padding:32px 36px;text-align:center;box-shadow:0 12px 40px rgba(0,0,0,0.25);max-width:380px;width:90%;"><svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="#27ae60" stroke-width="2" style="margin-bottom:12px;"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><h3 style="margin:0 0 8px;color:#333;">Contraseña actualizada</h3><p style="margin:0;color:#666;font-size:14px;">Debe iniciar sesión nuevamente.</p></div>';
+          document.body.appendChild(msg);
+          setTimeout(function() {
+            localStorage.removeItem('th_token');
+            localStorage.removeItem('th_user');
+            window.location.href = '/';
+          }, 2000);
         }).catch(function() { errDiv.textContent = 'Error de conexión.'; errDiv.style.display = 'block'; });
     });
     // Bloquear el scroll del body mientras se muestra el overlay
