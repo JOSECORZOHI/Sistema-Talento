@@ -1110,6 +1110,10 @@ window.openPdfModal = function(filename, folder = 'documents', docId) {
   document.getElementById('btn-toggle-visibility').style.display = 'none';
 
   function setIframeSrc(url) {
+    const token = localStorage.getItem('token') || '';
+    if (token && !url.includes('token=')) {
+      url += (url.includes('?') ? '&' : '?') + 'token=' + token;
+    }
     if (canViewInline) {
       iframe.style.display = 'block';
       iframe.src = url;
@@ -1135,7 +1139,8 @@ window.openPdfModal = function(filename, folder = 'documents', docId) {
         </a>
       `;
       downloadMsg.querySelector('h3').textContent = filename;
-      downloadMsg.querySelector('a').href = url;
+      const token2 = localStorage.getItem('token') || '';
+      downloadMsg.querySelector('a').href = url + (token2 ? (url.includes('?') ? '&' : '?') + 'token=' + token2 : '');
       downloadMsg.querySelector('a').download = filename;
     }
   }
