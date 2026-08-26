@@ -298,7 +298,13 @@ function openPdfViewer(iframeId, filename, folder) {
   const ext = (filename || '').split('.').pop().toLowerCase();
   const viewableTypes = ['pdf','jpg','jpeg','png','gif','bmp','tiff','tif','txt'];
   const canViewInline = viewableTypes.includes(ext);
-  const url = `/api/document-file/${encodeURIComponent(filename)}${folder ? '?folder=' + folder : ''}`;
+  const token = localStorage.getItem('token') || '';
+  let url = `/api/document-file/${encodeURIComponent(filename)}`;
+  const params = new URLSearchParams();
+  if (folder) params.set('folder', folder);
+  if (token) params.set('token', token);
+  const qs = params.toString();
+  if (qs) url += '?' + qs;
 
   let downloadMsg = iframe.parentElement.querySelector('.download-fallback-msg');
   if (!downloadMsg) {

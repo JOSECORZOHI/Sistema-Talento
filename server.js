@@ -2036,7 +2036,14 @@ app.patch('/api/deletion-requests/:id/reject', authMiddleware, requirePermission
 });
 
 // --- SERVIR ARCHIVOS ---
-app.get('/api/document-file/:filename', authMiddleware, async (req, res) => {
+// Token via query param para iframes que no pueden enviar headers Authorization
+function fileAuthMiddleware(req, res, next) {
+  if (req.query.token && !req.headers.authorization) {
+    req.headers.authorization = 'Bearer ' + req.query.token;
+  }
+  return authMiddleware(req, res, next);
+}
+app.get('/api/document-file/:filename', fileAuthMiddleware, async (req, res) => {
   const filename = req.params.filename;
   const folder = req.query.folder;
   let targetDir = DOCUMENTS_DIR;
