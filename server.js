@@ -2524,6 +2524,57 @@ app.post('/api/documents/register-scanner', authMiddleware, requirePermission('d
 });
 
 // --- BANDEJA DE CORREO ---
+// DEBUG temporal: diagnosticar sync Gmail paso a paso
+app.get('/api/gmail/debug', authMiddleware, requirePermission('email.manage'), async (req, res) => {
+  try {
+    const gmail = getGmailClient();
+    const result = {};
+
+    // Paso 1: Listar mensajes SIN filtro de adjuntos
+    try {
+      const listAll = await gmail.users.messages.list({ userId: 'me', labelIds: ['INBOX'], maxResults: 10 });
+      result.paso1_listAll = { count: (listAll.data.messages || []).length, totalEstimate: listAll.data.resultSizeEstimate, sampleIds: (listAll.data.messages || []).slice(0, 5).map(m => m.id) };
+    } catch (e) { result.paso1_error = e.message; }
+
+    // Paso 2: Listar mensajes CON has:attachment
+    try {
+      const listAtt = await gmail.users.messages.list({ userId: 'me', labelIds: ['INBOX'], q: 'has:attachment', maxResults: 10 });
+      result.paso2_listAttachment = { count: (listAtt.data.messages || []).length, sampleIds: (listAtt.data.messages || []).slice(0, 5).map(m => m.id) };
+    } catch (e) { result.paso2_error = e.message; }
+
+    // Paso 3: Listar mensajes SIN labelIds (prueba sin filtro de label)
+    try {
+      const listNoLabel = await gmail.users.messages.list({ userId: 'me', q: 'has:attachment', maxResults: 10 });
+      result.paso3_listNoLabel = { count: (listNoLabel.data.messages || []).length, sampleIds: (listNoLabel.data.messages || []).slice(0, 5).map(m => m.id) };
+    } catch (e) { result.paso3_error = e.message; }
+
+    // Paso 4: Tomar el primer mensaje y ver su contenido completo
+    if (result.paso1_listAll && result.paso1_listAll.sampleIds.length > 0) {
+      try {
+        const firstId = result.paso1_listAll.sampleIds[0];
+        const msg = await gmail.users.messages.get({ userId: 'me', id: firstId, format: 'full' });
+        const headers = (msg.data.payload || {}).headers || [];
+        const subject = headers.find(h => h.name === 'Subject')?.value || '';
+        const from = headers.find(h => h.name === 'From')?.value || '';
+        const parts = [];
+        const collectParts = (p) => {
+          if (p.filename) parts.push({ filename: p.filename, mimeType: p.mimeType, hasAttachmentId: !!p.body?.attachmentId, size: p.body?.size || 0 });
+          (p.parts || []).forEach(collectParts);
+        };
+        collectParts(msg.data.payload || {});
+        result.paso4_firstMessage = { id: firstId, subject, from, hasParts: parts.length > 0, parts, snippet: (msg.data.snippet || '').slice(0, 200) };
+      } catch (e) { result.paso4_error = e.message; }
+    }
+
+    // Paso 5: Verificar quéExtensiones se permiten
+    result.paso5_allowedExtensions = [...ALLOWED_EXTENSIONS];
+
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message, stack: e.stack });
+  }
+});
+
 app.get('/api/gmail/status', authMiddleware, requirePermission('email.manage'), (req, res) => {
   const { GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REDIRECT_URI, GMAIL_REFRESH_TOKEN } = process.env;
   const configured = !!(GMAIL_CLIENT_ID && GMAIL_CLIENT_SECRET && GMAIL_REDIRECT_URI);
