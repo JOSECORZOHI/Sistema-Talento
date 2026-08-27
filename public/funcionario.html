@@ -53,6 +53,7 @@
       cursor: pointer; transition: all 0.2s; font-family: var(--font-body); font-weight: 500;
       display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
       backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
     }
     .btn-portal-action:hover { background: rgba(255,255,255,0.14); color: #FFFFFF; border-color: rgba(255,255,255,0.22); }
     .btn-portal-logout { border-color: rgba(255,255,255,0.08); color: rgba(255,255,255,0.45); }
@@ -102,6 +103,7 @@
     }
     .portal-welcome .welcome-stat {
       background: rgba(255,255,255,0.08); backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
       border: 1px solid rgba(255,255,255,0.1); border-radius: 12px;
       padding: 12px 20px; min-width: 130px; text-align: center;
       transition: transform 0.2s, background 0.2s;
@@ -326,6 +328,7 @@
     .modal-backdrop {
       display: none; position: fixed; inset: 0;
       background: rgba(10, 20, 40, 0.5); backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
       z-index: 9000; align-items: center; justify-content: center;
       padding: 20px;
     }
@@ -361,7 +364,7 @@
     /* --- LOADER --- */
     .global-loader {
       display: none; position: fixed; inset: 0; background: rgba(10, 20, 40, 0.35);
-      backdrop-filter: blur(4px); z-index: 9999; align-items: center; justify-content: center;
+      backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); z-index: 9999; align-items: center; justify-content: center;
     }
     .global-loader.show { display: flex; }
     .spinner-ring {
@@ -606,7 +609,7 @@
   </div>
 
   <!-- PDF VIEWER MODAL -->
-  <div class="modal-backdrop" id="portal-modal-pdf">
+  <div class="modal-backdrop" id="portal-modal-pdf" role="dialog" aria-modal="true">
     <div class="modal-container">
       <div class="modal-header">
         <h3 id="portal-pdf-modal-title">Documento</h3>
@@ -619,7 +622,7 @@
   </div>
 
   <!-- DELETE REQUEST MODAL -->
-  <div class="modal-backdrop" id="modal-delete-request">
+  <div class="modal-backdrop" id="modal-delete-request" role="dialog" aria-modal="true">
     <div class="modal-container modal-small">
       <div class="modal-header">
         <h3>Solicitar Eliminación de Documento</h3>
@@ -651,7 +654,7 @@
   </div>
 
   <!-- REGISTER SCANNER DOC MODAL -->
-  <div class="modal-backdrop" id="modal-register-scanner">
+  <div class="modal-backdrop" id="modal-register-scanner" role="dialog" aria-modal="true">
     <div class="modal-container modal-small">
       <div class="modal-header">
         <h3>Registrar Documento Escaneado</h3>
@@ -688,7 +691,7 @@
   </div>
 
   <!-- REGISTER EMAIL ATTACHMENT MODAL -->
-  <div class="modal-backdrop" id="modal-register-email">
+  <div class="modal-backdrop" id="modal-register-email" role="dialog" aria-modal="true">
     <div class="modal-container modal-small">
       <div class="modal-header">
         <h3>Registrar Adjunto de Correo</h3>
@@ -832,7 +835,7 @@
   </script>
 
   <!-- CHANGE PASSWORD MODAL -->
-  <div class="modal-backdrop" id="modal-change-password">
+  <div class="modal-backdrop" id="modal-change-password" role="dialog" aria-modal="true">
     <div class="modal-container modal-small">
       <div class="modal-header">
         <h3>Cambiar Contraseña</h3>

@@ -219,7 +219,7 @@ async function connect() {
         } catch (err) {
           lastError = err;
           console.warn(`Intento ${attempt}/${MAX_RETRIES} de conexión a MongoDB falló: ${err.message}`);
-          if (newClient) { try { await newClient.close(true); } catch (_) {} newClient = null; }
+          if (newClient) { try { newClient.removeAllListeners(); await newClient.close(true); } catch (_) {} newClient = null; }
           if (attempt < MAX_RETRIES) {
             const delay = 1000 + Math.random() * 1500;
             await new Promise(r => setTimeout(r, delay));
@@ -237,7 +237,7 @@ async function connect() {
       bucket = new GridFSBucket(db, { bucketName: BUCKET_NAME });
       const oldClient = client;
       client = newClient;
-      if (oldClient) setTimeout(() => { try { oldClient.close(false); } catch (_) {} }, 10000);
+      if (oldClient) setTimeout(() => { try { oldClient.removeAllListeners(); oldClient.close(false); } catch (_) {} }, 10000);
 
       // Sembrar desde database.json local si las colecciones están vacías
       // Crear índices ANTES del seed para que users.email (único) evite duplicados (race en arranque)
@@ -272,7 +272,7 @@ async function connect() {
         seedUsers = enforceSingleAdmin(seedUsers);
         if (seedUsers.length > 0) {
           try {
-            await db.collection(COLLECTIONS.users).insertMany(seedUsers);
+            await db.collection(COLLECTIONS.users).insertMany(seedUsers, { ordered: false });
           } catch (e) {
             console.error('[SEED] Fallo insertando usuarios:', e.message);
           }
@@ -301,7 +301,8 @@ async function connect() {
         const seedCollection = async (name, data) => {
           if (data && Array.isArray(data) && data.length > 0) {
             try {
-              await db.collection(name).insertMany(data);
+              // ordered:false => un documento duplicado/faltante no aborta el resto del lote
+              await db.collection(name).insertMany(data, { ordered: false });
             } catch (e) {
               console.error(`[SEED] Fallo insertando '${name}':`, e.message);
             }
@@ -497,14 +498,14 @@ module.exports = {
 
       if (oldClient) {
         // Cierre graceful (sin force) para no abortar operaciones en vuelo
-        setTimeout(() => { try { oldClient.close(false); } catch(_){} }, 10000);
+        setTimeout(() => { try { oldClient.removeAllListeners(); oldClient.close(false); } catch(_){} }, 10000);
       }
 
       console.log('[MONGO] Reconexión exitosa (nuevo cliente creado).');
       return true;
     } catch(e) {
       // No dejar sockets abiertos del cliente que falló
-      if (newClient) { try { await newClient.close(true); } catch(_){} }
+      if (newClient) { try { newClient.removeAllListeners(); await newClient.close(true); } catch(_){} }
       console.warn('[MONGO] Reconexión falló:', e.message);
       return false;
     } finally {

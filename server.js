@@ -1525,7 +1525,7 @@ app.patch('/api/documents/:id/visibilidad', authMiddleware, requirePermission('d
 
 // --- EMPLEADOS ---
 app.get('/api/employees', authMiddleware, requirePermission('employees.read'), async (req, res) => {
-  res.json(await col('employees').find({}, { projection: { password: 0, passwordHistory: 0 } }).toArray());
+  res.json(await col('employees').find({}, { projection: { password: 0, passwordHistory: 0 } }).limit(2000).toArray());
 });
 
 app.post('/api/employees', authMiddleware, requirePermission('employees.create'), createLimiter, async (req, res) => {
@@ -1919,7 +1919,7 @@ app.delete('/api/documents/:id', authMiddleware, requirePermission('documents.de
 // --- SOLICITUDES DE ELIMINACIÓN ---
 app.get('/api/deletion-requests', authMiddleware, requirePermission('employees.read'), async (req, res) => {
   try {
-    const requests = await col('deletionRequests').find().sort({ createdAt: -1 }).toArray();
+    const requests = await col('deletionRequests').find().sort({ createdAt: -1 }).limit(200).toArray();
     res.json(requests);
   } catch (e) {
     res.status(500).json({ error: 'Error al obtener solicitudes de eliminación.' });
@@ -2926,7 +2926,8 @@ app.get('*', (req, res) => {
 
 // --- Verificador de salud de conexión: reconexión automática al morir el pool ---
 let lastReconnectAttempt = 0;
-const RECONNECT_COOLDOWN_MS = 10000;
+let reconnectCooldownMs = 10000;
+const RECONNECT_COOLDOWN_MS_MAX = 120000;
 
 async function checkConnection() {
   if (isReconnecting) return;
@@ -2934,14 +2935,19 @@ async function checkConnection() {
     const healthy = await isHealthy();
     if (!healthy) {
       const now = Date.now();
-      if (now - lastReconnectAttempt < RECONNECT_COOLDOWN_MS) return;
+      if (now - lastReconnectAttempt < reconnectCooldownMs) return;
       lastReconnectAttempt = now;
       console.warn('[MONGO] Conexión perdida, reconectando...');
       isReconnecting = true;
       const ok = await reconnect();
       isReconnecting = false;
-      if (ok) console.log('[MONGO] Reconexión exitosa.');
-      else console.warn('[MONGO] Reconexión falló. Se reintentará en 60s.');
+      if (ok) {
+        reconnectCooldownMs = 10000;
+        console.log('[MONGO] Reconexión exitosa.');
+      } else {
+        reconnectCooldownMs = Math.min(RECONNECT_COOLDOWN_MS_MAX, reconnectCooldownMs * 2);
+        console.warn(`[MONGO] Reconexión falló. Se reintentará en ${Math.round(reconnectCooldownMs / 1000)}s.`);
+      }
     }
   } catch (err) {
     console.warn('[MONGO] Health check falló:', err.message);

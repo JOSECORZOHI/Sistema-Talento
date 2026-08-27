@@ -452,7 +452,7 @@ function renderPortalEmailInbox() {
         </div>
         <div class="portal-item-info">
           <h5>${sanitize(email.subject || '(Sin asunto)')}</h5>
-          <span>De: ${sanitize(email.senderName || email.senderEmail)} — ${new Date(email.date).toLocaleDateString('es-CO')}</span>
+          <span>De: ${sanitize(email.senderName || email.senderEmail)} — ${formatDate(email.date)}</span>
         </div>
       </div>
       <div style="margin-top:6px;border-top:1px solid var(--border-color);padding-top:6px;">${attachHtml}</div>

@@ -634,7 +634,7 @@ function renderDocumentsTable() {
           ${fileIcon}
           <div>
             <span class="filename-primary">${sanitize(doc.filename)}</span>
-            <span class="filename-secondary">${sizeKB} KB &bull; Subido el ${new Date(doc.registeredAt).toLocaleDateString()}</span>
+            <span class="filename-secondary">${sizeKB} KB &bull; Subido el ${formatDate(doc.registeredAt)}</span>
           </div>
         </div>
       </td>
@@ -1002,7 +1002,7 @@ function renderAuditLogsTable() {
   filtered.forEach(log => {
     const tr = document.createElement('tr');
     
-    const dateFormatted = new Date(log.timestamp).toLocaleString();
+    const dateFormatted = formatDate(log.timestamp, { dateStyle: 'medium', timeStyle: 'short' });
 
     tr.innerHTML = `
       <td style="white-space: nowrap; font-weight: 500; font-size: 13px;">${dateFormatted}</td>
@@ -1042,7 +1042,7 @@ function renderDeletionRequests() {
 
   tbody.innerHTML = '';
   requests.forEach(req => {
-    const date = new Date(req.createdAt).toLocaleString('es-CO');
+    const date = formatDate(req.createdAt, { dateStyle: 'medium', timeStyle: 'short' });
     const isPending = req.status === 'Pendiente';
     const statusColor = isPending ? '#F39C12' : req.status === 'Aprobada' ? '#27AE60' : '#E74C3C';
     const tr = document.createElement('tr');
@@ -1766,7 +1766,7 @@ function renderScannerFiles() {
       <span style="font-size:22px;">📄</span>
       <div class="portal-item-info" style="flex:1;min-width:0;">
         <h5 style="margin:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${sanitize(f.filename)}">${sanitize(f.filename)}</h5>
-        <span style="font-size:11px;color:var(--text-muted);">${sizeKB} KB &bull; ${new Date(f.createdAt).toLocaleDateString('es-CO')}</span>
+        <span style="font-size:11px;color:var(--text-muted);">${sizeKB} KB &bull; ${formatDate(f.createdAt)}</span>
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0;">
         <button class="btn btn-secondary" style="padding:5px 10px;font-size:11px;" onclick="event.stopPropagation();openPdfModal('${safeFn}', 'scanner')" title="Vista previa">👁 Ver</button>
@@ -1888,7 +1888,7 @@ function renderEmailInbox() {
     card.innerHTML = `
       <div class="email-header-sm">
         <span class="email-sender-sm">${sanitize(email.senderName)}</span>
-        <span class="email-date-sm">${new Date(email.date).toLocaleDateString()}</span>
+        <span class="email-date-sm">${formatDate(email.date)}</span>
       </div>
       <div class="email-subject-sm">${sanitize(email.subject)}</div>
       <div class="email-body-preview-sm">${sanitize((email.body || '').substring(0, 80))}...</div>
@@ -1919,7 +1919,7 @@ function renderEmailDetail(emailId) {
   detailView.style.display = 'flex';
 
   document.getElementById('email-detail-subject').textContent = email.subject;
-  document.getElementById('email-detail-date').textContent = new Date(email.date).toLocaleString();
+  document.getElementById('email-detail-date').textContent = formatDate(email.date, { dateStyle: 'medium', timeStyle: 'short' });
   document.getElementById('email-detail-sender-name').textContent = email.senderName;
   document.getElementById('email-detail-sender-email').textContent = email.senderEmail || email.sender || 'correo@ejemplo.com';
   document.getElementById('email-detail-body').textContent = email.body;

@@ -751,7 +751,7 @@
   </div>
 
   <!-- MODAL 1: VIEW PDF AND MANAGE STATUS -->
-  <div class="modal-backdrop" id="modal-view-pdf">
+  <div class="modal-backdrop" id="modal-view-pdf" role="dialog" aria-modal="true">
     <div class="modal-container modal-lg">
       <div class="modal-header">
         <div class="modal-header-info">
@@ -817,7 +817,7 @@
   </div>
 
   <!-- MODAL 2: REGISTER/EDIT DOCUMENT METADATA -->
-  <div class="modal-backdrop" id="modal-edit-document">
+  <div class="modal-backdrop" id="modal-edit-document" role="dialog" aria-modal="true">
     <div class="modal-container">
       <div class="modal-header">
         <h3 id="edit-modal-title">Registrar Metadatos de Documento</h3>
@@ -827,7 +827,7 @@
         <form id="form-edit-document">
           <input type="hidden" id="edit-doc-id">
           <input type="hidden" id="edit-doc-filename">
-          <input type="hidden" id="edit-mode-local" value="false"> <!-- value can be 'edit', 'local', 'scanner', 'email' -->
+          <input type="hidden" id="edit-mode-local" value="false">
           <input type="hidden" id="edit-email-id">
 
           <div class="form-group" style="margin-bottom: 12px;">
@@ -896,7 +896,7 @@
   </div>
 
   <!-- MODAL 3: REGISTER NEW EMPLOYEE -->
-  <div class="modal-backdrop" id="modal-add-employee">
+  <div class="modal-backdrop" id="modal-add-employee" role="dialog" aria-modal="true">
     <div class="modal-container">
       <div class="modal-header">
         <h3>Registrar Nuevo Funcionario</h3>

@@ -3,6 +3,15 @@
 //  Usado por admin.html (app.js) y funcionario.html (funcionario.js)
 // ============================================================
 
+// --- ACCESIBILIDAD ---
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('svg').forEach(svg => {
+    if (svg.hasAttribute('role') || svg.getAttribute('aria-hidden') === 'true') return;
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+  });
+});
+
 // --- SEGURIDAD ---
 function sanitize(str) {
   if (!str) return '';
@@ -200,6 +209,14 @@ function formatIssueDate(value) {
   }
   const parsed = new Date(value);
   return isNaN(parsed.getTime()) ? String(value) : parsed.toLocaleDateString('es-CO');
+}
+
+// Formatea una fecha ISO/timestamp de forma segura; devuelve '—' si es inválida.
+function formatDate(value, opts, fallback = '—') {
+  if (!value) return fallback;
+  const parsed = new Date(value);
+  if (isNaN(parsed.getTime())) return fallback;
+  return opts && opts.timeStyle ? parsed.toLocaleString('es-CO', opts) : parsed.toLocaleDateString('es-CO', opts);
 }
 
 function populateDropdown(selectId, items, defaultVal, defaultText, keyField = 'id', textField = 'name') {
