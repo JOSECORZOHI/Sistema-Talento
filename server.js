@@ -2157,7 +2157,6 @@ app.get('/api/document-file/:filename', fileAuthMiddleware, async (req, res) => 
     console.error(`[FILE-SERVE] Error sirviendo archivo local '${filename}':`, e.message);
     if (!res.headersSent) res.status(500).json({ error: 'Error al servir archivo.' });
   }
-  }
 });
 
 // --- REGISTROS DE AUDITORÍA ---
