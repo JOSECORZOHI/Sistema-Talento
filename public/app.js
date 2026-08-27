@@ -1096,7 +1096,7 @@ window.rejectDeletionRequest = async function(id) {
 // 5. LÓGICA DE MODALES (ABRIR Y CERRAR)
 
 // MODAL DE VISUALIZACIÓN PDF
-window.openPdfModal = function(filename, folder = 'documents', docId) {
+window.openPdfModal = async function(filename, folder = 'documents', docId) {
   let doc = null;
   const iframe = document.getElementById('pdf-iframe');
   const ext = (filename || '').split('.').pop().toLowerCase();
@@ -1109,39 +1109,54 @@ window.openPdfModal = function(filename, folder = 'documents', docId) {
 
   document.getElementById('btn-toggle-visibility').style.display = 'none';
 
-  function setIframeSrc(url) {
-    const token = getToken() || '';
-    if (token && !url.includes('token=')) {
-      url += (url.includes('?') ? '&' : '?') + 'token=' + token;
-    }
-    if (canViewInline) {
-      iframe.style.display = 'block';
-      iframe.src = url;
-    } else {
-      iframe.style.display = 'none';
-      const viewerFrame = iframe.parentElement;
-      let downloadMsg = viewerFrame.querySelector('.download-fallback-msg');
-      if (!downloadMsg) {
-        downloadMsg = document.createElement('div');
-        downloadMsg.className = 'download-fallback-msg';
-        downloadMsg.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px;text-align:center;color:var(--text-secondary);padding:40px;';
-        viewerFrame.appendChild(downloadMsg);
+  async function setIframeSrc(url) {
+    // Carga el archivo vía fetch (token por cabecera Authorization) y renderiza
+    // desde un Blob URL: el JWT nunca aparece en la URL del iframe ni en logs.
+    const iframeEl = iframe;
+    if (iframeEl._blobUrl) { URL.revokeObjectURL(iframeEl._blobUrl); iframeEl._blobUrl = null; }
+    try {
+      const res = await apiFetch(url);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      iframeEl._blobUrl = blobUrl;
+      if (canViewInline) {
+        iframeEl.style.display = 'block';
+        iframeEl.src = blobUrl;
+      } else {
+        iframeEl.style.display = 'none';
+        const viewerFrame = iframeEl.parentElement;
+        let downloadMsg = viewerFrame.querySelector('.download-fallback-msg');
+        if (!downloadMsg) {
+          downloadMsg = document.createElement('div');
+          downloadMsg.className = 'download-fallback-msg';
+          downloadMsg.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px;text-align:center;color:var(--text-secondary);padding:40px;';
+          viewerFrame.appendChild(downloadMsg);
+        }
+        downloadMsg.style.display = 'flex';
+        downloadMsg.innerHTML = `
+          <svg viewBox="0 0 24 24" width="64" height="64" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+          </svg>
+          <h3 style="margin:0;color:var(--text-primary);"></h3>
+          <p style="margin:0;font-size:13px;">Este tipo de archivo no se puede previsualizar en el navegador.</p>
+          <a href="" download="" class="btn btn-primary" style="text-decoration:none;padding:10px 24px;">
+            Descargar archivo
+          </a>
+        `;
+        downloadMsg.querySelector('h3').textContent = filename;
+        downloadMsg.querySelector('a').href = blobUrl;
+        downloadMsg.querySelector('a').download = filename;
       }
-      downloadMsg.style.display = 'flex';
-      downloadMsg.innerHTML = `
-        <svg viewBox="0 0 24 24" width="64" height="64" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
-        </svg>
-        <h3 style="margin:0;color:var(--text-primary);"></h3>
-        <p style="margin:0;font-size:13px;">Este tipo de archivo no se puede previsualizar en el navegador.</p>
-        <a href="" download="" class="btn btn-primary" style="text-decoration:none;padding:10px 24px;">
-          Descargar archivo
-        </a>
-      `;
-      downloadMsg.querySelector('h3').textContent = filename;
-      const token2 = getToken() || '';
-      downloadMsg.querySelector('a').href = url + (token2 ? (url.includes('?') ? '&' : '?') + 'token=' + token2 : '');
-      downloadMsg.querySelector('a').download = filename;
+    } catch (e) {
+      console.error('No se pudo cargar el archivo:', e);
+      if (iframeEl._blobUrl) { URL.revokeObjectURL(iframeEl._blobUrl); iframeEl._blobUrl = null; }
+      iframeEl.style.display = 'block';
+      iframeEl.srcdoc = `
+        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;color:var(--text-secondary);font-size:14px;text-align:center;padding:24px;">
+          <h3 style="margin:0;">No se pudo cargar el archivo</h3>
+          <p style="margin:0;">Compruebe su conexión y vuelva a intentarlo.</p>
+        </div>`;
     }
   }
 
@@ -1168,7 +1183,7 @@ window.openPdfModal = function(filename, folder = 'documents', docId) {
     document.getElementById('btn-archive-pdf-direct').disabled = true;
     
     hideDownloadFallback();
-    setIframeSrc(`/api/document-file/${encodeURIComponent(filename)}?folder=scanner`);
+    await setIframeSrc(`/api/document-file/${encodeURIComponent(filename)}?folder=scanner`);
   } else if (folder === 'email') {
     // Mostrar vista previa de metadatos del adjunto de correo
     document.getElementById('pdf-modal-title').textContent = filename;
@@ -1185,7 +1200,7 @@ window.openPdfModal = function(filename, folder = 'documents', docId) {
     document.getElementById('btn-archive-pdf-direct').disabled = true;
     
     hideDownloadFallback();
-    setIframeSrc(`/api/document-file/${encodeURIComponent(filename)}?folder=gmail`);
+    await setIframeSrc(`/api/document-file/${encodeURIComponent(filename)}?folder=gmail`);
   } else {
     // Por defecto: documentos registrados
     doc = docId
@@ -1228,7 +1243,7 @@ window.openPdfModal = function(filename, folder = 'documents', docId) {
     btnVis.onclick = () => toggleDocVisibility(doc.id);
 
     hideDownloadFallback();
-    setIframeSrc(`/api/document-file/${encodeURIComponent(filename)}`);
+    await setIframeSrc(`/api/document-file/${encodeURIComponent(filename)}`);
   }
 
   // Disparador de descarga común

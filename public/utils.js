@@ -320,17 +320,16 @@ function renderPdfFallback(filename, url) {
     </a>`;
 }
 
-function openPdfViewer(iframeId, filename, folder) {
+async function openPdfViewer(iframeId, filename, folder) {
   const iframe = document.getElementById(iframeId);
   if (!iframe) return;
   const ext = (filename || '').split('.').pop().toLowerCase();
   const viewableTypes = ['pdf','jpg','jpeg','png','gif','bmp','tiff','tif','txt'];
   const canViewInline = viewableTypes.includes(ext);
-  const token = getToken() || '';
+  // URL sin token: la autenticación viaja por cabecera Authorization (apiFetch).
   let url = `/api/document-file/${encodeURIComponent(filename)}`;
   const params = new URLSearchParams();
   if (folder) params.set('folder', folder);
-  if (token) params.set('token', token);
   const qs = params.toString();
   if (qs) url += '?' + qs;
 
@@ -342,20 +341,45 @@ function openPdfViewer(iframeId, filename, folder) {
     iframe.parentElement.appendChild(downloadMsg);
   }
 
-  if (canViewInline) {
+  // Revocar Blob URL anterior si la hay
+  if (iframe._blobUrl) { URL.revokeObjectURL(iframe._blobUrl); iframe._blobUrl = null; }
+
+  try {
+    const res = await apiFetch(url);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const blob = await res.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    iframe._blobUrl = blobUrl;
+
+    if (canViewInline) {
+      iframe.style.display = 'block';
+      iframe.src = blobUrl;
+      downloadMsg.style.display = 'none';
+    } else {
+      iframe.style.display = 'none';
+      downloadMsg.style.display = 'flex';
+      downloadMsg.innerHTML = renderPdfFallback(filename, blobUrl);
+    }
+  } catch (e) {
+    console.error('No se pudo cargar el archivo:', e);
+    if (iframe._blobUrl) { URL.revokeObjectURL(iframe._blobUrl); iframe._blobUrl = null; }
     iframe.style.display = 'block';
-    iframe.src = url;
-    downloadMsg.style.display = 'none';
-  } else {
-    iframe.style.display = 'none';
-    downloadMsg.style.display = 'flex';
-    downloadMsg.innerHTML = renderPdfFallback(filename, url);
+    iframe.srcdoc = `
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;color:var(--text-secondary);font-size:14px;text-align:center;padding:24px;">
+        <h3 style="margin:0;">No se pudo cargar el archivo</h3>
+        <p style="margin:0;">Compruebe su conexión y vuelva a intentarlo.</p>
+      </div>`;
   }
 }
 
 function closePdfViewer(iframeId, modalEl) {
   const iframe = document.getElementById(iframeId);
-  if (iframe) { iframe.src = ''; iframe.style.display = 'block'; }
+  if (iframe) {
+    if (iframe._blobUrl) { URL.revokeObjectURL(iframe._blobUrl); iframe._blobUrl = null; }
+    iframe.removeAttribute('src');
+    iframe.src = '';
+    iframe.style.display = 'block';
+  }
   const downloadMsg = iframe?.parentElement?.querySelector('.download-fallback-msg');
   if (downloadMsg) downloadMsg.style.display = 'none';
   if (modalEl) {

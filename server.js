@@ -29,13 +29,18 @@ function generateTempPassword() {
   return pick(upper, 2) + pick(lower, 2) + pick(digits, 2) + pick(symbols, 2) + pick(upper + lower + digits + symbols, 8);
 }
 
-// Prevenir caídas por errores no controlados — NO exit para que Railway
-// no reinicie el proceso y cause "connection refused" en requests en curso.
+// Manejo de errores no controlados.
+// unhandledRejection: se loguea sin salir (permite que la reconexión a Mongo se recupere).
+// uncaughtException: tras una excepción no capturada el proceso puede quedar corrupto;
+// se cierra HTTP y se sale para que Railway reinicie el proceso limpio.
 process.on('unhandledRejection', (err) => {
   console.error('[PROCESS] Unhandled rejection:', err && err.stack ? err.stack : err);
 });
 process.on('uncaughtException', (err) => {
-  console.error('[PROCESS] Uncaught exception:', err && err.stack ? err.stack : err);
+  console.error('[PROCESS] Uncaught exception — reiniciando proceso:', err && err.stack ? err.stack : err);
+  try { if (typeof server !== 'undefined' && server) server.close(() => {}); } catch (_) {}
+  const exitTimer = setTimeout(() => process.exit(1), 1500);
+  if (exitTimer.unref) exitTimer.unref();
 });
 
 function getGoogleApis() {
@@ -191,6 +196,10 @@ app.use(helmet({
       fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
       connectSrc: ["'self'"],
       objectSrc: ["'none'"],
+      // frame-src: 'self' para visores del mismo origen y blob: para los PDF que el
+      // frontend carga vía fetch con token en cabecera (Authorization) y renderiza
+      // desde un Blob URL (nunca se expone el JWT en la URL del iframe).
+      frameSrc: ["'self'", "blob:"],
       // frame-ancestors 'self' permite incrustar en iframes del MISMO origen
       // (visores PDF/documentos). 'none' bloqueaba incluso el iframe propio,
       // causando "la página ha rechazado la conexión" en los visores.
@@ -2041,8 +2050,10 @@ app.patch('/api/deletion-requests/:id/reject', authMiddleware, requirePermission
 // --- SERVIR ARCHIVOS ---
 // Token via query param para iframes que no pueden enviar headers Authorization
 function fileAuthMiddleware(req, res, next) {
+  // El token SOLO se acepta por cabecera Authorization (Bearer). No se admite en
+  // la URL (?token=): evita que el JWT quede expuesto en logs, referrer o historial.
   if (req.query.token && !req.headers.authorization) {
-    req.headers.authorization = 'Bearer ' + req.query.token;
+    return res.status(401).json({ error: 'Autenticación inválida. Vuelva a iniciar sesión.' });
   }
   return authMiddleware(req, res, next);
 }
