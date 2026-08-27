@@ -1308,10 +1308,10 @@ function openRegisterModal(filename, options = {}) {
   document.getElementById('edit-employee').value = suggestedEmployeeId;
   document.getElementById('edit-category').value = '';
   document.getElementById('edit-type').value = '';
-  document.getElementById('edit-issue-date').value = new Date().toISOString().substring(0, 10);
+  document.getElementById('edit-issue-date').value = options.issueDate || new Date().toISOString().substring(0, 10);
   document.getElementById('edit-expiry-date').value = '';
   document.getElementById('edit-status').value = defaultStatuses[mode] || 'Pendiente';
-  document.getElementById('edit-description').value = '';
+  document.getElementById('edit-description').value = options.description || '';
   document.getElementById('edit-mode-local').value = mode;
   document.getElementById('edit-email-id').value = emailId;
   openModal(modalEditDoc);
@@ -1322,7 +1322,23 @@ window.openRegisterLocalModal = function(filename) { openRegisterModal(filename,
 window.openRegisterScannerModal = function(filename) { openRegisterModal(filename, { mode: 'scanner' }); };
 window.openRegisterEmailModal = function(filename, emailId) {
   const email = appState.emails?.find(e => e.id === emailId);
-  openRegisterModal(filename, { mode: 'email', emailId, suggestedEmployeeId: email?.suggestedEmployeeId || '' });
+  const options = { mode: 'email', emailId };
+  if (email) {
+    // Auto-llenado desde el correo: empleado sugerido (remitente), fecha de emisión = fecha
+    // del correo y descripción con el asunto + remitente + fecha. El admin solo confirma.
+    options.suggestedEmployeeId = email.suggestedEmployeeId || '';
+    const dateObj = email.date ? new Date(email.date) : null;
+    const issueDate = (dateObj && !isNaN(dateObj.getTime())) ? dateObj.toISOString().substring(0, 10) : '';
+    if (issueDate) options.issueDate = issueDate;
+    const senderLine = email.senderName
+      ? `${email.senderName}${email.senderEmail ? ` <${email.senderEmail}>` : ''}`
+      : (email.senderEmail || email.sender || '');
+    const descParts = [`Asunto: ${email.subject || '(Sin asunto)'}`];
+    if (senderLine) descParts.push(`Remitente: ${senderLine}`);
+    if (dateObj && !isNaN(dateObj.getTime())) descParts.push(`Fecha del correo: ${formatDate(dateObj)}`);
+    options.description = descParts.join('\n');
+  }
+  openRegisterModal(filename, options);
 };
 
 // openModal y closeModal se definen en utils.js
