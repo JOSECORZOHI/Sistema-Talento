@@ -1315,6 +1315,54 @@ function openRegisterModal(filename, options = {}) {
   document.getElementById('edit-mode-local').value = mode;
   document.getElementById('edit-email-id').value = emailId;
   openModal(modalEditDoc);
+
+  // Análisis automático del documento: sugiere tipo, categoría, funcionario,
+  // fecha y descripción. El admin confirma los campos antes de guardar.
+  if (mode !== 'false') triggerAnalysis(filename, mode);
+}
+
+async function triggerAnalysis(filename, mode) {
+  const statusEl = document.getElementById('analyze-status');
+  if (!statusEl) return;
+  statusEl.innerHTML = '<span class="spin">&#9696;</span> Analizando documento (puede tardar unos segundos)...';
+  statusEl.className = 'analyze-status busy';
+  statusEl.style.display = 'block';
+  try {
+    const folder = mode === 'scanner' ? 'scanner' : (mode === 'email' ? 'gmail' : undefined);
+    const res = await apiFetch('/api/documents/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename, folder })
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data || !data.suggestions) {
+      statusEl.textContent = (data && data.error) ? data.error : 'No se pudo analizar este documento.';
+      statusEl.className = 'analyze-status error';
+      return;
+    }
+    const s = data.suggestions;
+    const fillIfEmpty = (id, val) => {
+      const el = document.getElementById(id);
+      if (el && val && !el.value) el.value = val;
+    };
+    fillIfEmpty('edit-category', s.categoryId);
+    fillIfEmpty('edit-type', s.documentTypeId);
+    fillIfEmpty('edit-employee', s.employeeId);
+    fillIfEmpty('edit-issue-date', s.issueDate);
+    const descEl = document.getElementById('edit-description');
+    if (descEl && s.description && descEl.value.trim().length < 5) {
+      descEl.value = s.description;
+      if (descEl.style) descEl.style.height = 'auto';
+    }
+    const parts = [s.documentTypeId, s.categoryId];
+    if (s.issueDate) parts.push('fecha ' + s.issueDate);
+    if (s.employeeId) parts.push('funcionario');
+    statusEl.textContent = 'Análisis completado' + (data.ocrUsed ? ' con OCR' : '') + ': ' + parts.join(' · ') + '. Revise y confirme.';
+    statusEl.className = 'analyze-status done';
+  } catch (err) {
+    statusEl.textContent = 'No se pudo analizar el documento.';
+    statusEl.className = 'analyze-status error';
+  }
 }
 
 // Mantener nombres anteriores para compatibilidad

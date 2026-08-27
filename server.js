@@ -18,6 +18,7 @@ const crypto = require('crypto');
 const PDFDocument = require('pdfkit');
 const nodemailer = require('nodemailer');
 const { connect, col, isHealthy, reconnect, closeDb, storeFileBuffer, readFileStream, deleteFileByName, listFilesBySource, markFileRegistered } = require('./db');
+const { analyzeFile } = require('./documentAnalyzer.js');
 
 // Generador de contraseñas temporales para nuevos funcionarios
 function generateTempPassword() {
@@ -2044,6 +2045,68 @@ app.patch('/api/deletion-requests/:id/reject', authMiddleware, requirePermission
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Error al procesar solicitud.' });
+  }
+});
+
+// --- ANÁLISIS DE DOCUMENTO (OCR + sugerencias) ---
+app.post('/api/documents/analyze', authMiddleware, requirePermission('documents.create'), async (req, res) => {
+  const { filename, folder } = req.body || {};
+  if (!filename) return res.status(400).json({ error: 'Se requiere el nombre del archivo.' });
+  const targetFilename = String(filename);
+  if (!isAllowedFile(targetFilename)) {
+    return res.status(400).json({ error: 'Formato de archivo no soportado para análisis.' });
+  }
+
+  const MAX_ANALYZE_BYTES = 25 * 1024 * 1024;
+
+  let employees = [];
+  try {
+    employees = await col('employees').find({}, { projection: { id: 1, name: 1, lastName: 1, identification: 1 } }).limit(2000).toArray();
+  } catch (e) {
+    console.warn('[ANALYZE] No se pudieron cargar los empleados para sugerir:', e.message);
+  }
+
+  const readBufferFromGridFs = () => new Promise((resolve, reject) => {
+    readFileStream(targetFilename).then((r) => {
+      if (!r) return resolve(null);
+      if (r.file.length > MAX_ANALYZE_BYTES) return resolve({ error: 'limite' });
+      const chunks = [];
+      let size = 0;
+      r.stream.on('data', (c) => {
+        size += c.length;
+        if (size > MAX_ANALYZE_BYTES) { try { r.stream.destroy(); } catch (_) {} return reject({ error: 'limite' }); }
+        chunks.push(c);
+      });
+      r.stream.on('end', () => resolve(Buffer.concat(chunks)));
+      r.stream.on('error', (e) => reject(e));
+    }).catch((e) => reject(e));
+  });
+
+  let buf;
+  try { buf = await readBufferFromGridFs(); } catch (e) { return res.status(413).json({ error: 'El archivo supera el tamaño máximo para análisis.' }); }
+
+  if (!buf) {
+    let dir = DOCUMENTS_DIR;
+    if (folder === 'scanner') dir = SCANNER_DIR;
+    if (folder === 'gmail' || folder === 'email') dir = GMAIL_INBOX_DIR;
+    const filePath = getSafeFilePath(dir, targetFilename);
+    if (!filePath || !fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'El archivo no está disponible en el servidor.' });
+    }
+    if (fs.statSync(filePath).size > MAX_ANALYZE_BYTES) {
+      return res.status(413).json({ error: 'El archivo supera el tamaño máximo para análisis.' });
+    }
+    buf = fs.readFileSync(filePath);
+  }
+
+  try {
+    const result = await analyzeFile(buf, targetFilename, { employees });
+    if (!result) return res.status(422).json({ error: 'No se pudo extraer información del documento.' });
+    console.log(`[ANALYZE] '${targetFilename}' por ${req.user.email}: type=${result.suggestions.documentTypeId} cat=${result.suggestions.categoryId} ocr=${result.ocrUsed}`);
+    res.json(result);
+  } catch (e) {
+    console.error('[ANALYZE] Error al analizar el documento:', e.message);
+    res.status(422).json({ error: 'No se pudo analizar el documento.' });
   }
 });
 

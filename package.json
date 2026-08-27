@@ -21,10 +21,14 @@
     "helmet": "^8.3.0",
     "hpp": "^0.2.3",
     "jsonwebtoken": "^9.0.3",
+    "mammoth": "^1.12.1",
     "mongodb": "^6.21.0",
     "multer": "^2.0.1",
+    "mupdf": "^1.28.0",
     "nodemailer": "^9.0.3",
-    "pdfkit": "^0.19.1"
+    "pdfjs-dist": "^4.8.69",
+    "pdfkit": "^0.19.1",
+    "tesseract.js": "^5.1.1"
   },
   "author": "Sistemas Valledupar",
   "license": "ISC"

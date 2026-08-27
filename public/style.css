@@ -1589,6 +1589,24 @@ textarea:focus {
   color: var(--text-secondary);
 }
 
+.analyze-status {
+  display: none;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  background-color: var(--background);
+  border: 1px solid var(--border-color);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.analyze-status.busy { color: var(--text-primary); }
+.analyze-status.done { color: var(--success); border-color: var(--success); }
+.analyze-status.error { color: var(--danger); border-color: var(--danger); }
+.analyze-status .spin { display: inline-block; margin-right: 6px; animation: spin 1s linear infinite; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
 /* ESTILOS RESPONSIVOS */
 @media (max-width: 1024px) {
   .dashboard-grid {
