@@ -355,6 +355,9 @@ async function connect() {
         } catch (_) {}
       }
 
+      // Validación de esquema: después del seed/migraciones para no bloquear datos de referencia.
+      await createValidators();
+
       return db;
     })().catch(error => {
       initPromise = null;
@@ -461,11 +464,129 @@ async function closeDb() {
   initPromise = null;
 }
 
+// --- VALIDACIÓN DE ESQUEMA (M15) ---
+// Validadores PERMISIVOS: solo exigen campos invariantes de cada colección y el
+// tipo de los campos clave. additionalProperties queda abierto (los $set de
+// migraciones/features agregan campos nuevos sin riesgo) y los tipos usan
+// uniones para tolerar Date vs ISO string según el origen del dato.
+// Nivel 'moderate': los documentos preexistentes que no cumplen el esquema NO
+// se bloquean al actualizarse; solo los inserts nuevos y las actualizaciones de
+// documentos ya conformes quedan validados (protege la BD con datos legados).
+const VALIDATORS = {
+  users: {
+    bsonType: 'object', additionalProperties: true,
+    required: ['email', 'name', 'role'],
+    properties: { email: { bsonType: 'string' }, name: { bsonType: 'string' }, role: { bsonType: 'string' } }
+  },
+  employees: {
+    bsonType: 'object', additionalProperties: true,
+    required: ['email', 'name', 'id', 'status'],
+    properties: { email: { bsonType: 'string' }, name: { bsonType: 'string' }, id: { bsonType: 'string' }, status: { bsonType: 'string' } }
+  },
+  documents: {
+    bsonType: 'object', additionalProperties: true,
+    required: ['filename', 'employeeId', 'employeeName', 'documentTypeId', 'categoryId', 'status', 'registeredAt'],
+    properties: {
+      filename: { bsonType: 'string' },
+      employeeId: { bsonType: 'string' },
+      documentTypeId: { bsonType: 'string' },
+      categoryId: { bsonType: 'string' },
+      status: { bsonType: 'string' },
+      registeredAt: { bsonType: 'string' },
+      issueDate: { bsonType: ['string', 'null'] },
+      fileSize: { bsonType: ['number', 'null'] }
+    }
+  },
+  auditLogs: {
+    bsonType: 'object', additionalProperties: true,
+    required: ['timestamp', 'action', 'user'],
+    properties: { timestamp: { bsonType: 'string' }, action: { bsonType: 'string' }, user: { bsonType: 'string' } }
+  },
+  securityLogs: {
+    bsonType: 'object', additionalProperties: true,
+    required: ['id', 'timestamp', 'event', 'severity'],
+    properties: { id: { bsonType: 'string' }, timestamp: { bsonType: 'string' }, event: { bsonType: 'string' }, severity: { bsonType: 'string' } }
+  },
+  loginAttempts: {
+    bsonType: 'object', additionalProperties: true,
+    required: ['identifier', 'success', 'timestamp'],
+    properties: { identifier: { bsonType: 'string' }, success: { bsonType: 'bool' }, timestamp: { bsonType: 'date' } }
+  },
+  deletionRequests: {
+    bsonType: 'object', additionalProperties: true,
+    required: ['documentId', 'documentFilename', 'employeeName', 'status', 'createdAt'],
+    properties: {
+      documentId: { bsonType: 'string' },
+      documentFilename: { bsonType: 'string' },
+      employeeName: { bsonType: 'string' },
+      status: { bsonType: 'string' },
+      createdAt: { bsonType: 'string' }
+    }
+  },
+  passwordResetTokens: {
+    bsonType: 'object', additionalProperties: true,
+    required: ['tokenHash', 'email', 'expiresAt', 'used'],
+    properties: {
+      tokenHash: { bsonType: 'string' },
+      email: { bsonType: 'string' },
+      used: { bsonType: 'bool' },
+      expiresAt: { bsonType: 'date' }
+    }
+  },
+  emailsInbox: {
+    bsonType: 'object', additionalProperties: true,
+    required: ['id', 'subject', 'read', 'date'],
+    properties: {
+      id: { bsonType: 'string' },
+      subject: { bsonType: 'string' },
+      read: { bsonType: 'bool' },
+      date: { bsonType: 'string' }
+    }
+  }
+};
+
+async function applyValidator(cname, schema) {
+  try {
+    await db.createCollection(COLLECTIONS[cname], {
+      validator: { $jsonSchema: schema },
+      validationLevel: 'moderate',
+      validationAction: 'error'
+    });
+  } catch (e) {
+    // Ya existe => reaplicar con collMod (idempotente). Otros errores se propagan
+    // para ser registrados sin bloquear el arranque.
+    if (e.code === 48 || e.code === 73) {
+      await db.command({
+        collMod: COLLECTIONS[cname],
+        validator: { $jsonSchema: schema },
+        validationLevel: 'moderate',
+        validationAction: 'error'
+      });
+      return;
+    }
+    throw e;
+  }
+}
+
+async function createValidators() {
+  if (!db) return;
+  const entries = Object.entries(VALIDATORS);
+  for (const [cname, schema] of entries) {
+    try {
+      await applyValidator(cname, schema);
+    } catch (e) {
+      console.warn(`[MONGO] No se pudo aplicar validación a '${COLLECTIONS[cname]}':`, e.message);
+    }
+  }
+  console.log(`[MONGO] Validación de esquema activa en ${entries.length} colecciones.`);
+}
+
 module.exports = {
   connect,
   col,
   isHealthy,
   closeDb,
+  createValidators,
   storeFileBuffer,
   readFileStream,
   deleteFileByName,
@@ -495,6 +616,7 @@ module.exports = {
 
       await runMigrations().catch(() => {});
       await ensureIndexes().catch(() => {});
+      await createValidators().catch(() => {});
 
       if (oldClient) {
         // Cierre graceful (sin force) para no abortar operaciones en vuelo
