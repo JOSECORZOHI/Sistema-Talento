@@ -298,7 +298,7 @@ function openPdfViewer(iframeId, filename, folder) {
   const ext = (filename || '').split('.').pop().toLowerCase();
   const viewableTypes = ['pdf','jpg','jpeg','png','gif','bmp','tiff','tif','txt'];
   const canViewInline = viewableTypes.includes(ext);
-  const token = localStorage.getItem('token') || '';
+  const token = getToken() || '';
   let url = `/api/document-file/${encodeURIComponent(filename)}`;
   const params = new URLSearchParams();
   if (folder) params.set('folder', folder);

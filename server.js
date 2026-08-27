@@ -191,7 +191,10 @@ app.use(helmet({
       fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
       connectSrc: ["'self'"],
       objectSrc: ["'none'"],
-      frameAncestors: ["'none'"],
+      // frame-ancestors 'self' permite incrustar en iframes del MISMO origen
+      // (visores PDF/documentos). 'none' bloqueaba incluso el iframe propio,
+      // causando "la página ha rechazado la conexión" en los visores.
+      frameAncestors: ["'self'"],
       baseUri: ["'self'"],
       formAction: ["'self'"],
       upgradeInsecureRequests: null
