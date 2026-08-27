@@ -326,7 +326,7 @@ function getMimeType(filename) {
   return MIME_TYPES[ext] || 'application/octet-stream';
 }
 
-const INLINE_MIMES = new Set(['application/pdf','image/jpeg','image/png','image/gif','image/bmp','image/tiff']);
+const INLINE_MIMES = new Set(['application/pdf','image/jpeg','image/png','image/gif','image/bmp','image/tiff','text/plain']);
 function isInlineMime(mimeType) { return INLINE_MIMES.has(mimeType); }
 
 // Content-Disposition conforme a RFC 5987: filename ASCII seguro + filename* UTF-8
@@ -2584,6 +2584,11 @@ app.post('/api/documents/register-scanner', authMiddleware, requirePermission('d
 // --- BANDEJA DE CORREO ---
 // DEBUG temporal: diagnosticar sync Gmail paso a paso
 app.get('/api/gmail/debug', authMiddleware, requirePermission('email.manage'), async (req, res) => {
+  // Endpoint de diagnóstico: solo disponible en desarrollo para no exponer
+  // contenido/env de producción.
+  if (process.env.NODE_ENV !== 'development') {
+    return res.status(404).json({ error: 'No encontrado.' });
+  }
   try {
     const gmail = getGmailClient();
     const result = {};
@@ -2629,7 +2634,7 @@ app.get('/api/gmail/debug', authMiddleware, requirePermission('email.manage'), a
 
     res.json(result);
   } catch (e) {
-    res.status(500).json({ error: e.message, stack: e.stack });
+    res.status(500).json({ error: e.message });
   }
 });
 
