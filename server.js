@@ -1238,12 +1238,12 @@ app.post('/api/auth/activate/:token', async (req, res) => {
   if (activationToken.role === 'admin') {
     await col('users').updateOne(
       { email: activationToken.email },
-      { $set: { status: 'activa', password: hashedPassword, mustChangePassword: false } }
+      { $set: { status: 'activa', password: hashedPassword, mustChangePassword: false, lockedUntil: null, failedAttempts: 0 } }
     );
   } else {
     await col('employees').updateOne(
       { email: activationToken.email },
-      { $set: { status: 'activa', active: true, password: hashedPassword, mustChangePassword: false } }
+      { $set: { status: 'activa', active: true, password: hashedPassword, mustChangePassword: false, lockedUntil: null, failedAttempts: 0 } }
     );
   }
 
@@ -2665,7 +2665,7 @@ app.get('/api/gmail/authorize', authMiddleware, requirePermission('email.manage'
     res.json({ url });
   } catch (error) {
     console.error('[GMAIL] Error en /authorize:', error.message, error.code);
-    res.status(503).json({ error: 'Gmail no está configurado.', detail: error.message });
+    res.status(503).json({ error: 'Gmail no está configurado.' });
   }
 });
 

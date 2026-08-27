@@ -109,6 +109,12 @@ function showToast(message, type = 'success') {
   const closeBtn = toast.querySelector('.toast-close');
   closeBtn.style.cssText = 'background:none;border:none;color:white;font-size:16px;cursor:pointer;';
 
+  // Evitar acumular toasts ilimitados: si hay demasiados, remover los más antiguos
+  const existingToasts = document.querySelectorAll('.toast-message');
+  if (existingToasts.length >= 6) {
+    for (let i = 0; i < existingToasts.length - 5; i++) existingToasts[i].remove();
+  }
+
   document.body.appendChild(toast);
 
   setTimeout(() => { toast.style.opacity = '1'; toast.style.transform = 'translateY(0)'; }, 10);
@@ -200,6 +206,7 @@ function populateDropdown(selectId, items, defaultVal, defaultText, keyField = '
   const select = document.getElementById(selectId);
   if (!select) return;
   select.innerHTML = '';
+  if (!Array.isArray(items)) return;
   if (defaultText) {
     const opt = document.createElement('option');
     opt.value = defaultVal || '';
@@ -255,7 +262,11 @@ function updateThemeUI(theme, sunSelector, moonSelector, textSelector) {
 }
 
 function setupThemeToggle(btnSelector, sunSelector, moonSelector, textSelector) {
-  document.querySelector(btnSelector)?.addEventListener('click', () => {
+  const btn = document.querySelector(btnSelector);
+  if (!btn) return;
+  if (btn.dataset.themeToggleReady === '1') return;
+  btn.dataset.themeToggleReady = '1';
+  btn.addEventListener('click', () => {
     const current = document.body.classList.contains('dark-theme') ? 'dark-theme' : 'light-theme';
     const next = current === 'dark-theme' ? 'light-theme' : 'dark-theme';
     document.body.className = next;
@@ -342,6 +353,8 @@ function setupDragDrop(dropAreaId, fileInputId, previewId) {
   const fileInput = document.getElementById(fileInputId);
   const preview = document.getElementById(previewId);
   if (!dropArea || !fileInput) return;
+  if (dropArea.dataset.dragDropReady === '1') return;
+  dropArea.dataset.dragDropReady = '1';
 
   dropArea.addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', () => {
