@@ -136,10 +136,9 @@ async function ensureIndex(coll, keys, opts) {
     for (const idx of indexes) {
       if (idx.key && JSON.stringify(idx.key) === wanted) { existing = idx; break; }
     }
-  } catch (e) { existing = null; }
+  } catch { existing = null; }
 
   if (existing && !existing.name.startsWith('_id_')) {
-    const requestedName = opts.name || Object.keys(keys).map(k => `${k}_${keys[k]}`).join('_');
     const sameOptions = (existing.expireAfterSeconds || null) === (opts.expireAfterSeconds || null) &&
       (!!existing.unique) === (!!opts.unique);
     if (!sameOptions || (opts.name && existing.name !== opts.name)) {
@@ -188,7 +187,7 @@ async function ensureIndexes() {
         email: 'sistema',
         severity: 'high'
       });
-    } catch (_) {}
+    } catch {}
   }
   return errors.length === 0;
 }
@@ -222,7 +221,7 @@ async function connect() {
         } catch (err) {
           lastError = err;
           console.warn(`Intento ${attempt}/${MAX_RETRIES} de conexión a MongoDB falló: ${err.message}`);
-          if (newClient) { try { newClient.removeAllListeners(); await newClient.close(true); } catch (_) {} newClient = null; }
+          if (newClient) { try { newClient.removeAllListeners(); await newClient.close(true); } catch {} newClient = null; }
           if (attempt < MAX_RETRIES) {
             const delay = 1000 + Math.random() * 1500;
             await new Promise(r => setTimeout(r, delay));
@@ -240,7 +239,7 @@ async function connect() {
       bucket = new GridFSBucket(db, { bucketName: BUCKET_NAME });
       const oldClient = client;
       client = newClient;
-      if (oldClient) setTimeout(() => { try { oldClient.removeAllListeners(); oldClient.close(false); } catch (_) {} }, 10000);
+      if (oldClient) setTimeout(() => { try { oldClient.removeAllListeners(); oldClient.close(false); } catch {} }, 10000);
 
       // Sembrar desde database.json local si las colecciones están vacías
       // Crear índices ANTES del seed para que users.email (único) evite duplicados (race en arranque)
@@ -295,7 +294,7 @@ async function connect() {
               email: 'sistema',
               severity: 'warning'
             });
-          } catch (_) {}
+          } catch {}
         }
 
         // Empleados y catálogos: cada colección se inserta de forma aislada para que
@@ -334,7 +333,7 @@ async function connect() {
               email: adminUser.email || 'unknown',
               severity: 'high'
             });
-          } catch (_) {}
+          } catch {}
         }
       }
 
@@ -355,7 +354,7 @@ async function connect() {
             email: 'sistema',
             severity: 'high'
           });
-        } catch (_) {}
+        } catch {}
       }
 
       // Validación de esquema: después del seed/migraciones para no bloquear datos de referencia.
@@ -380,7 +379,7 @@ async function isHealthy() {
       new Promise(resolve => setTimeout(() => resolve(false), 4000))
     ]);
     return pong === true;
-  } catch (e) {
+  } catch {
     return false;
   }
 }
@@ -394,7 +393,7 @@ function getBucket() {
 function storeFileBuffer(filename, buffer, metadata = {}) {
   return new Promise((resolve, reject) => {
     const us = getBucket().openUploadStream(filename, { metadata });
-    const onErr = (err) => { try { us.destroy(); } catch (_) {} reject(err); };
+    const onErr = (err) => { try { us.destroy(); } catch {} reject(err); };
     us.on('finish', () => resolve(us.id));
     us.on('error', onErr);
     us.end(buffer);
@@ -424,7 +423,7 @@ async function deleteFileByName(filename) {
   const cursor = bucket.find({ filename });
   const files = await cursor.toArray();
   for (const f of files) {
-    try { await bucket.delete(f._id); } catch (_) {}
+    try { await bucket.delete(f._id); } catch {}
   }
 }
 
@@ -435,7 +434,6 @@ async function listFilesBySource(source, registered = false) {
 }
 
 async function markFileRegistered(filename) {
-  const bucket = getBucket();
   const collection = db.collection(`${BUCKET_NAME}.files`);
   // Marca TODOS los archivos con ese nombre (no solo el primero), ordenados por más reciente,
   // para que un escaneo duplicado quede registrado y no vuelva a aparecer como pendiente.
@@ -449,7 +447,7 @@ async function markFileRegistered(filename) {
 async function closeDb() {
   try {
     if (client) await client.close(true);
-  } catch (_) {}
+  } catch {}
   client = null;
   db = null;
   bucket = null;
@@ -613,14 +611,14 @@ module.exports = {
 
       if (oldClient) {
         // Cierre graceful (sin force) para no abortar operaciones en vuelo
-        setTimeout(() => { try { oldClient.removeAllListeners(); oldClient.close(false); } catch(_){} }, 10000);
+        setTimeout(() => { try { oldClient.removeAllListeners(); oldClient.close(false); } catch {} }, 10000);
       }
 
       console.log('[MONGO] Reconexión exitosa (nuevo cliente creado).');
       return true;
     } catch(e) {
       // No dejar sockets abiertos del cliente que falló
-      if (newClient) { try { newClient.removeAllListeners(); await newClient.close(true); } catch(_){} }
+      if (newClient) { try { newClient.removeAllListeners(); await newClient.close(true); } catch {} }
       console.warn('[MONGO] Reconexión falló:', e.message);
       return false;
     } finally {

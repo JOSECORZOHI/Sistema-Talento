@@ -25,7 +25,7 @@ module.exports = [
       ...js.configs.recommended.rules,
       'no-unused-vars': ['warn', { args: 'none', argsIgnorePattern: '^_' }],
       'no-useless-assignment': 'off',
-      'no-empty': 'off',
+      'no-empty': ['error', { allowEmptyCatch: true }],
       'no-constant-condition': 'off',
       'no-control-regex': 'off',
       'no-useless-escape': 'off',

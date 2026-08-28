@@ -11,7 +11,6 @@ const { createWorker, PSM } = require('tesseract.js');
 //     ambos sin dependencias nativas de sistema ---
 let pdfjsPromise = null;
 const PDFJS_BASE = path.dirname(require.resolve('pdfjs-dist/legacy/build/pdf.mjs'));
-const PDFJS_URL_BASE = PDFJS_BASE.replace(/\\/g, '/') + '/';
 
 function getPdfjs() {
   if (!pdfjsPromise) {
@@ -39,7 +38,7 @@ async function extractPdfText(buffer) {
       text += (content.items || []).map(i => (i && i.str) || '').join(' ') + '\n';
     }
   } finally {
-    try { await doc.destroy(); } catch (_) {}
+    try { await doc.destroy(); } catch {}
   }
   return text;
 }
@@ -57,7 +56,7 @@ async function pdfToPngImages(buffer, maxPages = 2, scale = 2) {
       images.push(Buffer.from(png));
     }
   } finally {
-    try { doc.destroy(); } catch (_) {}
+    try { doc.destroy(); } catch {}
   }
   return images;
 }
@@ -135,13 +134,13 @@ async function extractText(buffer, filename) {
       let text = '';
       try {
         text = await extractPdfText(buffer);
-      } catch (_) { text = ''; }
+      } catch { text = ''; }
       if (text.trim().length >= 40) return { text, ocrUsed: false };
       // PDF escaneado (imagen): rasterizar y aplicar OCR
       const pages = await pdfToPngImages(buffer);
       let ocrText = '';
       for (const img of pages) {
-        try { ocrText += (await ocrImage(img)) + '\n'; } catch (_) {}
+        try { ocrText += (await ocrImage(img)) + '\n'; } catch {}
       }
       return { text: ocrText.trim(), ocrUsed: true };
     }

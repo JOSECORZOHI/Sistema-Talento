@@ -35,7 +35,7 @@ process.on('unhandledRejection', (err) => {
 });
 process.on('uncaughtException', (err) => {
   console.error('[PROCESS] Uncaught exception — reiniciando proceso:', err && err.stack ? err.stack : err);
-  try { if (typeof server !== 'undefined' && server) server.close(() => {}); } catch (_) {}
+  try { if (typeof server !== 'undefined' && server) server.close(() => {}); } catch {}
   const exitTimer = setTimeout(() => process.exit(1), 1500);
   if (exitTimer.unref) exitTimer.unref();
 });
@@ -272,7 +272,7 @@ app.use('/api', async (req, res, next) => {
   try {
     col('users');
     return next();
-  } catch (e) {
+  } catch {
     // BD caída: intentar reconexión automática (máx 1 intento a la vez)
     if (!isReconnecting) {
       isReconnecting = true;
@@ -286,7 +286,7 @@ app.use('/api', async (req, res, next) => {
     // Esperar hasta 12s a que la BD se recupere
     for (let i = 0; i < 24; i++) {
       await new Promise(r => setTimeout(r, 500));
-      try { col('users'); return next(); } catch (_) {}
+      try { col('users'); return next(); } catch {}
     }
     return res.status(503).json({ error: 'Base de datos temporalmente no disponible. Intente de nuevo en unos segundos.' });
   }
@@ -501,8 +501,8 @@ async function authenticateUser(user, collectionName, role, username, password, 
   // siempre se ejecuta un bcrypt.compare (real o contra un hash ficticio).
   const equalizeTiming = async () => {
     const dummyHash = '$2b$12$C6UzMDM.H6dfI/f/IKcEeO7f5D5bJ9K6nXJ6kQxHjV7uWlPmQxI4y';
-    if (user.password) { try { await bcrypt.compare(password, user.password); } catch (_) {} }
-    else { try { await bcrypt.compare(password, dummyHash); } catch (_) {} }
+    if (user.password) { try { await bcrypt.compare(password, user.password); } catch {} }
+    else { try { await bcrypt.compare(password, dummyHash); } catch {} }
   };
 
   if (user.status === 'bloqueada' && user.lockedUntil && new Date(user.lockedUntil) > new Date()) {
@@ -602,7 +602,7 @@ async function getUnregisteredFiles(allDocs = null) {
             const st = fs.statSync(path.join(DOCUMENTS_DIR, fn));
             size = st.size;
             created = st.birthtime || new Date(0);
-          } catch (e) { /* ignorar stat fallido */ }
+          } catch { /* ignorar stat fallido */ }
           result.push({ filename: fn, fileSize: size, createdAt: created });
         }
       }
@@ -768,7 +768,7 @@ async function isFileInScannerTray(filename) {
 }
 
 async function rollbackStoredAttachments(filenames) {
-  for (const fn of filenames) { try { await deleteFileByName(fn); } catch (e) { /* ignorar */ } }
+  for (const fn of filenames) { try { await deleteFileByName(fn); } catch { /* ignorar */ } }
 }
 
 // Valida que el contenido coincida con la extensión (magic bytes).
@@ -911,9 +911,9 @@ async function registerDocumentCore({ req, filename, employeeId, documentTypeId,
           if (stat.size > MAX_REGISTER_BYTES) {
             return { error: `El archivo '${filename}' supera el tamaño máximo permitido (${Math.round(MAX_REGISTER_BYTES / 1024 / 1024)} MB).`, status: 400 };
           }
-        } catch (e) { return { error: `El archivo '${filename}' ya no está disponible en la bandeja.`, status: 404 }; }
+        } catch { return { error: `El archivo '${filename}' ya no está disponible en la bandeja.`, status: 404 }; }
         try { buf = fs.readFileSync(sourcePath); }
-        catch (e) { return { error: `El archivo '${filename}' ya no está disponible en la bandeja.`, status: 404 }; }
+        catch { return { error: `El archivo '${filename}' ya no está disponible en la bandeja.`, status: 404 }; }
         targetFilename = getUniqueFilename(filename);
         await storeFileBuffer(targetFilename, buf, { source: gridFSSource || sourceDir || 'upload', registered: true });
         stored = true;
@@ -931,14 +931,14 @@ async function registerDocumentCore({ req, filename, employeeId, documentTypeId,
         if (filePath && fs.existsSync(filePath)) {
           let fileSizeCheck = 0;
           try { fileSizeCheck = fs.statSync(filePath).size; }
-          catch (e) { return { error: `El archivo '${filename}' ya no está disponible.`, status: 404 }; }
+          catch { return { error: `El archivo '${filename}' ya no está disponible.`, status: 404 }; }
           if (fileSizeCheck > MAX_REGISTER_BYTES) {
             return { error: `El archivo '${filename}' supera el tamaño máximo permitido (${Math.round(MAX_REGISTER_BYTES / 1024 / 1024)} MB).`, status: 400 };
           }
           targetFilename = filename;
           let buf;
           try { buf = fs.readFileSync(filePath); }
-          catch (e) { return { error: `El archivo '${filename}' ya no está disponible.`, status: 404 }; }
+          catch { return { error: `El archivo '${filename}' ya no está disponible.`, status: 404 }; }
           await storeFileBuffer(targetFilename, buf, { source: 'local', registered: true });
           stored = true;
           fileSize = buf.length;
@@ -964,7 +964,7 @@ async function registerDocumentCore({ req, filename, employeeId, documentTypeId,
       try {
         if (deferredOriginalDelete.type === 'gridfs') await deleteFileByName(deferredOriginalDelete.name);
         else fs.unlinkSync(deferredOriginalDelete.path);
-      } catch (e) {
+      } catch {
         console.warn(`[REGISTER] No se pudo retirar el original '${deferredOriginalDelete.name || deferredOriginalDelete.path}' de la bandeja. Se conserva por seguridad.`);
       }
     }
@@ -1755,7 +1755,7 @@ app.get('/api/documents', authMiddleware, requirePermission('documents.read'), a
 app.get('/api/documents/unregistered', authMiddleware, requirePermission('documents.read'), async (req, res) => {
   try {
     res.json(await getUnregisteredFiles());
-  } catch (error) {
+  } catch {
     res.status(500).json({ error: 'No se pudieron listar los archivos.' });
   }
 });
@@ -1885,7 +1885,7 @@ app.get('/api/deletion-requests', authMiddleware, requirePermission('employees.r
   try {
     const requests = await col('deletionRequests').find().sort({ createdAt: -1 }).limit(200).toArray();
     res.json(requests);
-  } catch (e) {
+  } catch {
     res.status(500).json({ error: 'Error al obtener solicitudes de eliminación.' });
   }
 });
@@ -2030,7 +2030,7 @@ app.post('/api/documents/analyze', authMiddleware, requirePermission('documents.
       let size = 0;
       r.stream.on('data', (c) => {
         size += c.length;
-        if (size > MAX_ANALYZE_BYTES) { try { r.stream.destroy(); } catch (_) {} return reject({ error: 'limite' }); }
+        if (size > MAX_ANALYZE_BYTES) { try { r.stream.destroy(); } catch {} return reject({ error: 'limite' }); }
         chunks.push(c);
       });
       r.stream.on('end', () => resolve(Buffer.concat(chunks)));
@@ -2039,7 +2039,7 @@ app.post('/api/documents/analyze', authMiddleware, requirePermission('documents.
   });
 
   let buf;
-  try { buf = await readBufferFromGridFs(); } catch (e) { return res.status(413).json({ error: 'El archivo supera el tamaño máximo para análisis.' }); }
+  try { buf = await readBufferFromGridFs(); } catch { return res.status(413).json({ error: 'El archivo supera el tamaño máximo para análisis.' }); }
 
   if (!buf) {
     let dir = DOCUMENTS_DIR;
@@ -2128,8 +2128,8 @@ app.get('/api/document-file/:filename', fileAuthMiddleware, async (req, res) => 
         console.error(`[FILE-SERVE] Stream error para '${filename}':`, err.message);
         if (!finished) {
           finished = true;
-          try { r.stream.destroy(); } catch (_) {}
-          try { if (!res.headersSent) { res.status(500).json({ error: 'Error al transmitir archivo.' }); } else { res.end(); } } catch (_) {}
+          try { r.stream.destroy(); } catch {}
+          try { if (!res.headersSent) { res.status(500).json({ error: 'Error al transmitir archivo.' }); } else { res.end(); } } catch {}
         }
       };
       r.stream.on('error', streamErrorHandler);
@@ -2141,7 +2141,7 @@ app.get('/api/document-file/:filename', fileAuthMiddleware, async (req, res) => 
       req.on('close', () => {
         if (!finished) {
           finished = true;
-          try { r.stream.destroy(); } catch (_) {}
+          try { r.stream.destroy(); } catch {}
         }
       });
 
@@ -2150,7 +2150,7 @@ app.get('/api/document-file/:filename', fileAuthMiddleware, async (req, res) => 
         res.socket.on('close', () => {
           if (!finished) {
             finished = true;
-            try { r.stream.destroy(); } catch (_) {}
+            try { r.stream.destroy(); } catch {}
           }
         });
       }
@@ -2162,8 +2162,8 @@ app.get('/api/document-file/:filename', fileAuthMiddleware, async (req, res) => 
         if (!finished) {
           console.error(`[FILE-SERVE] Timeout de 60s para '${filename}', abortando stream.`);
           finished = true;
-          try { r.stream.destroy(); } catch (_) {}
-          try { if (!res.headersSent) { res.status(504).json({ error: 'Timeout al transmitir archivo.' }); } else { res.end(); } } catch (_) {}
+          try { r.stream.destroy(); } catch {}
+          try { if (!res.headersSent) { res.status(504).json({ error: 'Timeout al transmitir archivo.' }); } else { res.end(); } } catch {}
         }
       }, 60000);
       if (streamTimeout.unref) streamTimeout.unref();
@@ -2967,13 +2967,13 @@ app.get('/api/system/status', authMiddleware, requirePermission('audit.read'), a
       let names = [];
       try {
         names = (await col(collectionName).indexes()).map(i => i.name);
-      } catch (e) { indexes.ok = false; }
+      } catch { indexes.ok = false; }
       for (const indexName of wanted) {
         if (!names.includes(indexName)) indexes.missing.push(`${collectionName}.${indexName}`);
       }
     }
     if (indexes.missing.length > 0) indexes.ok = false;
-  } catch (e) {
+  } catch {
     dbConnected = false;
   }
 
@@ -2984,10 +2984,10 @@ app.get('/api/system/status', authMiddleware, requirePermission('audit.read'), a
   try {
     const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     securityLast24h = await col('securityLogs').countDocuments({ timestamp: { $gte: since } });
-  } catch (_) {}
+  } catch {}
 
   let unregistered = 0;
-  try { unregistered = (await getUnregisteredFiles()).length; } catch (_) {}
+  try { unregistered = (await getUnregisteredFiles()).length; } catch {}
 
   const pkg = require('./package.json');
   res.json({
@@ -3011,7 +3011,7 @@ app.get('/api/health', async (req, res) => {
     const healthy = await isHealthy();
     if (healthy) return res.json({ status: 'ok', db: 'connected' });
     res.status(200).json({ status: 'degraded', db: 'disconnected' });
-  } catch (_) {
+  } catch {
     res.status(200).json({ status: 'error', db: 'unknown' });
   }
 });
