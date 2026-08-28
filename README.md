@@ -67,6 +67,10 @@ Abra `/api/gmail/authorize` para autorizar la cuenta. Después, use la opción d
 ## Operación y mantenimiento
 
 - Realice copias de seguridad periódicas de la base MongoDB y `storage/documentos/`.
+  - `npm run backup` crea un `mongodump` comprimido (colecciones + GridFS) en `backups/`
+    usando `DATABASE_URL` del `.env` y conserva los 10 más recientes (requiere
+    `mongodb-database-tools`, es decir, el comando `mongodump`, en el PATH).
+- Comandos de calidad y prueba: `npm test` (pruebas con `node:test`) y `npm run lint` (ESLint).
 - Mantenga el acceso al equipo y a las credenciales de Gmail restringido a personal autorizado.
 - Verifique que los PDFs se puedan abrir y que sus metadatos correspondan al expediente antes de archivarlos.
 - Para actualizar dependencias, pruebe primero en un entorno de desarrollo y ejecute `npm.cmd audit`.

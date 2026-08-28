@@ -10,6 +10,9 @@ bandeja_escaner/
 database.json
 database.example.json
 
+# Backups locales (no subir datos personales al repo)
+backups/
+
 # Capturas y temporales
 server_output.txt
 server_error.txt

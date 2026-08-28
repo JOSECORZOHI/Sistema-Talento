@@ -7,7 +7,10 @@
     "node": ">=18"
   },
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test",
+    "lint": "eslint server.js db.js documentAnalyzer.js lib/ test/",
+    "backup": "powershell -ExecutionPolicy Bypass -File scripts/backup.ps1"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -31,5 +34,10 @@
     "tesseract.js": "^5.1.1"
   },
   "author": "Sistemas Valledupar",
-  "license": "ISC"
+  "license": "ISC",
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^9.39.5",
+    "globals": "^17.11.0"
+  }
 }

@@ -18,7 +18,13 @@ const crypto = require('crypto');
 const PDFDocument = require('pdfkit');
 const nodemailer = require('nodemailer');
 const { connect, col, isHealthy, reconnect, closeDb, storeFileBuffer, readFileStream, deleteFileByName, listFilesBySource, markFileRegistered, generateTempPassword } = require('./db');
-const { analyzeFile } = require('./documentAnalyzer.js');
+const { analyzeFile, warmupOcr } = require('./documentAnalyzer.js');
+const { parsePagination, wantsPagination, paginateQuery } = require('./lib/pagination');
+const {
+  escapeHtml, normalizeEmail, parseEmailFromHeader, parseToEmailHeader,
+  getHeader, parseDateHeader, validatePasswordStrength
+} = require('./lib/helpers');
+const { renderResetPasswordEmail } = require('./lib/emailTemplates');
 
 // Manejo de errores no controlados.
 // unhandledRejection: se loguea sin salir (permite que la reconexión a Mongo se recupere).
@@ -52,6 +58,7 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const PASSWORD_HISTORY_SIZE = 5;
 const VALID_DOC_STATUSES = ['Pendiente', 'Aprobado', 'Activo', 'Archivado', 'Rechazado'];
 const MAX_GMAIL_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const MAX_REGISTER_BYTES = 50 * 1024 * 1024;
 const DOCUMENTS_DIR = path.join(__dirname, 'storage', 'documentos');
 const SCANNER_DIR = path.join(__dirname, 'bandeja_escaner');
@@ -161,15 +168,6 @@ async function sendEmail({ to, subject, html, text }) {
 
   console.error('[MAIL] No se pudo enviar correo a', to);
   return false;
-}
-
-function escapeHtml(value) {
-  return String(value == null ? '' : value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
 }
 
 app.use(helmet({
@@ -341,7 +339,7 @@ function isAllowedFile(filename) {
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024 },
+  limits: { fileSize: MAX_UPLOAD_BYTES },
   fileFilter: (req, file, cb) => {
     if (!isAllowedFile(file.originalname)) {
       const error = new Error('Formato de archivo no permitido. Use: PDF, Word, Excel, imágenes o texto.');
@@ -352,26 +350,12 @@ const upload = multer({
   }
 });
 
-function normalizeEmail(email) {
-  return String(email || '').trim().toLowerCase();
-}
+// --- FUNCIONES DE SEGURIDAD ---
 
 function isAllowedInstitutionalEmail(email) {
   const e = normalizeEmail(email);
   if (!ALLOWED_EMAIL_DOMAIN) return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
   return e.endsWith(`@${ALLOWED_EMAIL_DOMAIN}`);
-}
-
-// --- FUNCIONES DE SEGURIDAD ---
-
-function validatePasswordStrength(password) {
-  if (password.length < 12) return { valid: false, error: 'La contraseña debe tener al menos 12 caracteres.' };
-  if (Buffer.byteLength(password, 'utf8') > 72) return { valid: false, error: 'La contraseña no debe superar los 72 caracteres.' };
-  if (!/[A-Z]/.test(password)) return { valid: false, error: 'La contraseña debe contener al menos una letra mayúscula.' };
-  if (!/[a-z]/.test(password)) return { valid: false, error: 'La contraseña debe contener al menos una letra minúscula.' };
-  if (!/[0-9]/.test(password)) return { valid: false, error: 'La contraseña debe contener al menos un número.' };
-  if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(password)) return { valid: false, error: 'La contraseña debe contener al menos un símbolo.' };
-  return { valid: true };
 }
 
 function generateSecureToken(expiresInHours = 24) {
@@ -459,6 +443,51 @@ async function addSecurityLog(event, details, ip, email) {
   };
   try { await col('securityLogs').insertOne(entry); } catch (e) { console.warn('Error al insertar log de seguridad:', e.message); }
   console.log(`[SECURITY] ${event} | ${details} | IP: ${ip} | User: ${email}`);
+  notifyAdminForEvent(entry).catch(() => {});
+}
+
+// --- ALERTAS AL ADMINISTRADOR POR CORREO (eventos críticos) ---
+const CRITICAL_SECURITY_EVENTS = new Set(['Cuenta Bloqueada', 'Empleado Eliminado', 'Documento Eliminado']);
+const ALERT_DEBOUNCE_MS = 30 * 60 * 1000;
+const lastAlertSentAt = {};
+
+// Notifica al admin por correo cuando ocurre un evento crítico, con un debounce de
+// 30 min por tipo para no saturar la bandeja ante ráfagas (p. ej. múltiples bloqueos).
+// Es best-effort: si SMTP/Gmail no está configurado, solo queda el securityLog.
+async function notifyAdminForEvent(entry) {
+  if (!CRITICAL_SECURITY_EVENTS.has(entry.event)) return;
+  const now = Date.now();
+  if (now - (lastAlertSentAt[entry.event] || 0) < ALERT_DEBOUNCE_MS) return;
+  lastAlertSentAt[entry.event] = now;
+
+  let adminEmail = process.env.ADMIN_ALERT_EMAIL;
+  if (!adminEmail) {
+    const admin = await col('users').findOne({ role: 'admin', status: 'activa', active: true }, { projection: { email: 1 } });
+    adminEmail = admin && admin.email;
+  }
+  if (!adminEmail) return;
+
+  const ok = await sendEmail({
+    to: adminEmail,
+    subject: `[ALERTA] ${entry.event} — Sistema de Talento Humano`,
+    html: `
+      <div style="font-family:Arial,Helvetica,sans-serif;background:#f4f6f8;padding:24px;">
+        <div style="background:#fff;border-radius:10px;padding:24px;max-width:560px;margin:0 auto;border-top:4px solid #b03a2e;">
+          <h2 style="margin:0 0 8px;color:#1A5276;">⚠ Alerta de seguridad</h2>
+          <p style="margin:0 0 16px;color:#555;font-size:14px;">El sistema detectó un evento <strong>${escapeHtml(entry.event)}</strong> que requiere su atención.</p>
+          <table style="width:100%;font-size:13px;color:#333;border-collapse:collapse;">
+            <tr><td style="padding:6px 0;color:#888;">Evento</td><td style="padding:6px 0;font-weight:600;">${escapeHtml(entry.event)}</td></tr>
+            <tr><td style="padding:6px 0;color:#888;">Detalle</td><td style="padding:6px 0;">${escapeHtml(entry.details)}</td></tr>
+            <tr><td style="padding:6px 0;color:#888;">Fecha</td><td style="padding:6px 0;">${escapeHtml(new Date(entry.timestamp).toLocaleString('es-CO'))}</td></tr>
+            <tr><td style="padding:6px 0;color:#888;">IP</td><td style="padding:6px 0;">${escapeHtml(entry.ip)}</td></tr>
+            <tr><td style="padding:6px 0;color:#888;">Usuario</td><td style="padding:6px 0;">${escapeHtml(entry.email)}</td></tr>
+          </table>
+          <p style="margin:16px 0 0;color:#aaa;font-size:11px;">Revise la sección de Seguridad del panel administrativo para más contexto.</p>
+        </div>
+      </div>`,
+    text: `Alerta de seguridad: ${entry.event}\nDetalle: ${entry.details}\nFecha: ${new Date(entry.timestamp).toLocaleString('es-CO')}\nIP: ${entry.ip}\nUsuario: ${entry.email}`
+  });
+  if (ok) console.log(`[ALERTA] Notificación de '${entry.event}' enviada a ${adminEmail}`);
 }
 
 // --- JWT VERSIONING ---
@@ -643,19 +672,6 @@ function requireAnyPermission(...permissions) {
     }
     next();
   };
-}
-
-function parseEmailFromHeader(fromHeader) {
-  if (!fromHeader) return { senderName: 'Remitente desconocido', senderEmail: '' };
-  const match = fromHeader.match(/^(?:"?([^"]*)"?\s)?<?([^>]+@[^>]+)>?$/);
-  if (!match) return { senderName: fromHeader, senderEmail: fromHeader };
-  return { senderName: (match[1] || match[2] || fromHeader).trim(), senderEmail: normalizeEmail(match[2] || fromHeader) };
-}
-
-function parseToEmailHeader(toHeader) {
-  if (!toHeader) return '';
-  const match = toHeader.match(/<?([^>]+@[^>]+)>?/);
-  return match ? normalizeEmail(match[1]) : normalizeEmail(toHeader);
 }
 
 async function addAuditLog(action, details, userEmail, ip) {
@@ -1046,17 +1062,6 @@ function getGmailClient(refreshToken) {
   return require('googleapis').google.gmail({ version: 'v1', auth, timeout: 60000 });
 }
 
-function getHeader(headers, name) {
-  const header = headers.find(item => item.name.toLowerCase() === name.toLowerCase());
-  return header ? header.value : '';
-}
-
-function parseDateHeader(value) {
-  if (!value) return new Date().toISOString();
-  const parsed = new Date(value);
-  return isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
-}
-
 function getAttachmentParts(part, attachmentParts = []) {
   if (part.filename && isAllowedFile(part.filename) && part.body && part.body.attachmentId) {
     attachmentParts.push(part);
@@ -1285,49 +1290,7 @@ app.post('/api/auth/forgot-password', async (req, res) => {
   const sent = await sendEmail({
     to: normalizedEmail,
     subject: 'Restablecimiento de contraseña — Sistema de Talento Humano',
-    html: resetUrl
-      ? `<!DOCTYPE html>
-<html lang="es">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background-color:#f4f6f8;font-family:Arial,Helvetica,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f8;padding:40px 20px;">
-    <tr><td align="center">
-      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);">
-        <tr>
-          <td style="background:linear-gradient(135deg,#1A5276 0%,#154360 50%,#0E2F44 100%);padding:32px 40px;text-align:center;">
-            <img src="${logoUrl}" alt="Escudo de Valledupar" width="72" height="72" style="display:block;margin:0 auto 16px;border-radius:14px;background:rgba(255,255,255,0.12);padding:8px;">
-            <h1 style="margin:0;color:#ffffff;font-size:22px;font-weight:700;">Sistema de Talento Humano</h1>
-            <p style="margin:6px 0 0;color:rgba(255,255,255,0.8);font-size:13px;">Alcaldía de Valledupar</p>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:36px 40px;">
-            <p style="margin:0 0 16px;color:#333;font-size:15px;">Hola <strong>${escapeHtml(user.name)}</strong>,</p>
-            <p style="margin:0 0 20px;color:#555;font-size:14px;line-height:1.6;">
-              Recibimos una solicitud para restablecer su contraseña. Haga clic en el botón de abajo para crear una nueva contraseña.
-            </p>
-            <table width="100%" cellpadding="0" cellspacing="0">
-              <tr>
-                <td align="center" style="padding:8px 0 24px;">
-                  <a href="${escapeHtml(resetUrl)}" style="display:inline-block;background:#1A5276;color:#ffffff;text-decoration:none;font-size:15px;font-weight:600;padding:14px 36px;border-radius:8px;">Restablecer mi contraseña</a>
-                </td>
-              </tr>
-            </table>
-            <p style="margin:0;color:#999;font-size:12px;line-height:1.5;">El enlace es válido por <strong>1 hora</strong>. Si no lo solicitó, ignore este correo.</p>
-          </td>
-        </tr>
-        <tr>
-          <td style="background:#f8f9fa;border-top:1px solid #eee;padding:20px 40px;text-align:center;">
-            <p style="margin:0;color:#aaa;font-size:11px;">Sistema de Gestión Documental — Talento Humano · Alcaldía de Valledupar</p>
-          </td>
-        </tr>
-      </table>
-    </td></tr>
-  </table>
-</body>
-</html>`
-      : `<p>Hola <strong>${escapeHtml(user.name)}</strong>:</p>
-        <p>Recibimos una solicitud para restablecer su contraseña. Contacte al administrador del sistema para continuar.</p>`
+    html: renderResetPasswordEmail({ name: user.name, resetUrl, logoUrl })
   });
 
   if (!sent) {
@@ -1781,6 +1744,11 @@ app.get('/api/dashboard', authMiddleware, requirePermission('employees.read'), a
 
 // --- DOCUMENTOS ---
 app.get('/api/documents', authMiddleware, requirePermission('documents.read'), async (req, res) => {
+  if (wantsPagination(req)) {
+    const pagination = parsePagination(req, { defaultLimit: 100, maxLimit: 500 });
+    res.json(await paginateQuery(col('documents'), {}, { registeredAt: -1 }, pagination));
+    return;
+  }
   res.json(await col('documents').find().sort({ registeredAt: -1 }).limit(1000).toArray());
 });
 
@@ -2043,7 +2011,9 @@ app.post('/api/documents/analyze', authMiddleware, requirePermission('documents.
     return res.status(400).json({ error: 'Formato de archivo no soportado para análisis.' });
   }
 
-  const MAX_ANALYZE_BYTES = 25 * 1024 * 1024;
+  // Reutiliza la constante global MAX_UPLOAD_BYTES (25MB) para que multer,
+  // el analizador y la bandeja Gmail compartan el mismo límite coherente.
+  const MAX_ANALYZE_BYTES = MAX_UPLOAD_BYTES;
 
   let employees = [];
   try {
@@ -2224,11 +2194,21 @@ app.get('/api/document-file/:filename', fileAuthMiddleware, async (req, res) => 
 
 // --- REGISTROS DE AUDITORÍA ---
 app.get('/api/audit-logs', authMiddleware, requirePermission('audit.read'), async (req, res) => {
+  if (wantsPagination(req)) {
+    const pagination = parsePagination(req, { defaultLimit: 50, maxLimit: 500 });
+    res.json(await paginateQuery(col('auditLogs'), {}, { timestamp: -1 }, pagination));
+    return;
+  }
   const limit = Math.max(1, Math.min(parseInt(req.query.limit) || 500, 1000));
   res.json(await col('auditLogs').find().sort({ timestamp: -1 }).limit(limit).toArray());
 });
 
 app.get('/api/security-logs', authMiddleware, requirePermission('audit.read'), async (req, res) => {
+  if (wantsPagination(req)) {
+    const pagination = parsePagination(req, { defaultLimit: 50, maxLimit: 500 });
+    res.json(await paginateQuery(col('securityLogs'), {}, { timestamp: -1 }, pagination));
+    return;
+  }
   const limit = Math.max(1, Math.min(parseInt(req.query.limit) || 100, 500));
   res.json(await col('securityLogs').find().sort({ timestamp: -1 }).limit(limit).toArray());
 });
@@ -2744,6 +2724,11 @@ app.get('/api/gmail/oauth2callback', async (req, res) => {
 
 app.get('/api/email-inbox', authMiddleware, requireAnyPermission('email.manage', 'email.read'), async (req, res) => {
   try {
+    if (wantsPagination(req)) {
+      const pagination = parsePagination(req, { defaultLimit: 50, maxLimit: 200 });
+      res.json(await paginateQuery(col('emailsInbox'), {}, { date: -1 }, pagination));
+      return;
+    }
     const emails = await col('emailsInbox').find().sort({ date: -1 }).limit(200).toArray();
     res.json(emails);
   } catch (e) {
@@ -2950,6 +2935,76 @@ app.use((error, req, res, next) => {
   res.status(500).json({ error: 'Error interno del servidor.' });
 });
 
+// --- PANEL DE ESTADO DEL SISTEMA ---
+// Estado consolidado para el admin: BD, índices, Gmail, escáner, métricas y seguridad.
+app.get('/api/system/status', authMiddleware, requirePermission('audit.read'), async (req, res) => {
+  const startedAt = Date.now();
+  let dbConnected = false;
+  let dbLatencyMs = null;
+  const counts = {};
+  let indexes = { ok: true, missing: [] };
+  try {
+    const t0 = Date.now();
+    const [users, employees, documents] = await Promise.all([
+      col('users').countDocuments(),
+      col('employees').countDocuments(),
+      col('documents').countDocuments()
+    ]);
+    dbLatencyMs = Date.now() - t0;
+    dbConnected = true;
+    counts.users = users;
+    counts.employees = employees;
+    counts.documents = documents;
+
+    // Verificar presencia de los índices esenciales (los que listan por fecha).
+    const requiredIndexes = {
+      documents: ['issueDate_-1'],
+      securityLogs: ['timestamp_-1'],
+      emailsInbox: ['date_-1'],
+      auditLogs: ['timestamp_-1']
+    };
+    for (const [collectionName, wanted] of Object.entries(requiredIndexes)) {
+      let names = [];
+      try {
+        names = (await col(collectionName).indexes()).map(i => i.name);
+      } catch (e) { indexes.ok = false; }
+      for (const indexName of wanted) {
+        if (!names.includes(indexName)) indexes.missing.push(`${collectionName}.${indexName}`);
+      }
+    }
+    if (indexes.missing.length > 0) indexes.ok = false;
+  } catch (e) {
+    dbConnected = false;
+  }
+
+  const { GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REDIRECT_URI, GMAIL_REFRESH_TOKEN } = process.env;
+  const gmailConfigured = !!(GMAIL_CLIENT_ID && GMAIL_CLIENT_SECRET && GMAIL_REDIRECT_URI);
+
+  let securityLast24h = null;
+  try {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    securityLast24h = await col('securityLogs').countDocuments({ timestamp: { $gte: since } });
+  } catch (_) {}
+
+  let unregistered = 0;
+  try { unregistered = (await getUnregisteredFiles()).length; } catch (_) {}
+
+  const pkg = require('./package.json');
+  res.json({
+    generatedAt: new Date().toISOString(),
+    uptimeSeconds: Math.round(process.uptime()),
+    node: process.version,
+    version: pkg.version || null,
+    memoryMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
+    database: { connected: dbConnected, latencyMs: dbLatencyMs, counts, indexes },
+    gmail: { configured: gmailConfigured, authenticated: gmailConfigured && !!GMAIL_REFRESH_TOKEN },
+    scanner: { localFolder: fs.existsSync(SCANNER_DIR) },
+    security: { last24hEvents: securityLast24h },
+    documents: { unregistered },
+    responseTimeMs: Date.now() - startedAt
+  });
+});
+
 // --- HEALTH CHECK ---
 app.get('/api/health', async (req, res) => {
   try {
@@ -3027,3 +3082,11 @@ connect()
   .catch(error => {
     console.error('No se pudo conectar a la base de datos remota:', error.message);
   });
+
+// Pre-cargar el modelo OCR (Tesseract 'spa') en segundo plano: no bloquea el arranque
+// ni perjudica si falla (se reintenta en el primer análisis real).
+if (process.env.OCR_WARMUP !== '0') {
+  warmupOcr().then(ok => {
+    console.log('[OCR] Modelo español precargado' + (ok ? ' (listo)' : ' (falló; se reintentará en el primer análisis)'));
+  });
+}

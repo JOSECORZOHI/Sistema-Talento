@@ -1,0 +1,32 @@
+name: Lint y Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clonar repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Verificar sintaxis
+        run: node --check server.js && node --check db.js && node --check documentAnalyzer.js
+
+      - name: Lint (ESLint)
+        run: npm run lint
+
+      - name: Tests (node:test)
+        run: npm test

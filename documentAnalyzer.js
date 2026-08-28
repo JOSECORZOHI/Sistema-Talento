@@ -102,6 +102,20 @@ function ocrImage(buffer) {
   return task;
 }
 
+// Pre-carga el modelo de Tesseract (spa) en segundo plano al arrancar el servidor:
+// crea y memoriza el worker único (lo reutiliza el primer análisis real). Evita
+// reconocer texto de muestra, porque una entrada no-imagen dispara una excepción
+// interna de tesseract.js imposible de capturar (crash del proceso).
+async function warmupOcr() {
+  try {
+    await getOcrWorker();
+    return true;
+  } catch (e) {
+    console.warn('[OCR] Warmup falló (se reintentará en el primer análisis):', e.message);
+    return false;
+  }
+}
+
 // --- Extracción de texto por tipo de archivo ---
 function parseTextContent(buffer) {
   return buffer.toString('latin1').replace(/[^\x20-\x7E\n\r\tÁÉÍÓÚÜÑáéíóúüñ]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -248,4 +262,4 @@ async function analyzeFile(buffer, filename, options = {}) {
   return { suggestions, ocrUsed: extracted.ocrUsed, textLength: text.length };
 }
 
-module.exports = { analyzeFile, extractText };
+module.exports = { analyzeFile, extractText, warmupOcr };

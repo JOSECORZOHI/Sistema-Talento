@@ -164,7 +164,10 @@ async function ensureIndexes() {
     [COLLECTIONS.employees, { id: 1 }, { unique: true, name: 'uniq_emp_id' }],
     [COLLECTIONS.employees, { email: 1 }, { unique: true, name: 'uniq_emp_email' }],
     [COLLECTIONS.auditLogs, { timestamp: -1 }, {}],
-    [COLLECTIONS.emailsInbox, { id: 1 }, { unique: true, sparse: true }]
+    [COLLECTIONS.securityLogs, { timestamp: -1 }, {}],
+    [COLLECTIONS.documents, { issueDate: -1 }, {}],
+    [COLLECTIONS.emailsInbox, { id: 1 }, { unique: true, sparse: true }],
+    [COLLECTIONS.emailsInbox, { date: -1 }, {}]
   ];
   for (const [coll, keys, opts] of attempts) {
     try {
