@@ -80,6 +80,11 @@ const SMTP_CONFIG = {
 const SMTP_FROM = process.env.SMTP_FROM || (SMTP_CONFIG.user ? `Sistema de Talento Humano <${SMTP_CONFIG.user}>` : '');
 const SMTP_ENABLED = Boolean(SMTP_CONFIG.host && SMTP_CONFIG.user && SMTP_CONFIG.pass);
 
+/**
+ * Crea el transporter de nodemailer cuando SMTP está habilitado.
+ *
+ * @returns {object|null} Transporte configurado o null si SMTP está deshabilitado.
+ */
 function getMailTransporter() {
   if (!SMTP_ENABLED) return null;
   return nodemailer.createTransport({
@@ -105,6 +110,18 @@ function getAppBaseUrl(req) {
   return null;
 }
 
+/**
+ * Envía un correo a través de la API de Google (Gmail): se usa como respaldo
+ * cuando SMTP no está configurado. Construye el MIME y lo envía como el usuario
+ * autenticado con OAuth2.
+ *
+ * @param {object} opts - Parámetros del correo.
+ * @param {string} opts.to - Destinatario.
+ * @param {string} opts.subject - Asunto.
+ * @param {string} [opts.html] - Cuerpo en HTML.
+ * @param {string} [opts.text] - Cuerpo en texto plano.
+ * @returns {Promise<boolean>} true si el envío fue exitoso.
+ */
 async function sendViaGmailApi({ to, subject, html, text }) {
   try {
     const gmail = getGmailClient();
@@ -134,6 +151,17 @@ async function sendViaGmailApi({ to, subject, html, text }) {
   }
 }
 
+/**
+ * Envía un correo por SMTP si está habilitado; si no, por la API de Gmail; y en
+ * desarrollo sin ambos solo lo simula en consola. Nunca lanza: falla con false.
+ *
+ * @param {object} opts - Parámetros del correo.
+ * @param {string} opts.to - Destinatario.
+ * @param {string} opts.subject - Asunto.
+ * @param {string} [opts.html] - Cuerpo en HTML.
+ * @param {string} [opts.text] - Cuerpo en texto plano.
+ * @returns {Promise<boolean>} true si el correo fue enviado o simulado.
+ */
 async function sendEmail({ to, subject, html, text }) {
   console.log('[MAIL] Intentando enviar a:', to, '| SMTP_ENABLED:', SMTP_ENABLED);
 
@@ -352,12 +380,26 @@ const upload = multer({
 
 // --- FUNCIONES DE SEGURIDAD ---
 
+/**
+ * Determina si un correo es admisible: si ALLOWED_EMAIL_DOMAIN está definido
+ * exige ese dominio; sin restricción solo valida un formato básico.
+ *
+ * @param {string} email - Correo a validar.
+ * @returns {boolean} true si está permitido.
+ */
 function isAllowedInstitutionalEmail(email) {
   const e = normalizeEmail(email);
   if (!ALLOWED_EMAIL_DOMAIN) return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
   return e.endsWith(`@${ALLOWED_EMAIL_DOMAIN}`);
 }
 
+/**
+ * Genera un token aleatorio de 32 bytes y el hash SHA-256 que se guardará en BD.
+ * El token crudo viaja por correo; el hash es lo único persistido.
+ *
+ * @param {number} [expiresInHours=24] - Vigencia del token en horas.
+ * @returns {{raw:string, hash:string, expiresAt:Date}} Token, hash y expiración.
+ */
 function generateSecureToken(expiresInHours = 24) {
   const raw = crypto.randomBytes(32).toString('hex');
   const hash = crypto.createHash('sha256').update(raw).digest('hex');
@@ -372,6 +414,13 @@ const ipLockEvents = new Map();
 const MAX_LOCKOUTS_PER_IP = 10;
 const IP_LOCK_WINDOW_MS = 60 * 60 * 1000;
 
+/**
+ * Indica si una IP superó el límite de bloqueos de cuenta por hora (anti DoS),
+ * podando de paso las entradas vencidas de la ventana.
+ *
+ * @param {string} ip - Dirección IP a consultar.
+ * @returns {boolean} true si la IP está limitada por exceso de bloqueos.
+ */
 function isIpLockoutBlocked(ip) {
   if (!ip || ip === 'unknown') return false;
   const now = Date.now();
@@ -381,6 +430,11 @@ function isIpLockoutBlocked(ip) {
   return events.length >= MAX_LOCKOUTS_PER_IP;
 }
 
+/**
+ * Registra la hora de un bloqueo de cuenta asociado a una IP (ventana deslizante).
+ *
+ * @param {string} ip - Dirección IP del origen.
+ */
 function recordIpLockoutEvent(ip) {
   if (!ip || ip === 'unknown') return;
   const now = Date.now();
@@ -389,6 +443,15 @@ function recordIpLockoutEvent(ip) {
   ipLockEvents.set(ip, events);
 }
 
+/**
+ * Registra un intento de inicio de sesión y, tras N fallos dentro de la ventana,
+ * bloquea la cuenta (users/employees) y marca la IP de origen.
+ *
+ * @param {string} identifier - Correo que intenta autenticarse.
+ * @param {boolean} success - Si la credencial fue correcta.
+ * @param {string} ip - IP del origen.
+ * @returns {Promise<{locked:boolean, attempts:number}>} Estado de bloqueo.
+ */
 async function recordLoginAttempt(identifier, success, ip) {
   const normalizedId = normalizeEmail(identifier);
   const entry = { identifier: normalizedId, success, ip, timestamp: new Date() };
@@ -426,11 +489,26 @@ async function recordLoginAttempt(identifier, success, ip) {
   return { locked: false, attempts: 0 };
 }
 
+/**
+ * IP del cliente desde req.ip (que ya respeta TRUST_PROXY) con respaldo.
+ *
+ * @param {object} req - Request de Express.
+ * @returns {string} IP del cliente o 'unknown'.
+ */
 function getClientIp(req) {
   return req.ip || req.connection?.remoteAddress || 'unknown';
 }
 
 // --- LOGGING DE SEGURIDAD ---
+/**
+ * Inserta un registro en securityLogs y, si el evento es crítico, dispara la
+ * notificación al administrador. Nunca lanza.
+ *
+ * @param {string} event - Nombre del evento (p. ej. 'Login Fallido').
+ * @param {string} details - Detalle legible del evento.
+ * @param {string} ip - IP del origen.
+ * @param {string} email - Correo del usuario implicado (o 'sistema').
+ */
 async function addSecurityLog(event, details, ip, email) {
   const entry = {
     id: 'sec_' + Date.now() + '_' + crypto.randomBytes(4).toString('hex'),
@@ -454,6 +532,14 @@ const lastAlertSentAt = {};
 // Notifica al admin por correo cuando ocurre un evento crítico, con un debounce de
 // 30 min por tipo para no saturar la bandeja ante ráfagas (p. ej. múltiples bloqueos).
 // Es best-effort: si SMTP/Gmail no está configurado, solo queda el securityLog.
+/**
+ * Envía al admin una alerta por correo para eventos críticos, con debounce de
+ * 30 min por tipo de evento. Destino: ADMIN_ALERT_EMAIL o el primer admin activo.
+ * Best-effort: aunque falle el correo, el securityLog ya quedó registrado.
+ *
+ * @param {object} entry - Documento de securityLog (event/details/timestamp/ip/email).
+ * @returns {Promise<void>}
+ */
 async function notifyAdminForEvent(entry) {
   if (!CRITICAL_SECURITY_EVENTS.has(entry.event)) return;
   const now = Date.now();
@@ -491,11 +577,32 @@ async function notifyAdminForEvent(entry) {
 }
 
 // --- JWT VERSIONING ---
+/**
+ * Emite el JWT de sesión (HS256, 8 h) con email/name/role y versión de token.
+ *
+ * @param {object} payload - Datos a firmar.
+ * @returns {string} Token JWT firmado.
+ */
 function signToken(payload) {
   return jwt.sign(payload, JWT_SECRET, { expiresIn: '8h', algorithm: 'HS256' });
 }
 
 // --- AUTENTICACIÓN COMPARTIDA ---
+/**
+ * Autentica un usuario de 'users' (admin) o 'employees' (funcionario) con
+ * igualación de tiempos (anti timing-attack), bloqueo temporal tras N fallos y
+ * mensajes unificados (anti-enumeración). Si las credenciales son válidas, firma
+ * el JWT y responde con la sesión.
+ *
+ * @param {object} user - Documento de la colección.
+ * @param {string} collectionName - 'users' o 'employees'.
+ * @param {string} role - Rol a asignar en el token.
+ * @param {string} username - Correo ingresado.
+ * @param {string} password - Contraseña ingresada.
+ * @param {string} ip - IP del solicitante.
+ * @param {object} res - Respuesta Express (responde o retorna null).
+ * @returns {Promise<null>} null si el usuario no tiene contraseña (sin respuesta).
+ */
 async function authenticateUser(user, collectionName, role, username, password, ip, res) {
   // Iguala el tiempo de respuesta en todos los caminos de fallo (anti timing side-channel):
   // siempre se ejecuta un bcrypt.compare (real o contra un hash ficticio).
@@ -550,6 +657,19 @@ async function authenticateUser(user, collectionName, role, username, password, 
 }
 
 // --- CAMBIO DE CONTRASEÑA COMPARTIDO ---
+/**
+ * Cambia la contraseña de admin o funcionario: verifica la actual, valida contra
+ * el historial (anti reutilización), rota el historial e invalida los JWT previos
+ * incrementando jwtVersion.
+ *
+ * @param {object} user - Usuario autenticado en la petición.
+ * @param {string} currentPassword - Contraseña actual.
+ * @param {string} newPassword - Contraseña nueva (ya validada).
+ * @param {string} role - 'admin' | 'funcionario'.
+ * @param {string} ip - IP del solicitante.
+ * @param {object} res - Respuesta Express.
+ * @returns {Promise<void>}
+ */
 async function handleChangePasswordForRole(user, currentPassword, newPassword, role, ip, res) {
   const collectionName = getCollectionForRole(role);
   const lookupField = getLookupForRole(role, user);
@@ -575,6 +695,13 @@ async function handleChangePasswordForRole(user, currentPassword, newPassword, r
 }
 
 // --- ARCHIVOS SIN REGISTRAR ---
+/**
+ * Lista archivos sin registrar: los locales de la bandeja/entrada y los de
+ * GridFS con metadata.registered=false, con tamaño y fecha de creación.
+ *
+ * @param {Array|null} [allDocs] - Documentos registrados (null = consultar en BD).
+ * @returns {Promise<Array<{filename:string, fileSize:number, createdAt:Date}>>}
+ */
 async function getUnregisteredFiles(allDocs = null) {
   try {
     const registeredFilenames = allDocs
@@ -613,6 +740,15 @@ async function getUnregisteredFiles(allDocs = null) {
 }
 
 // --- HISTORIAL DE CONTRASEÑAS ---
+/**
+ * Indica si la contraseña candidata ya se usó en las últimas rotaciones de la
+ * cuenta (historial acotado a PASSWORD_HISTORY_SIZE).
+ *
+ * @param {string} email - Correo de la cuenta.
+ * @param {string} newPassword - Contraseña candidata.
+ * @param {string} role - 'admin' | 'funcionario'.
+ * @returns {Promise<boolean>} true si ya fue usada antes.
+ */
 async function checkPasswordHistory(email, newPassword, role) {
   const collection = getCollectionForRole(role);
   const user = await col(collection).findOne({ email });
@@ -623,6 +759,14 @@ async function checkPasswordHistory(email, newPassword, role) {
   return false;
 }
 
+/**
+ * Agrega el hash a la rotación de contraseñas de la cuenta (recorta a las
+ * últimas PASSWORD_HISTORY_SIZE).
+ *
+ * @param {string} email - Correo de la cuenta.
+ * @param {string} hashedPassword - Hash bcrypt a guardar.
+ * @param {string} role - 'admin' | 'funcionario'.
+ */
 async function addToPasswordHistory(email, hashedPassword, role) {
   const collection = getCollectionForRole(role);
   await col(collection).updateOne(
@@ -652,10 +796,23 @@ const ROLES = {
   }
 };
 
+/**
+ * Comprueba si un rol tiene un permiso específico.
+ *
+ * @param {string} role - 'admin' | 'funcionario'.
+ * @param {string} permission - Identificador de permiso.
+ * @returns {boolean} true si el rol posee el permiso.
+ */
 function hasPermission(role, permission) {
   return ROLES[role]?.permissions.includes(permission) || false;
 }
 
+/**
+ * Middleware Express: responde 403 si el usuario autenticado no tiene el permiso.
+ *
+ * @param {string} permission - Permiso requerido.
+ * @returns {function} Middleware de Express.
+ */
 function requirePermission(permission) {
   return (req, res, next) => {
     if (!req.user || !hasPermission(req.user.role, permission)) {
@@ -665,6 +822,13 @@ function requirePermission(permission) {
   };
 }
 
+/**
+ * Middleware Express: responde 403 si el usuario no tiene al menos uno de los
+ * permisos indicados.
+ *
+ * @param {...string} permissions - Permisos alternativos.
+ * @returns {function} Middleware de Express.
+ */
 function requireAnyPermission(...permissions) {
   return (req, res, next) => {
     if (!req.user || !permissions.some(p => hasPermission(req.user.role, p))) {
@@ -674,6 +838,14 @@ function requireAnyPermission(...permissions) {
   };
 }
 
+/**
+ * Inserta una entrada en auditLogs; nunca lanza (solo advierte en consola).
+ *
+ * @param {string} action - Acción realizada.
+ * @param {string} details - Detalle legible.
+ * @param {string} userEmail - Correo del actor.
+ * @param {string} ip - IP del actor.
+ */
 async function addAuditLog(action, details, userEmail, ip) {
   try {
     const newLog = {
@@ -690,6 +862,15 @@ async function addAuditLog(action, details, userEmail, ip) {
   }
 }
 
+/**
+ * Resuelve un nombre de archivo a una ruta segura dentro del directorio:
+ * rechaza separadores de ruta (..,%2f), nombres vacíos y extensiones no
+ * permitidas (anti path traversal).
+ *
+ * @param {string} directory - Directorio base.
+ * @param {string} filename - Nombre del archivo a resolver.
+ * @returns {string|null} Ruta segura o null si es inválida.
+ */
 function getSafeFilePath(directory, filename) {
   if (typeof filename !== 'string' || filename !== path.basename(filename) || !isAllowedFile(filename)) {
     return null;
@@ -697,6 +878,14 @@ function getSafeFilePath(directory, filename) {
   return path.join(directory, filename);
 }
 
+/**
+ * Verifica que el tipo de documento y la categoría existan en sus catálogos y
+ * devuelve ambos documentos.
+ *
+ * @param {string} documentTypeId - ID del tipo de documento.
+ * @param {string} categoryId - ID de la categoría.
+ * @returns {Promise<{documentType:object, category:object}|null>} null si falta uno.
+ */
 async function validateDocumentReferences(documentTypeId, categoryId) {
   const documentType = await col('documentTypes').findOne({ id: documentTypeId });
   const category = await col('categories').findOne({ id: categoryId });
@@ -704,6 +893,13 @@ async function validateDocumentReferences(documentTypeId, categoryId) {
   return { documentType, category };
 }
 
+/**
+ * Genera un nombre único para evitar colisiones en GridFS (timestamp + aleatorio),
+ * conservando la extensión original.
+ *
+ * @param {string} originalFilename - Nombre original del archivo.
+ * @returns {string} Nombre único.
+ */
 function getUniqueFilename(originalFilename) {
   const ext = path.extname(originalFilename);
   const base = path.basename(originalFilename, ext);
@@ -719,6 +915,13 @@ function getLookupForRole(role, user) {
   return role === 'admin' ? { email: user.email } : { id: user.employeeId };
 }
 
+/**
+ * Comprueba que los campos requeridos del body tengan un valor no vacío.
+ *
+ * @param {object} body - Cuerpo de la petición.
+ * @param {string[]} fields - Campos obligatorios.
+ * @returns {string|null} Primer campo faltante o null si todos están presentes.
+ */
 function requireFields(body, fields) {
   for (const f of fields) {
     if (body[f] === undefined || body[f] === null || String(body[f]).trim() === '') return f;
@@ -726,6 +929,12 @@ function requireFields(body, fields) {
   return null;
 }
 
+/**
+ * Valida el estado contra la lista permitida.
+ *
+ * @param {string|undefined} status - Estado del documento.
+ * @returns {string|null} Mensaje de error o null si es válido/omitido.
+ */
 function validateDocStatus(status) {
   if (status !== undefined && !VALID_DOC_STATUSES.includes(status)) {
     return `Estado no válido. Valores permitidos: ${VALID_DOC_STATUSES.join(', ')}.`;
@@ -735,6 +944,14 @@ function validateDocStatus(status) {
 
 // Valida fechas de emisión/vencimiento en formato YYYY-MM-DD (o ISO) y que
 // expiryDate no sea anterior a issueDate. Devuelve null si todo es correcto.
+/**
+ * Valida fechas de emisión y vencimiento (fecha válida si se indican) y que la
+ * de vencimiento no sea anterior a la de emisión.
+ *
+ * @param {string|undefined} issueDate - Fecha de emisión (YYYY-MM-DD o ISO).
+ * @param {string|undefined} expiryDate - Fecha de vencimiento.
+ * @returns {string|null} Mensaje de error o null si es válido.
+ */
 function validateDocDates(issueDate, expiryDate) {
   const parseDate = (value) => {
     if (value === undefined || value === null || String(value).trim() === '') return { ok: true, value: null };
@@ -752,6 +969,12 @@ function validateDocDates(issueDate, expiryDate) {
   return null;
 }
 
+/**
+ * Limita la descripción a 2000 caracteres.
+ *
+ * @param {string|undefined} description - Descripción a validar.
+ * @returns {string|null} Mensaje de error o null si es válido/omitida.
+ */
 function validateDescription(description) {
   if (description !== undefined && description !== null && String(description).length > 2000) {
     return 'La descripción no puede superar los 2000 caracteres.';
@@ -760,6 +983,13 @@ function validateDescription(description) {
 }
 
 // El archivo debe estar en la bandeja del escáner (local) o ser un archivo de escáner sin registrar en GridFS
+/**
+ * Indica si el archivo está pendiente de registro en la bandeja del escáner
+ * (archivo local en SCANNER_DIR o en GridFS sin marcar como registrado).
+ *
+ * @param {string} filename - Nombre del archivo.
+ * @returns {Promise<boolean>}
+ */
 async function isFileInScannerTray(filename) {
   const scanPath = getSafeFilePath(SCANNER_DIR, filename);
   if (scanPath && fs.existsSync(scanPath)) return true;
@@ -773,6 +1003,14 @@ async function rollbackStoredAttachments(filenames) {
 
 // Valida que el contenido coincida con la extensión (magic bytes).
 // Evita que un .pdf sea en realidad HTML/script u otro binario.
+/**
+ * Verifica los magic bytes del buffer contra la extensión declarada para evitar
+ * cargar archivos suplantados (p. ej. un .pdf que es HTML o un script).
+ *
+ * @param {string} filename - Nombre del archivo (define la extensión esperada).
+ * @param {Buffer} buffer - Contenido del archivo.
+ * @returns {boolean} true si el contenido corresponde a la extensión.
+ */
 function validateFileContent(filename, buffer) {
   const ext = path.extname(filename).toLowerCase();
   if (!buffer || buffer.length < 4) return null;
