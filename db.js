@@ -398,17 +398,6 @@ function storeFileBuffer(filename, buffer, metadata = {}) {
   });
 }
 
-function storeFileStream(filename, stream, metadata = {}) {
-  return new Promise((resolve, reject) => {
-    const us = getBucket().openUploadStream(filename, { metadata });
-    const onErr = (err) => { try { us.destroy(); stream.destroy(); } catch (_) {} reject(err); };
-    us.on('finish', () => resolve(us.id));
-    us.on('error', onErr);
-    stream.on('error', onErr);
-    stream.pipe(us);
-  });
-}
-
 async function readFileStream(filename) {
   try {
     const bucket = getBucket();
@@ -587,6 +576,7 @@ module.exports = {
   isHealthy,
   closeDb,
   createValidators,
+  generateTempPassword,
   storeFileBuffer,
   readFileStream,
   deleteFileByName,

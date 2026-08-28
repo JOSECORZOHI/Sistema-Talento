@@ -17,18 +17,8 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const PDFDocument = require('pdfkit');
 const nodemailer = require('nodemailer');
-const { connect, col, isHealthy, reconnect, closeDb, storeFileBuffer, readFileStream, deleteFileByName, listFilesBySource, markFileRegistered } = require('./db');
+const { connect, col, isHealthy, reconnect, closeDb, storeFileBuffer, readFileStream, deleteFileByName, listFilesBySource, markFileRegistered, generateTempPassword } = require('./db');
 const { analyzeFile } = require('./documentAnalyzer.js');
-
-// Generador de contraseñas temporales para nuevos funcionarios
-function generateTempPassword() {
-  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-  const lower = 'abcdefghjkmnpqrstuvwxyz';
-  const digits = '23456789';
-  const symbols = '!@#$%^&*_-+=?';
-  const pick = (set, n) => Array.from({ length: n }, () => set[crypto.randomInt(set.length)]).join('');
-  return pick(upper, 2) + pick(lower, 2) + pick(digits, 2) + pick(symbols, 2) + pick(upper + lower + digits + symbols, 8);
-}
 
 // Manejo de errores no controlados.
 // unhandledRejection: se loguea sin salir (permite que la reconexión a Mongo se recupere).
@@ -43,10 +33,6 @@ process.on('uncaughtException', (err) => {
   const exitTimer = setTimeout(() => process.exit(1), 1500);
   if (exitTimer.unref) exitTimer.unref();
 });
-
-function getGoogleApis() {
-  return require('googleapis').google;
-}
 
 const app = express();
 // Por defecto solo se confían cabeceras X-Forwarded-For procedentes de loopback;
@@ -2253,22 +2239,7 @@ app.get('/api/scanner-files', authMiddleware, requirePermission('scanner.read'),
 });
 
 // --- ESTADO DEL ESCÁNER (Detección USB + Red + Monitoreo de bandeja) ---
-function runPs(cmd) {
-  return new Promise((resolve) => {
-    const full = `$ProgressPreference='SilentlyContinue';${cmd}`;
-    const encoded = Buffer.from(full, 'utf16le').toString('base64');
-    exec(`powershell -NoProfile -ExecutionPolicy Bypass -EncodedCommand ${encoded}`,
-      { timeout: 20000, encoding: 'utf8', windowsHide: true, maxBuffer: 64 * 1024 * 1024 },
-      (error, stdout) => {
-        const raw = (stdout || '').replace(/#< CLIXML[\s\S]*?<\/Objs>\s*/g, '').trim();
-        if (error && !raw) { console.warn('Error ejecutando PowerShell:', error.message); return resolve(''); }
-        resolve(raw);
-      });
-  });
-}
-
-// Versión asíncrona: no bloquea el event loop y admite timeouts largos (escaneo WIA).
-function runPsAsync(cmd, timeoutMs = 120000) {
+function runPs(cmd, timeoutMs = 20000) {
   return new Promise((resolve) => {
     const full = `$ProgressPreference='SilentlyContinue';${cmd}`;
     const encoded = Buffer.from(full, 'utf16le').toString('base64');
@@ -2276,7 +2247,7 @@ function runPsAsync(cmd, timeoutMs = 120000) {
       { timeout: timeoutMs, encoding: 'utf8', windowsHide: true, maxBuffer: 64 * 1024 * 1024 },
       (error, stdout) => {
         const raw = (stdout || '').replace(/#< CLIXML[\s\S]*?<\/Objs>\s*/g, '').trim();
-        if (error && !raw) { console.warn('Error ejecutando PowerShell (async):', error.message); return resolve(''); }
+        if (error && !raw) { console.warn('Error ejecutando PowerShell:', error.message); return resolve(''); }
         resolve(raw);
       });
   });
@@ -2527,7 +2498,7 @@ async function scanWithScanner(customName) {
     pdfBase = `${baseName}_${crypto.randomBytes(4).toString('hex')}.pdf`;
   }
   const tempToken = crypto.randomBytes(4).toString('hex');
-  const raw = await runPsAsync(`
+  const raw = await runPs(`
     try {
       $deviceManager = New-Object -ComObject WIA.DeviceManager
       $deviceInfo = $deviceManager.DeviceInfos | Where-Object { $_.Type -eq 1 } | Select-Object -First 1

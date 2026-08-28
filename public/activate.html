@@ -130,17 +130,7 @@
         loading.innerHTML = '<p style="color:#e74c3c;text-align:center;padding:20px;">Error de conexión. Intente nuevamente.</p>';
       }
 
-      const passwordInput = document.getElementById('activate-password');
-      const strengthBar = document.getElementById('strength-bar');
-      const strengthText = document.getElementById('strength-text');
-
-      passwordInput.addEventListener('input', () => {
-        const result = evaluatePasswordStrength(passwordInput.value);
-        strengthBar.className = 'strength-bar';
-        if (result.level !== 'none') strengthBar.classList.add(result.level);
-        strengthText.textContent = result.text;
-        strengthText.style.color = result.color;
-      });
+      bindPasswordStrengthMeter('activate-password', 'strength-bar', 'strength-text');
 
       form.addEventListener('submit', async (e) => {
         e.preventDefault();

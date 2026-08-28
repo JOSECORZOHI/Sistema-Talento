@@ -307,6 +307,21 @@ function evaluatePasswordStrength(password) {
   return { level: 'strong', text: 'Fuerte — Contraseña segura', color: '#27ae60' };
 }
 
+// Enlaza la barra de fortaleza de contraseña a un input (usado en activate.html y forgot-password.html).
+function bindPasswordStrengthMeter(inputId, barId, textId) {
+  const input = document.getElementById(inputId);
+  const bar = document.getElementById(barId);
+  const text = document.getElementById(textId);
+  if (!input || !bar || !text) return;
+  input.addEventListener('input', () => {
+    const result = evaluatePasswordStrength(input.value);
+    bar.className = 'strength-bar';
+    if (result.level !== 'none') bar.classList.add(result.level);
+    text.textContent = result.text;
+    text.style.color = result.color;
+  });
+}
+
 // --- VISOR PDF COMPARTIDO ---
 function renderPdfFallback(filename, url) {
   return `
