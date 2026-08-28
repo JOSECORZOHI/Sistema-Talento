@@ -2993,11 +2993,12 @@ app.post('/api/email-inbox/sync', authMiddleware, requireAnyPermission('email.ma
 
     // Paginar hasta agotar la bandeja (máx. 500 correos por sincronización) para no
     // dejar correos antiguos sin procesar cuando hay más de 25 pendientes.
+    // Solo se traen correos con archivos adjuntos (has:attachment).
     const messageRefs = [];
     let pageToken = null;
     for (let page = 0; page < 5; page++) {
       const list = await gmail.users.messages.list({
-        userId: 'me', maxResults: 100,
+        userId: 'me', maxResults: 100, q: 'has:attachment',
         ...(pageToken ? { pageToken } : {})
       });
       messageRefs.push(...(list.data.messages || []));
@@ -3005,7 +3006,7 @@ app.post('/api/email-inbox/sync', authMiddleware, requireAnyPermission('email.ma
       pageToken = list.data.nextPageToken || null;
       if (!pageToken) break;
     }
-    console.log(`[GMAIL-SYNC] Total mensajes encontrados: ${messageRefs.length}, conocidos: ${knownEmailIds.size}`);
+    console.log(`[GMAIL-SYNC] Total mensajes con adjuntos: ${messageRefs.length}, conocidos: ${knownEmailIds.size}`);
     const newEmails = [];
     let attachmentsDownloaded = 0;
 
@@ -3061,6 +3062,11 @@ app.post('/api/email-inbox/sync', authMiddleware, requireAnyPermission('email.ma
           attachments.push({ filename, sizeBytes: b.content.length, registered: false, source: 'gmail' });
           storedAttachmentFilenames.add(filename);
           attachmentsDownloaded++;
+        }
+
+        // Solo se registran correos que traen al menos un archivo adjunto válido.
+        if (!attachments.length) {
+          continue;
         }
 
         const headers = payload.headers || [];

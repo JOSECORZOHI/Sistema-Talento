@@ -1,4 +1,4 @@
-/* exported fetchScannerFiles, fetchEmails, refreshScannerStatus, startGmailAuthorization, toggleEmailDocFilter */
+/* exported fetchScannerFiles, fetchEmails, refreshScannerStatus, startGmailAuthorization */
 // Módulo ESCÁNER & CORREO del panel administrativo.
 // (división de app.js: ingesta por escáner local y correo Gmail)
 
@@ -132,20 +132,6 @@ async function startGmailAuthorization() {
   }
 }
 
-function emailDocFilterEnabled() {
-  return localStorage.getItem('th-email-filter-docs') !== '0';
-}
-
-function toggleEmailDocFilter(checkbox) {
-  localStorage.setItem('th-email-filter-docs', checkbox.checked ? '1' : '0');
-  renderEmailInbox();
-}
-
-function visibleEmails() {
-  const emails = appState.emails || [];
-  return emailDocFilterEnabled() ? emails.filter(e => (e.attachments || []).length > 0) : emails;
-}
-
 async function fetchEmails() {
   try {
     const [gmailStatus, response] = await Promise.all([
@@ -155,13 +141,10 @@ async function fetchEmails() {
 
     renderGmailStatusBanner(gmailStatus);
 
-    const chk = document.getElementById('chk-email-filter-docs');
-    if (chk) chk.checked = emailDocFilterEnabled();
-
     if (!response.ok) throw new Error('Email API error');
     appState.emails = await response.json();
     renderEmailInbox();
-    const unread = visibleEmails().filter(e => !e.read).length;
+    const unread = appState.emails.filter(e => !e.read).length;
     const badge = document.getElementById('badge-email-unread');
     if (badge) {
       badge.textContent = unread;
@@ -176,18 +159,13 @@ function renderEmailInbox() {
   const container = document.getElementById('email-inbox-list');
   if (!container) return;
 
-  const onlyWithDocs = emailDocFilterEnabled();
-  const visible = onlyWithDocs ? appState.emails.filter(e => (e.attachments || []).length > 0) : appState.emails;
-
-  if (visible.length === 0) {
-    container.innerHTML = onlyWithDocs
-      ? '<div class="no-data-placeholder" style="height:120px;">No hay correos con documentos adjuntos.</div>'
-      : '<div class="no-data-placeholder" style="height:120px;">No hay correos en la bandeja de entrada.</div>';
+  if (appState.emails.length === 0) {
+    container.innerHTML = '<div class="no-data-placeholder" style="height:120px;">No hay correos en la bandeja de entrada.</div>';
     return;
   }
 
   container.innerHTML = '';
-  visible.forEach(email => {
+  appState.emails.forEach(email => {
     const isActive = appState.selectedEmailId === email.id;
     const docAttachments = (email.attachments || []);
 
