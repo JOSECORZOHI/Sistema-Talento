@@ -1,3 +1,4 @@
+/* exported renderEmployeesTable, renderEmployeeDirectory, selectEmployeeForFolder */
 // Módulo DIRECTORIO / EXPEDIENTES del panel administrativo.
 // (división de app.js: renderizados de funcionarios y hojas de vida)
 

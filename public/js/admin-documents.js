@@ -1,3 +1,4 @@
+/* exported renderDocumentsTable, renderUnregisteredFiles */
 // Módulo DOCUMENTOS del panel administrativo.
 // (división de app.js: tabla de consultas, archivos locales sin registrar,
 //  modales PDF/edición/registro unificado y acciones sobre documentos)

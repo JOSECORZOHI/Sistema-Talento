@@ -1,3 +1,4 @@
+/* exported renderStats, fetchSystemStatus, renderSystemStatus */
 // Módulo DASHBOARD del panel administrativo.
 // Funciones puras de renderizado del dashboard general (redux: app.js se dividió
 // en módulos por vista). Se cargan ANTES de app.js; dependen de utils.js y del

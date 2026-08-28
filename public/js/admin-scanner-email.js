@@ -1,3 +1,4 @@
+/* exported fetchScannerFiles, fetchEmails, refreshScannerStatus, startGmailAuthorization */
 // Módulo ESCÁNER & CORREO del panel administrativo.
 // (división de app.js: ingesta por escáner local y correo Gmail)
 

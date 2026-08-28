@@ -1,3 +1,4 @@
+/* exported renderAuditLogsTable, renderDeletionRequests */
 // Módulo AUDITORÍA del panel administrativo.
 // (división de app.js: trazabilidad de acciones y solicitudes de eliminación)
 

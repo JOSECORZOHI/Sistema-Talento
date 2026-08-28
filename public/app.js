@@ -1,3 +1,4 @@
+/* exported appState, statTotalDocs, statPendingDocs, statTotalEmployees, statUnregisteredDocs, badgeUnregistered, modalViewPdf, modalEditDoc, loadAllData, fetchStats, fetchEmployees, refreshActiveSectionViews, reloadAll */
 // Verificación de autenticación (sanitize, apiFetch, checkAuth en utils.js)
 (function checkAuthAdmin() {
   if (!checkAuth('admin')) return;

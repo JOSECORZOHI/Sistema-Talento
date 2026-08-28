@@ -1,3 +1,4 @@
+/* exported sanitize, escOnclick, getToken, getUser, logout, checkAuth, apiFetch, apiFetchWithRetry, showToast, removeToast, showLoader, hideLoader, openModal, closeModal, getInitials, formatIssueDate, formatDate, populateDropdown, populateSelect, guardSubmit, initTheme, updateThemeUI, setupThemeToggle, evaluatePasswordStrength, bindPasswordStrengthMeter, openPdfViewer, closePdfViewer, setupDragDrop */
 // ============================================================
 //  Funciones compartidas — utils.js
 //  Usado por admin.html (app.js) y funcionario.html (funcionario.js)
@@ -442,7 +443,6 @@ function setupDragDrop(dropAreaId, fileInputId, previewId) {
 // --- TIMEOUT POR INACTIVIDAD ---
 (function initInactivityTimeout() {
   const TIMEOUT_MS = 15 * 60 * 1000; // 15 minutos
-  const WARNING_MS = 30 * 1000;       // Aviso 30 segundos antes
   let timer = null;
   let warningTimer = null;
   let warningEl = null;
