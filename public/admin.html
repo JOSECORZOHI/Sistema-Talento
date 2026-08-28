@@ -484,9 +484,15 @@
                     <h3>Bandeja de Correo Electrónico</h3>
                     <span class="subtitle">Ingesta institucional IMAP</span>
                   </div>
-                  <button class="btn btn-secondary" id="btn-sync-email" style="padding: 6px 12px; font-size: 12px;">
-                    Sincronizar
-                  </button>
+                  <div style="display: flex; align-items: center; gap: 14px;">
+                    <label id="email-doc-filter-label" style="display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-muted); cursor: pointer; user-select: none;">
+                      <input type="checkbox" id="chk-email-filter-docs" onchange="toggleEmailDocFilter(this)" style="cursor: pointer;">
+                      Solo con documentos
+                    </label>
+                    <button class="btn btn-secondary" id="btn-sync-email" style="padding: 6px 12px; font-size: 12px;">
+                      Sincronizar
+                    </button>
+                  </div>
                 </div>
                 
                 <div class="email-list-container" id="email-inbox-list" style="display: flex; flex-direction: column; gap: 10px; max-height: 480px; overflow-y: auto;">
