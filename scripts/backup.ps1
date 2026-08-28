@@ -38,7 +38,21 @@ New-Item -ItemType Directory -Path $target -Force | Out-Null
 Write-Host "[BACKUP] BD: $DbName"
 Write-Host "[BACKUP] Destino: $target"
 
-mongodump --uri "$DatabaseUrl" --db $DbName --out $target
+# Localizar mongodump: primero en el PATH, luego en las rutas típicas de instalación
+$mongodump = Get-Command mongodump -ErrorAction SilentlyContinue
+if (-not $mongodump) {
+  $found = @("$env:ProgramFiles\MongoDB\Tools", "${env:ProgramFiles(x86)}\MongoDB\Tools") |
+    ForEach-Object { Get-ChildItem -Path (Join-Path $_ "bin\mongodump.exe") -Recurse -ErrorAction SilentlyContinue } |
+    Select-Object -First 1
+  if ($found) { $mongodump = $found.FullName }
+}
+if (-not $mongodump) {
+  Write-Error 'No se encontró mongodump. Instale MongoDB Database Tools: winget install MongoDB.DatabaseTools (o agregue la carpeta bin al PATH).'
+}
+$mongoDumpExe = if ($mongodump -is [string]) { $mongodump } else { $mongodump.Source }
+Write-Host "[BACKUP] mongodump: $mongoDumpExe"
+
+& $mongoDumpExe --uri "$DatabaseUrl" --db $DbName --out $target
 
 if ($LASTEXITCODE -ne 0) { Write-Error "mongodump falló (código $LASTEXITCODE)." }
 
