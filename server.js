@@ -2947,13 +2947,33 @@ app.get('/api/gmail/oauth2callback', async (req, res) => {
     const { tokens } = await auth.getToken(req.query.code);
     const ip = getClientIp(req);
     await addAuditLog('Autorización Gmail', 'Se completó la autorización OAuth con Google para la sincronización de correos.', 'Sistema', ip);
-    // El refresh token solo se muestra en la consola del servidor, no en el navegador.
-    // Solo en desarrollo/ejecución local: en producción nunca se imprime.
-    if (tokens.refresh_token && process.env.NODE_ENV === 'development') {
+    // El refresh token solo se imprime en consola en desarrollo. Para permitir que
+    // el administrador lo capture en producción sin acceso al servidor, se devuelve
+    // (una sola vez, en la respuesta de esta autorización) al navegador.
+    const refreshTokenToShow = tokens.refresh_token ? tokens.refresh_token : null;
+    if (process.env.NODE_ENV === 'development') {
       console.log('[GMAIL] Autorización completada. Agregue al .env:');
-      console.log('GMAIL_REFRESH_TOKEN=' + tokens.refresh_token);
+      console.log('GMAIL_REFRESH_TOKEN=' + (refreshTokenToShow || ''));
     }
-    res.json({ success: true, message: 'Autorización completada. Revise la consola del servidor para copiar GMAIL_REFRESH_TOKEN al archivo .env' });
+    if (refreshTokenToShow) {
+      // Mostrar el token una sola vez para que el admin lo copie a Railway sin
+      // acceso a la consola del servidor.
+      return res.send(`
+<!doctype html><html><head><meta charset="utf-8"><title>Autorización completada</title>
+<style>body{font-family:system-ui,sans-serif;background:#f3f6fb;display:flex;justify-content:center;padding:60px 16px;margin:0}
+.card{background:#fff;border-radius:12px;padding:28px;max-width:560px;width:100%;box-shadow:0 6px 24px rgba(0,0,0,.08)}
+h2{margin:0 0 8px}code{display:block;background:#f1f3f5;border:1px solid #e0e2e6;border-radius:6px;padding:12px;font-size:12px;word-break:break-all;margin:14px 0;color:#333}
+.btn{background:#2563eb;color:#fff;border:0;padding:10px 18px;border-radius:6px;font-size:14px;cursor:pointer}
+.hint{color:#666;font-size:13px}.ok{color:#16a34a;font-weight:600}</style></head><body>
+<div class="card"><h2>Autorización completada</h2>
+<p class="ok">Gmail vinculado correctamente con talentohumanova23@gmail.com</p>
+<p class="hint">Copia este <b>refresh token</b> y pégalo en Railway como la variable <code>GMAIL_REFRESH_TOKEN</code> (menú Variables), y pulsa Redelploy:</p>
+<code id="tok">${refreshTokenToShow}</code>
+<button class="btn" onclick="navigator.clipboard.writeText(document.getElementById('tok').textContent);this.textContent='¡Copiado!';this.style.opacity=.7">Copiar token</button>
+<p class="hint" style="margin-top:14px">Este token solo se muestra una vez en este momento.</p>
+</div></body></html>`);
+    }
+    res.json({ success: true, message: 'Autorización completada. Gmail ya quedó autorizado.' });
   } catch (error) {
     console.error('Error al autorizar Gmail:', error);
     res.status(502).json({ error: 'No se pudo completar la autorización con Google.' });
