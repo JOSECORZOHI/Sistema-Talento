@@ -1615,7 +1615,9 @@ app.get('/api/funcionario/init', authMiddleware, async (req, res) => {
 
     let emails = [];
     try {
-      emails = await col('emailsInbox').find().sort({ date: -1 }).toArray();
+      // Cada funcionario solo ve los correos que Google matcheó con su propio
+      // correo (suggestedEmployeeId), para que registre únicamente sus adjuntos.
+      emails = await col('emailsInbox').find({ suggestedEmployeeId: req.user.employeeId }).sort({ date: -1 }).toArray();
     } catch (e) { console.warn('Error obteniendo inbox de correo:', e.message); }
 
     res.json({ docs, config: { documentTypes: dtResult, categories: catResult }, scannerFiles, emails });
