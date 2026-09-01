@@ -32,7 +32,8 @@ const frontendShared = [
   'toggleDocVisibility', 'fetchScannerFiles', 'renderScannerFiles',
   'fetchGmailStatus', 'renderGmailStatusBanner', 'startGmailAuthorization',
   'fetchEmails', 'renderEmailInbox', 'selectEmail', 'renderEmailDetail',
-  'refreshScannerStatus', 'switchSubTab', 'portalShowTab', 'archiveDocument'
+  'refreshScannerStatus', 'switchSubTab', 'portalShowTab', 'archiveDocument',
+  'linkFuncionarioGmail', 'checkFuncionarioGmailStatus', 'syncFuncionarioEmails'
 ];
 
 module.exports = [

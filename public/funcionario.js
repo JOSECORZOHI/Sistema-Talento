@@ -43,6 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   showPortalApp();
   loadPortalData();
+  checkFuncionarioGmailStatus();
   setTimeout(refreshPortalScannerStatus, 500);
   const portalScannerInterval = setInterval(refreshPortalScannerStatus, 15000);
   window.addEventListener('beforeunload', () => clearInterval(portalScannerInterval));
@@ -374,13 +375,63 @@ function renderPortalScannerFiles() {
 }
 
 // ============================================================
-// SINCRONIZAR CORREO
+// CONECTAR GMAIL (cuenta propia del funcionario)
+// ============================================================
+window.linkFuncionarioGmail = async function() {
+  try {
+    const res = await apiFetch('/api/funcionario/gmail/authorize');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { showToast(data.error || 'No se pudo iniciar la conexión de Gmail.', 'error'); return; }
+    if (data.url) {
+      const popup = window.open(data.url, '_blank', 'width=520,height=620');
+      if (popup) {
+        const checkInterval = setInterval(async () => {
+          if (popup.closed) {
+            clearInterval(checkInterval);
+            await checkFuncionarioGmailStatus();
+            await loadPortalData();
+          }
+        }, 800);
+      }
+    }
+  } catch (e) {
+    showToast('Error al iniciar la conexión de Gmail.', 'error');
+  }
+};
+
+window.checkFuncionarioGmailStatus = async function() {
+  const badge = document.getElementById('portal-gmail-status');
+  const linkBtn = document.getElementById('btn-portal-link-gmail');
+  if (!badge) return;
+  try {
+    const res = await apiFetch('/api/funcionario/gmail/status');
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.linked) {
+      badge.style.display = 'inline-block';
+      badge.textContent = 'Gmail conectado' + (data.linkedEmail ? ' · ' + data.linkedEmail : '');
+      badge.style.background = 'var(--success-soft, rgba(22,163,74,.12))';
+      badge.style.color = 'var(--success, #16a34a)';
+      if (linkBtn) { linkBtn.textContent = 'Reconectar Gmail'; linkBtn.style.display = 'none'; }
+    } else {
+      badge.style.display = 'inline-block';
+      badge.textContent = 'Gmail no conectado';
+      badge.style.background = 'var(--warning-soft, rgba(243,156,18,.12))';
+      badge.style.color = 'var(--warning, #f39c12)';
+      if (linkBtn) linkBtn.style.display = 'inline-block';
+    }
+  } catch (e) {
+    badge.style.display = 'none';
+  }
+};
+
+// ============================================================
+// SINCRONIZAR CORREO (cuenta propia del funcionario)
 // ============================================================
 window.syncFuncionarioEmails = async function() {
   const btn = document.getElementById('btn-portal-sync-email');
   if (btn) { btn.disabled = true; btn.textContent = 'Sincronizando...'; }
   try {
-    const res = await apiFetchWithRetry('/api/email-inbox/sync', { method: 'POST' });
+    const res = await apiFetchWithRetry('/api/funcionario/gmail/sync', { method: 'POST' });
     const data = await res.json();
     if (!res.ok) { showToast(data.error || 'Error al sincronizar.', 'error'); return; }
     showToast(data.message || 'Correo sincronizado.', 'success');

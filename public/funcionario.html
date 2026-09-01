@@ -598,8 +598,10 @@
       <div class="portal-panel" id="panel-correo">
         <div class="portal-docs-header">
           <h3>Bandeja de Correo</h3>
-          <div style="display:flex;align-items:center;gap:10px;">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <span id="portal-email-count">0 correos</span>
+            <span id="portal-gmail-status" class="badge" style="display:none;background:var(--secondary-soft);color:var(--secondary);padding:3px 10px;border-radius:20px;font-size:11px;"></span>
+            <button class="btn btn-secondary" id="btn-portal-link-gmail" style="padding:6px 12px;font-size:12px;" onclick="linkFuncionarioGmail()">Conectar mi Gmail</button>
             <button class="btn btn-secondary" id="btn-portal-sync-email" style="padding:6px 12px;font-size:12px;" onclick="syncFuncionarioEmails()">Sincronizar correo</button>
           </div>
         </div>
