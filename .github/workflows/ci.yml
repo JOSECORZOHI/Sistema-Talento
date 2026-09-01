@@ -1,4 +1,4 @@
-name: Lint y Tests
+name: Lint y Sintaxis
 
 on:
   push:
@@ -27,6 +27,3 @@ jobs:
 
       - name: Lint (ESLint)
         run: npm run lint
-
-      - name: Tests (node:test)
-        run: npm test

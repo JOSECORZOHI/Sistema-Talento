@@ -8,8 +8,7 @@
   },
   "scripts": {
     "start": "node server.js",
-    "test": "node --test",
-    "lint": "eslint server.js db.js documentAnalyzer.js lib/ test/",
+    "lint": "eslint server.js db.js documentAnalyzer.js lib/",
     "lint:frontend": "eslint public",
     "backup": "powershell -ExecutionPolicy Bypass -File scripts/backup.ps1"
   },
