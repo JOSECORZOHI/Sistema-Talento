@@ -73,3 +73,38 @@ Abra `/api/gmail/authorize` para autorizar la cuenta. Después, use la opción d
 - Mantenga el acceso al equipo y a las credenciales de Gmail restringido a personal autorizado.
 - Verifique que los PDFs se puedan abrir y que sus metadatos correspondan al expediente antes de archivarlos.
 - Para actualizar dependencias, pruebe primero en un entorno de desarrollo y ejecute `npm.cmd audit`.
+
+## Cumplimiento legal y estándares
+
+El sistema incorpora medidas de protección de datos personales, seguridad y accesibilidad:
+
+- **Protección de datos (Ley 1581/2012)**: el registro de funcionarios exige confirmar el
+  consentimiento del titular (se guarda la fecha, cuenta e IP). Al eliminar un funcionario se
+  ejecuta la supresión total de sus datos personales (documentos, correos, tokens, solicitudes),
+  y los registros de auditoría/seguridad se anonimizan (`[ELIMINADO]`) conforme al derecho de
+  supresión (art. 8, lit. f).
+- **Aviso de privacidad y almacenamiento**: las páginas de `privacy.html`, `terms.html` y
+  `accesibilidad.html` están enlazadas desde el ingreso, el panel de administración y el portal
+  del funcionario. Antes de guardar datos en `localStorage`, se solicita el consentimiento del
+  usuario mediante un banner.
+- **Retención documental**: los documentos archivados vencen y se purgan automáticamente según
+  `DOC_RETENTION_DAYS` (por defecto 3650 días) al arrancar y diariamente.
+- **Seguridad (OWASP)**: helmet con Content-Security-Policy por *nonce* (sin `'unsafe-inline'`
+  en `script-src`), verificación de certificado TLS en SMTP por defecto, y *allowlist* estricta
+  del nombre de archivo del escáner. La contraseña temporal **no** se expone por la API salvo que
+  se habilite explícitamente con `ALLOW_TEMP_PASSWORD_RESPONSE=true`.
+- **Accesibilidad (WCAG 2.1 AA)**: enlace "Saltar al contenido", gestión de foco en modales
+  (trap, `Esc` y retorno de foco), anuncio de toasts con `aria-live`, etiquetas en campos sin
+  `<label>`, contraste de texto corregido y soporte de `prefers-reduced-motion`.
+
+### Gestión de secretos (acción del operador)
+
+Estas tareas no son de código y quedan a cargo del administrador de la plataforma:
+
+1. Rotar periódicamente `JWT_SECRET`, `SMTP_PASS` y `GMAIL_CLIENT_SECRET`.
+2. Regenerar el `GMAIL_REFRESH_TOKEN` revocándolo en Google Cloud y reautorizando en
+   `/api/gmail/authorize`.
+3. En Railway, fijar estas variables en el panel **Variables** (no en `.env`).
+4. Acotar los permisos del archivo `.env` al usuario del servicio.
+
+Véase `.env.example` para el detalle completo de variables y documentación.

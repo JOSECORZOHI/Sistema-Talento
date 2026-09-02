@@ -428,6 +428,8 @@
   </style>
 </head>
 <body class="light-theme">
+  <a class="skip-link" href="#main-content">Saltar al contenido principal</a>
+
 
   <div class="global-loader" id="portal-loader"><div class="spinner-ring"></div></div>
 
@@ -470,13 +472,18 @@
         </button>
         <button class="btn-portal-action btn-portal-logout" id="btn-portal-logout">Salir</button>
       </div>
+      <div class="portal-privacy-links">
+        <a href="/privacy.html" target="_blank" rel="noopener">Privacidad</a> ·
+        <a href="/terms.html" target="_blank" rel="noopener">Términos</a> ·
+        <a href="/accesibilidad.html" target="_blank" rel="noopener">Accesibilidad</a>
+      </div>
       <div class="bandera-strip">
         <span></span><span></span><span></span>
       </div>
     </header>
 
     <!-- MAIN -->
-    <main class="portal-main">
+    <main class="portal-main" id="main-content">
       <!-- WELCOME BANNER -->
       <div class="portal-welcome">
         <h2>Bienvenido, <span id="portal-welcome-name">Funcionario</span></h2>
@@ -579,7 +586,7 @@
             <span style="width:8px;height:8px;border-radius:50%;background:#ccc;display:inline-block;" id="portal-scanner-dot"></span>
             <span id="portal-scanner-dot-text">Verificando...</span>
           </div>
-          <input type="text" id="input-scan-filename" placeholder="Nombre del documento" style="padding:6px 10px;font-size:12px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);width:200px;" />
+          <input type="text" id="input-scan-filename" aria-label="Nombre del documento a escanear" placeholder="Nombre del documento" style="padding:6px 10px;font-size:12px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);width:200px;" />
           <button class="btn btn-primary" id="btn-portal-scan" style="padding:8px 18px;font-size:13px;">Escanear Documento</button>
           <button class="btn btn-secondary" id="btn-portal-epson-scan" style="font-size:12px;padding:8px 14px;display:none;" title="Abrir EPSON Scan 2: escanee y guarde el PDF en la bandeja de escáner para registrarlo">EPSON Scan 2</button>
           <button class="btn btn-secondary" id="btn-portal-refresh-scanners" style="font-size:12px;padding:8px 14px;">🔄 Actualizar lista</button>

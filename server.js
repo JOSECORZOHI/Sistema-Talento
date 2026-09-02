@@ -99,7 +99,9 @@ function getMailTransporter() {
     connectionTimeout: 10000,
     greetingTimeout: 10000,
     socketTimeout: 10000,
-    tls: { rejectUnauthorized: false }
+    // Verificar el certificado TLS por defecto. Solo se desactiva explícitamente
+    // cuando el operador lo pide (entornos de prueba con certificados autofirmados).
+    tls: { rejectUnauthorized: process.env.SMTP_REJECT_UNAUTHORIZED !== 'false' }
   });
 }
 
@@ -202,11 +204,26 @@ async function sendEmail({ to, subject, html, text }) {
   return false;
 }
 
+// --- CSP con NONCE ---
+// Función de directiva que emite el nonce por petición (se define antes de helmet
+// para que la configuración de CSP pueda referenciarla sin problemas de hoisting).
+function cspNonceFromRes(req, res) {
+  return `'nonce-${(res.locals && res.locals.cspNonce) || ''}'`;
+}
+const CSP_SCRIPT_SRC = ["'self'", cspNonceFromRes];
+
+// Genera un nonce por petición. Debe ejecutarse ANTES de helmet para que el encabezado
+// CSP se emita con el nonce correcto.
+app.use((req, res, next) => {
+  res.locals.cspNonce = crypto.randomBytes(16).toString('base64');
+  next();
+});
+
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: CSP_SCRIPT_SRC,
       scriptSrcAttr: ["'unsafe-inline'"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       imgSrc: ["'self'", "data:", "blob:"],
@@ -283,7 +300,30 @@ app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/forgot-password', authLimiter);
 app.use('/api/auth/activate', authLimiter);
 app.use('/api/auth/reset-password', authLimiter);
+// --- CSP con NONCE (endurecimiento Content-Security-Policy) ---
+// Se genera un nonce por petición (en el middleware global de arriba) y se inyecta
+// en los <script> en línea de las páginas HTML, eliminando la dependencia de
+// 'unsafe-inline' en script-src.
+
+// Inyecta el nonce en los <script> en línea de las páginas HTML servidas desde /public.
+app.get(/\.html$/, (req, res, next) => {
+  const filePath = path.join(__dirname, 'public', req.path.split('?')[0]);
+  fs.readFile(filePath, 'utf8', (err, data) => {
+    if (err) return next();
+    const nonce = res.locals.cspNonce;
+    const injected = data.replace(/<script(?![^>]*\bsrc=)(?![^>]*\snonce=)[^>]*>/gi, (tag) => {
+      const close = tag.endsWith('/>') ? '/>' : '>';
+      const open = tag.slice(0, -close.length);
+      return `${open} nonce="${nonce}"${close}`;
+    });
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.send(injected);
+  });
+});
+
 app.use(express.static(path.join(__dirname, 'public'), {
+  index: false,
   etag: true,
   maxAge: '1h',
   setHeaders(res, filePath) {
@@ -1701,9 +1741,12 @@ app.get('/api/employees', authMiddleware, requirePermission('employees.read'), a
 
 app.post('/api/employees', authMiddleware, requirePermission('employees.create'), createLimiter, async (req, res) => {
   const ip = getClientIp(req);
-  let { id, name, department, position, email } = req.body;
+  let { id, name, department, position, email, consent } = req.body;
   if (!department || !email) {
     return res.status(400).json({ error: 'La dependencia y el correo electrónico son obligatorios.' });
+  }
+  if (consent !== true) {
+    return res.status(400).json({ error: 'Debe confirmar que el titular autoriza el tratamiento de sus datos personales conforme a la Política de Privacidad.' });
   }
   if (!id) id = email.split('@')[0].replace(/[^a-zA-Z0-9]/g, '') + crypto.randomInt(0, 1000).toString().padStart(3, '0');
   if (!name) name = id.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[._-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase()).trim();
@@ -1735,7 +1778,14 @@ app.post('/api/employees', authMiddleware, requirePermission('employees.create')
     registeredAt: new Date().toISOString(),
     registeredBy: 'Administrador',
     failedAttempts: 0,
-    lockedUntil: null
+    lockedUntil: null,
+    dataConsent: {
+      granted: true,
+      grantedAt: new Date().toISOString(),
+      grantedByAccount: 'Administrador',
+      grantedByIp: ip,
+      version: 'v1'
+    }
   };
   try {
     await col('employees').insertOne(newEmployee);
@@ -1763,7 +1813,13 @@ app.post('/api/employees', authMiddleware, requirePermission('employees.create')
     password: undefined,
     ...(emailSent
       ? { emailSent: true, message: 'Empleado creado. Se enviaron las credenciales de acceso al correo del funcionario.' }
-      : { emailSent: false, tempPassword, message: `Empleado creado. No se pudo enviar el correo. Contraseña temporal: ${tempPassword}` })
+      : {
+          emailSent: false,
+          message: 'Empleado creado, pero no se pudo enviar el correo.',
+          // La contraseña temporal NO se expone por la API por seguridad.
+          // Solo se devuelve si el operador lo habilita explícitamente (entornos de prueba sin SMTP).
+          ...(process.env.ALLOW_TEMP_PASSWORD_RESPONSE === 'true' ? { tempPassword } : {})
+        })
   });
 });
 
@@ -1774,13 +1830,50 @@ app.delete('/api/employees/:id', authMiddleware, requirePermission('employees.de
     const employee = await col('employees').findOne({ id });
     if (!employee) return res.status(404).json({ error: 'Funcionario no encontrado.' });
 
+    const empEmail = employee.email;
+    const empName = employee.name;
+
+    // 1) Eliminar documentos del funcionario (registro + archivo físico en GridFS)
+    const empDocs = await col('documents').find({ employeeId: id }).toArray();
+    for (const doc of empDocs) {
+      await deleteDocAndPhysicalFile(doc.id, doc.filename);
+    }
+
+    // 2) Eliminar solicitudes de eliminación asociadas
+    await col('deletionRequests').deleteMany({ email: empEmail });
+    await col('deletionRequests').deleteMany({ employeeId: id });
+
+    // 3) Eliminar correos sugeridos al funcionario
+    await col('emailsInbox').deleteMany({ suggestedEmployeeId: id });
+
+    // 4) Eliminar tokens y registros de acceso vinculados
     await col('employees').deleteOne({ id });
-    await col('loginAttempts').deleteMany({ identifier: employee.email });
-    await col('activationTokens').deleteMany({ email: employee.email });
-    await col('passwordResetTokens').deleteMany({ email: employee.email });
-    await addAuditLog('Eliminar Empleado', `Se eliminó permanentemente al funcionario ${employee.name} C.C. ${id}. Sus documentos históricos se conservan.`, req.user.name, ip);
-    await addSecurityLog('Empleado Eliminado', `Funcionario ${employee.name} (${employee.email}) eliminado permanentemente por ${req.user.name}. Sus documentos se conservan.`, ip, employee.email);
-    res.json({ message: `Funcionario "${employee.name}" eliminado permanentemente. Sus documentos históricos se conservan en el archivo.` });
+    await col('loginAttempts').deleteMany({ identifier: empEmail });
+    await col('activationTokens').deleteMany({ email: empEmail });
+    await col('passwordResetTokens').deleteMany({ email: empEmail });
+
+    // 5) Anonimizar historial (auditLogs / securityLogs) para cumplir el derecho de
+    //    supresión (art. 8 lit. f, Ley 1581): se eliminan los datos personales que
+    //    identifican al titular, conservando el agregado no personal.
+    const scrub = '[Dato eliminado por supresión]';
+    await col('auditLogs').updateMany(
+      { $or: [{ actor: empEmail }, { actor: empName }, { actor: id }] },
+      { $set: { actor: scrub, actorDeleted: true } }
+    );
+    await col('securityLogs').updateMany(
+      { $or: [{ actor: empEmail }, { actor: empName }, { actor: id }, { user: empEmail }] },
+      { $set: { actor: scrub, user: scrub, actorDeleted: true } }
+    );
+    // Reemplazar referencias al nombre/C.C./correo dentro de las descripciones de los logs
+    const { replaceManyText } = require('./lib/logScrub');
+    if (typeof replaceManyText === 'function') {
+      await replaceManyText(col('auditLogs'), [empName, id, empEmail], scrub);
+      await replaceManyText(col('securityLogs'), [empName, id, empEmail], scrub);
+    }
+
+    await addAuditLog('Eliminar Empleado', `Se eliminó permanentemente al funcionario (C.C. ${id}) y todos sus datos personales, documentos y registros asociados conforme a la Ley 1581 de 2012 (derecho de supresión).`, req.user.name, ip);
+    await addSecurityLog('Empleado Eliminado', `Funcionario (C.C. ${id}) eliminado permanentemente con supresión total de sus datos personales por ${req.user.name}.`, ip);
+    res.json({ message: `Funcionario eliminado permanentemente. Sus datos personales, documentos y registros asociados fueron suprimidos conforme a la Ley 1581 de 2012.` });
   } catch (error) {
     console.error('[DELETE-EMPLOYEE] Error:', error);
     res.status(500).json({ error: 'Error al eliminar el funcionario.' });
@@ -2685,8 +2778,16 @@ async function scanWithScanner(customName) {
   const timestamp = Date.now();
   // Nombre base único: el sufijo aleatorio evita colisiones de archivos en la bandeja
   // (antes usaba los últimos 4 dígitos de Date.now(), que colisionaban cada 10 segundos).
-  let baseName = (customName || `Escaner_Folio_${timestamp}_${crypto.randomBytes(3).toString('hex')}`)
-    .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').substring(0, 200);
+  // Se aplica una ALLOWLIST estricta: solo letras, números, espacios, guion y punto,
+  // para impedir cualquier inyección hacia el filesystem o PowerShell (a pesar de que
+  // el nombre solo se usa como nombre de archivo, no se ejecuta).
+  let baseName = String((customName || `Escaner_Folio_${timestamp}_${crypto.randomBytes(3).toString('hex')}`))
+    .replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ _.-]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^[.\-]+|[.\-]+$/g, '')
+    .substring(0, 150);
+  if (!baseName || baseName === '') baseName = `Escaner_Folio_${timestamp}_${crypto.randomBytes(3).toString('hex')}`;
   let pdfBase = `${baseName}.pdf`;
   // Si el nombre ya existe en la bandeja (GridFS o disco), generar un sufijo único
   const trayNames = new Set((await getScannerFiles()).map(f => f.filename));
@@ -3439,7 +3540,19 @@ app.get('*', (req, res) => {
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({ error: 'Ruta no encontrada.' });
   }
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  const filePath = path.join(__dirname, 'public', 'index.html');
+  fs.readFile(filePath, 'utf8', (err, data) => {
+    if (err) return res.status(404).send('Not found');
+    const nonce = res.locals.cspNonce;
+    const injected = data.replace(/<script(?![^>]*\bsrc=)(?![^>]*\snonce=)[^>]*>/gi, (tag) => {
+      const close = tag.endsWith('/>') ? '/>' : '>';
+      const open = tag.slice(0, -close.length);
+      return `${open} nonce="${nonce}"${close}`;
+    });
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.send(injected);
+  });
 });
 
 // --- Verificador de salud de conexión: reconexión automática al morir el pool ---
@@ -3496,6 +3609,8 @@ server = app.listen(PORT, () => {
 connect()
   .then(() => {
     console.log('Base de datos remota conectada con colecciones separadas.');
+    runDocumentRetention();
+    setInterval(runDocumentRetention, 24 * 60 * 60 * 1000); // diario
   })
   .catch(error => {
     console.error('No se pudo conectar a la base de datos remota:', error.message);
@@ -3507,4 +3622,33 @@ if (process.env.OCR_WARMUP !== '0') {
   warmupOcr().then(ok => {
     console.log('[OCR] Modelo español precargado' + (ok ? ' (listo)' : ' (falló; se reintentará en el primer análisis)'));
   });
+}
+
+// --- RETENCIÓN DOCUMENTAL (Ley 594/2000 y política de retención) ---
+function retentionMs() {
+  const days = Number(process.env.DOC_RETENTION_DAYS);
+  const n = Number.isFinite(days) && days > 0 ? days : 3650; // 10 años por defecto
+  return n * 24 * 60 * 60 * 1000;
+}
+
+async function runDocumentRetention() {
+  try {
+    if (!isHealthy()) return;
+    const cutoff = new Date(Date.now() - retentionMs()).toISOString();
+    // Solo purga documentos archivados que hayan vencido su periodo de retención.
+    const stale = await col('documents').find({
+      status: { $in: ['Archivado', 'Eliminado'] },
+      registeredAt: { $lt: cutoff }
+    }).toArray();
+    let purged = 0;
+    for (const doc of stale) {
+      await deleteDocAndPhysicalFile(doc.id, doc.filename);
+      purged++;
+    }
+    if (purged > 0) {
+      console.log(`[RETENCIÓN] ${purged} documento(s) vencido(s) purgado(s) por retención documental.`);
+    }
+  } catch (err) {
+    console.warn('[RETENCIÓN] Error al ejecutar retención:', err.message);
+  }
 }

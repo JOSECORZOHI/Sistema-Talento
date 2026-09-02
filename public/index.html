@@ -28,6 +28,8 @@
   </style>
 </head>
 <body class="light-theme">
+  <a class="skip-link" href="#main-content">Saltar al contenido principal</a>
+
 
   <div class="login-page">
     <!-- Panel izquierdo: Marca Alcaldía -->
@@ -102,9 +104,15 @@
           <a href="/forgot-password.html" class="login-register-link">¿Olvidó su contraseña?</a>
         </div>
       </div>
+      <p class="login-privacy-links">
+        <a href="/privacy.html" target="_blank" rel="noopener">Política de Privacidad</a> ·
+        <a href="/terms.html" target="_blank" rel="noopener">Términos y Condiciones</a> ·
+        <a href="/accesibilidad.html" target="_blank" rel="noopener">Accesibilidad</a>
+      </p>
     </div>
   </div>
 
+  <script src="utils.js?v=3"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       // Verificar mensaje de éxito del redireccionamiento de registro
@@ -127,8 +135,17 @@
         return;
       }
 
+      maybeShowStorageConsentBanner();
+
       document.getElementById('form-login').addEventListener('submit', async (e) => {
         e.preventDefault();
+        if (!storageWritesAllowed()) {
+          maybeShowStorageConsentBanner();
+          const errorDiv = document.getElementById('login-error-msg');
+          errorDiv.textContent = 'Debe aceptar el aviso de privacidad y almacenamiento antes de iniciar sesión.';
+          errorDiv.style.display = 'block';
+          return;
+        }
         const username = document.getElementById('login-username').value.trim();
         const password = document.getElementById('login-password').value;
         const errorDiv = document.getElementById('login-error-msg');

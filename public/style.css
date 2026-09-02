@@ -11,7 +11,7 @@
   --bg-primary: hsl(215, 15%, 96%);
   --text-primary: hsl(215, 30%, 12%);
   --text-secondary: hsl(215, 14%, 40%);
-  --text-muted: hsl(215, 10%, 56%);
+  --text-muted: hsl(215, 12%, 44%);
   
   /* Valledupar Azul — Cielo y ríos */
   --primary: #1A5276;
@@ -2200,6 +2200,74 @@ textarea:focus {
   text-decoration: underline;
 }
 
+/* Enlace "saltar al contenido" (WCAG 2.4.1) — invisible hasta recibir foco */
+.skip-link {
+  position: absolute;
+  left: 8px;
+  top: -48px;
+  z-index: 100000;
+  background: var(--primary);
+  color: #fff;
+  padding: 10px 18px;
+  border-radius: 0 0 8px 8px;
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: top 0.2s ease;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+}
+.skip-link:focus {
+  top: 0;
+}
+
+.login-privacy-links {
+  text-align: center;
+  margin-top: 12px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.login-privacy-links a {
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+.login-privacy-links a:hover {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+.sidebar-privacy-links {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  text-align: center;
+  color: var(--text-muted);
+}
+.sidebar-privacy-links a {
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+.sidebar-privacy-links a:hover {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+.portal-privacy-links {
+  padding: 8px 16px;
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+  text-align: center;
+}
+.portal-privacy-links a {
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+.portal-privacy-links a:hover {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
 .login-success-msg {
   background-color: rgba(16, 185, 129, 0.1);
   color: #065f46;
@@ -2383,4 +2451,14 @@ textarea:focus {
   .fcp-brand-content h2 { font-size: 22px; }
   .fcp-features { display: none; }
   .fcp-form-panel { flex: none; padding: 30px; }
+}
+
+/* Respetar la preferencia de movimiento reducido (WCAG 2.3.3) */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

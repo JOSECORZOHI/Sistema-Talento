@@ -1,4 +1,4 @@
-/* exported sanitize, escOnclick, getToken, getUser, logout, checkAuth, apiFetch, apiFetchWithRetry, showToast, removeToast, showLoader, hideLoader, openModal, closeModal, getInitials, formatIssueDate, formatDate, populateDropdown, populateSelect, guardSubmit, initTheme, updateThemeUI, setupThemeToggle, evaluatePasswordStrength, bindPasswordStrengthMeter, openPdfViewer, closePdfViewer, setupDragDrop */
+/* exported sanitize, escOnclick, getToken, getUser, logout, checkAuth, apiFetch, apiFetchWithRetry, showToast, removeToast, showLoader, hideLoader, openModal, closeModal, attachModalBackdropClose, getInitials, formatIssueDate, formatDate, populateDropdown, populateSelect, guardSubmit, initTheme, updateThemeUI, setupThemeToggle, evaluatePasswordStrength, bindPasswordStrengthMeter, openPdfViewer, closePdfViewer, setupDragDrop, getStorageConsent, grantStorageConsent, declineStorageConsent, maybeShowStorageConsentBanner, storageWritesAllowed */
 // ============================================================
 //  Funciones compartidas — utils.js
 //  Usado por admin.html (app.js) y funcionario.html (funcionario.js)
@@ -10,6 +10,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (svg.hasAttribute('role') || svg.getAttribute('aria-hidden') === 'true') return;
     svg.setAttribute('aria-hidden', 'true');
     svg.setAttribute('focusable', 'false');
+  });
+  // Cerrar modales al hacer clic en el fondo (backdrop) — mejora de accesibilidad.
+  document.querySelectorAll('.modal-backdrop').forEach(modal => {
+    attachModalBackdropClose(modal);
   });
 });
 
@@ -37,8 +41,70 @@ function escOnclick(str) {
     .replace(/>/g, '&gt;');
 }
 
+// --- CONSENTIMIENTO DE ALMACENAMIENTO (Lucha 1581 / GDPR) ---
+// Este sitio guarda datos de sesión y preferencias en el almacenamiento local
+// del navegador. Se solicita autorización antes de escribir dichos datos.
+function getStorageConsent() {
+  try { return localStorage.getItem('th_data_consent') === 'accepted'; }
+  catch { return false; }
+}
+
+function grantStorageConsent() {
+  try { localStorage.setItem('th_data_consent', 'accepted'); } catch (e) { /* noop */ }
+  hideStorageConsentBanner();
+}
+
+function declineStorageConsent() {
+  hideStorageConsentBanner();
+  try { localStorage.removeItem('th_data_consent'); } catch (e) { /* noop */ }
+}
+
+function hideStorageConsentBanner() {
+  const banner = document.getElementById('storage-consent-banner');
+  if (banner) banner.remove();
+}
+
+function maybeShowStorageConsentBanner() {
+  if (getStorageConsent()) return;
+  if (document.getElementById('storage-consent-banner')) return;
+  const banner = document.createElement('div');
+  banner.id = 'storage-consent-banner';
+  banner.setAttribute('role', 'dialog');
+  banner.setAttribute('aria-label', 'Aviso de privacidad y almacenamiento en el navegador');
+  Object.assign(banner.style, {
+    position: 'fixed', left: '16px', right: '16px', bottom: '16px', zIndex: '999999',
+    background: '#fff', color: '#333', border: '1px solid #d6dde5', borderRadius: '12px',
+    boxShadow: '0 10px 40px rgba(0,0,0,0.2)', padding: '18px 22px',
+    fontFamily: 'var(--font-body)', maxWidth: '720px', margin: '0 auto'
+  });
+  banner.innerHTML = `
+    <div style="display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap;">
+      <div style="flex:1;min-width:220px;">
+        <strong style="font-size:14px;color:#1A5276;">Aviso de privacidad y almacenamiento</strong>
+        <p style="margin:6px 0 0;font-size:12.5px;line-height:1.5;color:#555;">
+          Este sistema guarda sus datos de sesión y preferencias en el almacenamiento local de su
+          navegador. Sus datos personales se tratan conforme a la
+          <a href="/privacy.html" target="_blank" rel="noopener" style="color:#1A5276;">Política de Privacidad</a>
+          y la Ley 1581 de 2012.
+        </p>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <button id="storage-consent-accept" class="btn btn-primary" style="padding:8px 18px;">Aceptar</button>
+        <button id="storage-consent-decline" class="btn btn-secondary" style="padding:8px 18px;">Rechazar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(banner);
+  document.getElementById('storage-consent-accept').addEventListener('click', grantStorageConsent);
+  document.getElementById('storage-consent-decline').addEventListener('click', declineStorageConsent);
+}
+
+// helper: devuelve true si se puede escribir en almacenamiento local
+function storageWritesAllowed() {
+  return getStorageConsent();
+}
+
 // --- AUTENTICACIÓN ---
-function getToken() { return localStorage.getItem('th_token'); }
+function getToken() { try { return localStorage.getItem('th_token'); } catch { return null; } }
 function getUser() { try { return JSON.parse(localStorage.getItem('th_user')); } catch { return null; } }
 
 function logout() {
@@ -103,6 +169,9 @@ function showToast(message, type = 'success') {
   const toast = document.createElement('div');
   toast.className = `toast-message toast-${type}`;
   toast.innerHTML = `<span>${sanitize(message)}</span><button class="toast-close">&times;</button>`;
+  // Accesibilidad WCAG 2.1: los toasts se anuncian a lectores de pantalla.
+  toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+  toast.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
 
   Object.assign(toast.style, {
     position: 'fixed', bottom: '24px', right: '24px',
@@ -173,22 +242,102 @@ function hideLoader() {
   if (loader) loader.style.display = 'none';
 }
 
-// --- MODALES ---
+// --- MODALES (con gestión de foco WCAG 2.1: focus trap, Escape y retorno de foco) ---
+function getFocusableElements(container) {
+  return Array.from(container.querySelectorAll(
+    'a[href], button:not([disabled]), textarea, input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"]), iframe'
+  )).filter(el => el.offsetParent !== null || el === document.activeElement);
+}
+
+function focusFirstInModal(modal) {
+  const items = getFocusableElements(modal);
+  if (items.length > 0) items[0].focus();
+  else modal.setAttribute('tabindex', '-1'), modal.focus();
+}
+
+function releaseModalFocus(modal) {
+  const handler = modal._escapeHandler;
+  if (handler) {
+    document.removeEventListener('keydown', handler, true);
+    modal._escapeHandler = null;
+  }
+  modal.dataset.trapReady = '0';
+}
+
 function openModal(modal) {
   if (typeof modal === 'string') modal = document.getElementById(modal);
-  if (modal) modal.classList.add('show');
+  if (!modal) return;
+  if (modal.dataset.modalOpen === '1') return;
+  modal.dataset.modalOpen = '1';
+  modal.classList.add('show');
+
+  // Recordar el elemento que tenía el foco para devolverlo al cerrar.
+  if (!modal._lastFocused) {
+    modal._lastFocused = document.activeElement || document.body;
+  }
+
+  if (modal.dataset.trapReady !== '1') {
+    modal.dataset.trapReady = '1';
+    if (!modal._escapeHandler) {
+      modal._escapeHandler = (e) => {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          const cancelBtn = modal.querySelector('.btn-close, .btn-close-modal, [data-close]');
+          if (cancelBtn) {
+            cancelBtn.click();
+          } else {
+            closeModal(modal);
+          }
+        }
+        // Focus trap: mantiene el foco dentro del modal (Tab/Shift+Tab)
+        if (e.key === 'Tab') {
+          const items = getFocusableElements(modal);
+          if (items.length === 0) return;
+          const first = items[0];
+          const last = items[items.length - 1];
+          if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      };
+      document.addEventListener('keydown', modal._escapeHandler, true);
+    }
+  }
+
+  requestAnimationFrame(() => focusFirstInModal(modal));
 }
 
 function closeModal(modal) {
   if (typeof modal === 'string') modal = document.getElementById(modal);
   if (!modal) return;
   modal.classList.remove('show');
+  modal.dataset.modalOpen = '0';
   if (modal.id === 'modal-view-pdf') {
     const iframe = modal.querySelector('iframe');
     if (iframe) { iframe.src = ''; iframe.style.display = 'block'; }
     const downloadMsg = iframe?.parentElement?.querySelector('.download-fallback-msg');
     if (downloadMsg) downloadMsg.style.display = 'none';
   }
+  releaseModalFocus(modal);
+  // Devolver el foco al elemento que abrió el modal (cuando el modal sigue en el DOM).
+  if (document.body.contains(modal) && modal._lastFocused) {
+    const prev = modal._lastFocused;
+    modal._lastFocused = null;
+    if (document.body.contains(prev) && prev.focus) prev.focus();
+  }
+}
+
+// Cierra el modal si el usuario hace clic en el fondo oscuro (backdrop).
+function attachModalBackdropClose(modalEl) {
+  const modal = typeof modalEl === 'string' ? document.getElementById(modalEl) : modalEl;
+  if (!modal) return;
+  modal.addEventListener('click', function onClick(ev) {
+    if (ev.target === modal) closeModal(modal);
+  });
 }
 
 // --- INICIALES ---

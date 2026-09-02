@@ -404,12 +404,17 @@ guardSubmit(document.getElementById('form-add-employee'), async (e) => {
     showToast('El correo y la dependencia son obligatorios.', 'error');
     return;
   }
+  const consent = document.getElementById('emp-consent') && document.getElementById('emp-consent').checked;
+  if (!consent) {
+    showToast('Debe confirmar que el titular autoriza el tratamiento de sus datos personales.', 'error');
+    return;
+  }
 
   try {
     const response = await apiFetch('/api/employees', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, name, department, position, email })
+      body: JSON.stringify({ id, name, department, position, email, consent: true })
     });
 
     const data = await response.json();

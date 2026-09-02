@@ -544,7 +544,7 @@ window.archiveDocument = async function(docId) {
 
 // Eliminar empleado (borrado permanente de la BD)
 window.deleteEmployee = async function(empId, empName) {
-  if (!confirm(`¿Está seguro de eliminar PERMANENTEMENTE al funcionario "${empName}"? Esta acción no se puede deshacer.`)) return;
+  if (!confirm(`¿Está seguro de eliminar PERMANENTEMENTE al funcionario "${empName}"? Esta acción no se puede deshacer y suprimirá todos sus datos personales, documentos y registros asociados (Ley 1581 de 2012).`)) return;
 
   try {
     const response = await apiFetch(`/api/employees/${empId}`, { method: 'DELETE' });
@@ -553,7 +553,7 @@ window.deleteEmployee = async function(empId, empName) {
       showToast(data.error || 'No se pudo eliminar el funcionario.', 'error');
       return;
     }
-    showToast(`Funcionario "${empName}" eliminado permanentemente.`, 'info');
+    showToast(`Funcionario "${empName}" eliminado permanentemente. Sus datos personales fueron suprimidos.`, 'info');
     await fetchEmployees();
     await fetchStats();
     if (appState.selectedEmployeeId === empId) {
