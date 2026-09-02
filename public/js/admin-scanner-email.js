@@ -97,13 +97,14 @@ function renderGmailStatusBanner(status) {
   banner.style.cssText = 'background:var(--background);border:1px solid var(--border-color);border-radius:8px;padding:16px;margin-bottom:12px;font-size:13px;line-height:1.6;';
 
   if (!status.configured) {
+    const redirectUri = window.location.origin + '/api/gmail/oauth2callback';
     banner.innerHTML = `
       <strong style="color:var(--warning);">⚠ Gmail no configurado</strong><br>
       Para sincronizar correos con adjuntos PDF, defina las siguientes variables de entorno antes de iniciar el servidor:<br>
       <code style="display:block;background:var(--border-color);padding:8px;border-radius:4px;margin-top:8px;font-size:12px;">
         GMAIL_CLIENT_ID=&lt;tu_client_id&gt;<br>
         GMAIL_CLIENT_SECRET=&lt;tu_client_secret&gt;<br>
-        GMAIL_REDIRECT_URI=http://localhost:3000/api/gmail/oauth2callback<br>
+        GMAIL_REDIRECT_URI=${sanitize(redirectUri)}<br>
         GMAIL_REFRESH_TOKEN=&lt;obtenido_desde /api/gmail/authorize&gt;
       </code>`;
   } else {
