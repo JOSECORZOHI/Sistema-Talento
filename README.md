@@ -29,10 +29,9 @@ La configuración se lee de `.env` (ver `.env.example`). `JWT_SECRET` es obligat
 ## Estructura de datos y archivos
 
 - Base de datos remota en MongoDB (`DATABASE_URL`): usuarios, funcionarios, catálogos, metadatos de documentos y auditoría.
+- Los **archivos** (PDFs cargados, adjuntos de correo y documentos escaneados al registrarse) se almacenan en **GridFS** dentro de MongoDB (`documentos.files`/`documentos.chunks`).
 - `database.json`: solo datos de referencia para la primera carga en la base remota.
-- `storage/documentos/`: PDFs cargados y ya clasificados.
-- `storage/gmail_adjuntos/`: PDFs descargados desde Gmail pendientes de registrar.
-- `bandeja_escaner/`: PDFs pendientes de clasificar desde el escáner.
+- `bandeja_escaner/`: carpeta local donde la multifunción (EPSON Scan 2 / WIA) deja los PDFs escaneados pendientes de clasificar. Es la única carpeta local del sistema y solo aplica en una máquina Windows con el escáner conectado.
 - `public/`: interfaz web.
 
 El sistema incluye catálogos y usuarios de ejemplo para facilitar la capacitación inicial. Sustitúyalos por los datos institucionales antes del despliegue.
@@ -62,11 +61,11 @@ $env:GMAIL_REDIRECT_URI="http://localhost:3000/api/gmail/oauth2callback"
 $env:GMAIL_REFRESH_TOKEN="..."
 ```
 
-Abra `/api/gmail/authorize` para autorizar la cuenta. Después, use la opción de sincronización en la bandeja de correo para descargar PDFs adjuntos a `storage/gmail_adjuntos/` y registrarlos en el sistema. Si el remitente coincide con el correo de un funcionario, se sugiere automáticamente al registrar.
+Abra `/api/gmail/authorize` para autorizar la cuenta. Después, use la opción de sincronización en la bandeja de correo para descargar PDFs adjuntos. Los adjuntos se guardan en GridFS y quedan pendientes de registrar. Si el remitente coincide con el correo de un funcionario, se sugiere automáticamente al registrar.
 
 ## Operación y mantenimiento
 
-- Realice copias de seguridad periódicas de la base MongoDB y `storage/documentos/`.
+- Realice copias de seguridad periódicas de la base MongoDB (incluye los archivos en GridFS).
   - `npm run backup` crea un `mongodump` comprimido (colecciones + GridFS) en `backups/`
     usando `DATABASE_URL` del `.env` y conserva los 10 más recientes (requiere
     `mongodb-database-tools`, es decir, el comando `mongodump`, en el PATH).

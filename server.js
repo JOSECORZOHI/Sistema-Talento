@@ -60,11 +60,15 @@ const VALID_DOC_STATUSES = ['Pendiente', 'Aprobado', 'Activo', 'Archivado', 'Rec
 const MAX_GMAIL_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const MAX_REGISTER_BYTES = 50 * 1024 * 1024;
-const DOCUMENTS_DIR = path.join(__dirname, 'storage', 'documentos');
+// La persistencia de archivos del sistema vive en GridFS (colección 'documentos'
+// de MongoDB). La única carpeta local intencional es la del escáner, que opera en
+// una máquina Windows con la multifunción conectada (WIA/COM). Las antiguas
+// bandejas locales 'storage/documentos' y 'storage/gmail_adjuntos' se eliminaron:
+// eran de solo lectura, no aportaban valor en producción (filesystem efímero en
+// Railway) y nada las alimentaba por la web; todo el contenido va a GridFS.
 const SCANNER_DIR = path.join(__dirname, 'bandeja_escaner');
-const GMAIL_INBOX_DIR = path.join(__dirname, 'storage', 'gmail_adjuntos');
 const ALLOWED_EMAIL_DOMAIN = (process.env.ALLOWED_EMAIL_DOMAIN || '').toLowerCase();
-[DOCUMENTS_DIR, SCANNER_DIR, GMAIL_INBOX_DIR].forEach(directory => {
+[SCANNER_DIR].forEach(directory => {
   if (!fs.existsSync(directory)) fs.mkdirSync(directory, { recursive: true });
 });
 
@@ -719,22 +723,6 @@ async function getUnregisteredFiles(allDocs = null) {
       }
     } catch (e) { console.warn('Error listando archivos GridFS no registrados:', e.message); }
 
-    try {
-      if (fs.existsSync(DOCUMENTS_DIR)) {
-        const diskFiles = fs.readdirSync(DOCUMENTS_DIR).filter(f => isAllowedFile(f));
-        for (const fn of diskFiles) {
-          if (regSet.has(fn) || result.some(r => r.filename === fn)) continue;
-          let size = 0, created = new Date(0);
-          try {
-            const st = fs.statSync(path.join(DOCUMENTS_DIR, fn));
-            size = st.size;
-            created = st.birthtime || new Date(0);
-          } catch { /* ignorar stat fallido */ }
-          result.push({ filename: fn, fileSize: size, createdAt: created });
-        }
-      }
-    } catch (e) { console.warn('Error listando archivos locales no registrados:', e.message); }
-
     return result;
   } catch (e) { console.warn('Error en getUnregisteredFiles:', e.message); return []; }
 }
@@ -1122,9 +1110,9 @@ async function registerDocumentCore({ req, filename, employeeId, documentTypeId,
       stored = true;
       fileSize = fileBuffer.length;
     } else if (mover) {
-      const sourcePath = getSafeFilePath(sourceDir, filename);
-      if (!sourcePath) return { error: `Ruta de origen no válida para '${filename}'.`, status: 400 };
-
+      // 'mover' se usa para el escáner (bandeja local) y para adjuntos de correo.
+      // La fuente autoritativa es GridFS; el disco solo se consulta para la bandeja
+      // del escáner (archivo físico aún no cargado a GridFS).
       const gridFile = await readFileStream(filename).catch(() => null);
       if (gridFile) {
         const chunks = [];
@@ -1142,7 +1130,10 @@ async function registerDocumentCore({ req, filename, employeeId, documentTypeId,
         stored = true;
         fileSize = buf.length;
         deferredOriginalDelete = { type: 'gridfs', name: filename };
-      } else {
+      } else if (sourceDir === SCANNER_DIR) {
+        // Escáner: el PDF físico vive en la bandeja local, se copia a GridFS al registrar.
+        const sourcePath = getSafeFilePath(sourceDir, filename);
+        if (!sourcePath) return { error: `Ruta de origen no válida para '${filename}'.`, status: 400 };
         let buf;
         try {
           const stat = fs.statSync(sourcePath);
@@ -1164,23 +1155,6 @@ async function registerDocumentCore({ req, filename, employeeId, documentTypeId,
         targetFilename = filename;
         fileSize = gridFile.file.length || 0;
         try { await markFileRegistered(filename); } catch (e) { console.warn('Error marcando archivo como registrado:', e.message); }
-      } else {
-        const filePath = getSafeFilePath(sourceDir || DOCUMENTS_DIR, filename);
-        if (filePath && fs.existsSync(filePath)) {
-          let fileSizeCheck = 0;
-          try { fileSizeCheck = fs.statSync(filePath).size; }
-          catch { return { error: `El archivo '${filename}' ya no está disponible.`, status: 404 }; }
-          if (fileSizeCheck > MAX_REGISTER_BYTES) {
-            return { error: `El archivo '${filename}' supera el tamaño máximo permitido (${Math.round(MAX_REGISTER_BYTES / 1024 / 1024)} MB).`, status: 400 };
-          }
-          targetFilename = filename;
-          let buf;
-          try { buf = fs.readFileSync(filePath); }
-          catch { return { error: `El archivo '${filename}' ya no está disponible.`, status: 404 }; }
-          await storeFileBuffer(targetFilename, buf, { source: 'local', registered: true });
-          stored = true;
-          fileSize = buf.length;
-        }
       }
     }
 
@@ -1234,7 +1208,7 @@ async function registerEmailAttachmentCore({ req, email, emailId, filename, empl
     description: description || `Ingresado desde correo de ${email.senderName} (${email.senderEmail}) - Asunto: ${email.subject}.`,
     issueDate, expiryDate,
     status: status || 'Pendiente',
-    sourceDir: GMAIL_INBOX_DIR, mover: true,
+    mover: true,
     auditAction,
     auditMessageTemplate,
     extraDocFields: { sourceEmailId: emailId, sourceSenderEmail: email.senderEmail || email.sender, ...(extraDocFields || {}) },
@@ -1267,8 +1241,6 @@ async function deleteDocAndPhysicalFile(id, filename) {
         return;
       }
       await deleteFileByName(filename);
-      const filePath = getSafeFilePath(DOCUMENTS_DIR, filename);
-      if (filePath && fs.existsSync(filePath)) fs.unlinkSync(filePath);
     } else {
       console.warn(`[DEL] El archivo '${filename}' lo comparten ${sharingDocs} documento(s); no se elimina físicamente.`);
     }
@@ -2014,7 +1986,7 @@ app.post('/api/documents/register-local', authMiddleware, requirePermission('doc
   }
   const result = await withRegisterLock(filename, () => registerDocumentCore({
     req, filename, employeeId, documentTypeId, categoryId, description, issueDate, expiryDate, status,
-    sourceDir: DOCUMENTS_DIR, mover: false,
+    mover: false,
     auditAction: 'Registro de Documento Local',
     auditMessageTemplate: (emp, type, fn) => `Se vinculó el archivo local '${fn}' a ${emp} como '${type}'.`,
     extraDocFields: { uploadedBy: req.user.name || 'Sistema' },
@@ -2281,11 +2253,10 @@ app.post('/api/documents/analyze', authMiddleware, requirePermission('documents.
   let buf;
   try { buf = await readBufferFromGridFs(); } catch { return res.status(413).json({ error: 'El archivo supera el tamaño máximo para análisis.' }); }
 
-  if (!buf) {
-    let dir = DOCUMENTS_DIR;
-    if (folder === 'scanner') dir = SCANNER_DIR;
-    if (folder === 'gmail' || folder === 'email') dir = GMAIL_INBOX_DIR;
-    const filePath = getSafeFilePath(dir, targetFilename);
+  // Fallback a disco SOLO para la bandeja del escáner (archivo físico aún no en GridFS).
+  // Los documentos cargados y los adjuntos de correo ya viven en GridFS.
+  if (!buf && folder === 'scanner') {
+    const filePath = getSafeFilePath(SCANNER_DIR, targetFilename);
     if (!filePath || !fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'El archivo no está disponible en el servidor.' });
     }
@@ -2320,10 +2291,10 @@ app.get('/api/document-file/:filename', fileAuthMiddleware, async (req, res) => 
   const filename = req.params.filename;
   console.log(`[FILE-SERVE] Solicitud: user=${req.user.email} filename="${filename}" folder=${req.query.folder || '(none)'}`);
   const folder = req.query.folder;
-  let targetDir = DOCUMENTS_DIR;
-  if (folder === 'scanner') targetDir = SCANNER_DIR;
-  if (folder === 'gmail' || folder === 'email') targetDir = GMAIL_INBOX_DIR;
-  if (!getSafeFilePath(targetDir, filename)) {
+  // La fuente autoritativa de archivos es GridFS. El único archivo que puede
+  // vivir en disco es el de la bandeja del escáner (aún no cargado a GridFS).
+  const isScanner = folder === 'scanner';
+  if (!getSafeFilePath(isScanner ? SCANNER_DIR : process.cwd(), filename)) {
     return res.status(400).json({ error: 'Nombre de archivo inválido.' });
   }
 
@@ -2416,19 +2387,24 @@ app.get('/api/document-file/:filename', fileAuthMiddleware, async (req, res) => 
     console.error(`[FILE-SERVE] Error leyendo '${filename}' de GridFS:`, e.message);
   }
 
-  try {
-    const filePath = path.join(targetDir, filename);
-    if (fs.existsSync(filePath)) {
-      const mimeType = getMimeType(filename);
-      res.setHeader('Content-Type', mimeType);
-      res.setHeader('Content-Disposition', buildContentDisposition(mimeType, filename));
-      res.sendFile(filePath);
-    } else {
-      res.status(404).json({ error: 'Archivo no encontrado en el servidor.' });
+  // Fallback a disco SOLO para la bandeja del escáner (archivo físico aún no en GridFS).
+  if (isScanner) {
+    try {
+      const filePath = getSafeFilePath(SCANNER_DIR, filename);
+      if (filePath && fs.existsSync(filePath)) {
+        const mimeType = getMimeType(filename);
+        res.setHeader('Content-Type', mimeType);
+        res.setHeader('Content-Disposition', buildContentDisposition(mimeType, filename));
+        res.sendFile(filePath);
+      } else {
+        res.status(404).json({ error: 'Archivo no encontrado en el servidor.' });
+      }
+    } catch (e) {
+      console.error(`[FILE-SERVE] Error sirviendo archivo de escáner '${filename}':`, e.message);
+      if (!res.headersSent) res.status(500).json({ error: 'Error al servir archivo.' });
     }
-  } catch (e) {
-    console.error(`[FILE-SERVE] Error sirviendo archivo local '${filename}':`, e.message);
-    if (!res.headersSent) res.status(500).json({ error: 'Error al servir archivo.' });
+  } else {
+    res.status(404).json({ error: 'Archivo no encontrado en el servidor.' });
   }
 });
 
