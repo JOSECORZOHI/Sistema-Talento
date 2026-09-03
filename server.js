@@ -1230,6 +1230,10 @@ async function registerDocumentCore({ req, filename, employeeId, documentTypeId,
         } catch { return { error: `El archivo '${filename}' ya no está disponible en la bandeja.`, status: 404 }; }
         try { buf = fs.readFileSync(sourcePath); }
         catch { return { error: `El archivo '${filename}' ya no está disponible en la bandeja.`, status: 404 }; }
+        // Validar magic bytes del PDF/archivo de bandeja antes de ingerirlo a GridFS,
+        // para no registrar un archivo suplantado/corrupto que no coincide con su extensión.
+        const trayContentError = validateFileContent(filename, buf);
+        if (trayContentError) return { error: trayContentError, status: 400 };
         targetFilename = getUniqueFilename(filename);
         await storeFileBuffer(targetFilename, buf, { source: gridFSSource || sourceDir || 'upload', registered: true, sensitive });
         stored = true;
@@ -1981,7 +1985,7 @@ app.put('/api/employees/profile', authMiddleware, async (req, res) => {
     if (!employee) return res.status(404).json({ error: 'Funcionario no encontrado.' });
 
     await col('employees').updateOne({ _id: employee._id }, { $set: { name: trimmed } });
-    await addAuditLog('Actualizar Nombre', `El funcionario ${employee.name} actualizó su nombre a "${trimmed}".`, employee.email, req.ip);
+    await addAuditLog('Actualizar Nombre', `El funcionario ${employee.name} actualizó su nombre a "${trimmed}".`, employee.email, getClientIp(req));
     res.json({ message: 'Nombre actualizado exitosamente.', name: trimmed });
   } catch (error) {
     console.error('[PROFILE] Error:', error);
@@ -2912,7 +2916,9 @@ async function scanWithScanner(customName) {
       doc.end();
     });
     try { fs.unlinkSync(tempPath); } catch (e) { console.warn('Error limpiando tempPath:', e.message); }
-    await storeFileBuffer(pdfBase, pdfBuffer, { source: 'scanner', registered: false });
+    // Se cifra en reposo desde la ingesta: el contenido del escáner puede ser
+    // sensible (salud/identificación) y aún no se conoce su clasificación aquí.
+    await storeFileBuffer(pdfBase, pdfBuffer, { source: 'scanner', registered: false, sensitive: true });
     return pdfBase;
   } catch (e) {
     console.warn('Error en convertImageToPdf:', e.message);
@@ -3228,7 +3234,9 @@ async function performGmailSync(gmail, opts = {}) {
           continue;
         }
         const filename = getUniqueFilename(b.filename);
-        await storeFileBuffer(filename, b.content, { source: 'gmail', registered: false });
+        // Adjuntos de correo se cifran en reposo desde la ingesta: pueden contener
+        // datos sensibles y aún no se ha clasificado la categoría del documento.
+        await storeFileBuffer(filename, b.content, { source: 'gmail', registered: false, sensitive: true });
         attachments.push({ filename, sizeBytes: b.content.length, registered: false, source: 'gmail' });
         storedAttachmentFilenames.add(filename);
         attachmentsDownloaded++;
@@ -3708,8 +3716,9 @@ async function runDocumentRetention() {
     if (!isHealthy()) return;
     const cutoff = new Date(Date.now() - retentionMs()).toISOString();
     // Solo purga documentos archivados que hayan vencido su periodo de retención.
+    // (El estado 'Eliminado' no se genera en el sistema; solo se archiva = 'Archivado'.)
     const stale = await col('documents').find({
-      status: { $in: ['Archivado', 'Eliminado'] },
+      status: 'Archivado',
       registeredAt: { $lt: cutoff }
     }).toArray();
     let purged = 0;
