@@ -86,7 +86,14 @@ El sistema incorpora medidas de protección de datos personales, seguridad y acc
 - **Aviso de privacidad y almacenamiento**: las páginas de `privacy.html`, `terms.html` y
   `accesibilidad.html` están enlazadas desde el ingreso, el panel de administración y el portal
   del funcionario. Antes de guardar datos en `localStorage`, se solicita el consentimiento del
-  usuario mediante un banner.
+  usuario mediante un banner. El aviso de privacidad cumple el art. 9 de la Ley 1581/2012
+  (responsable, finalidad, tipos de datos, carácter facultativo de los datos sensibles,
+  derechos del titular y canal de contacto).
+- **Cifrado en reposo de datos sensibles**: los documentos que contienen datos sensibles (salud y
+  seguridad social: tipos `incapacidad` y categorías `seguridad-social`, `novedades`,
+  `identificacion`) se cifran transparentemente con **AES-256-GCM** antes de guardarse en GridFS y
+  se descifran al leerse. La clave se define en `DOC_ENC_KEY` (base64 de 32 bytes); si no se
+  configura, se deriva de `JWT_SECRET` (fallback menos robusto, ver `.env.example`).
 - **Retención documental**: los documentos archivados vencen y se purgan automáticamente según
   `DOC_RETENTION_DAYS` (por defecto 3650 días) al arrancar y diariamente.
 - **Seguridad (OWASP)**: helmet con Content-Security-Policy por *nonce* (sin `'unsafe-inline'`
@@ -101,7 +108,10 @@ El sistema incorpora medidas de protección de datos personales, seguridad y acc
 
 Estas tareas no son de código y quedan a cargo del administrador de la plataforma:
 
-1. Rotar periódicamente `JWT_SECRET`, `SMTP_PASS` y `GMAIL_CLIENT_SECRET`.
+1. Rotar periódicamente `JWT_SECRET`, `SMTP_PASS`, `GMAIL_CLIENT_SECRET` y `DOC_ENC_KEY`.
+   Para `DOC_ENC_KEY` (cifrado en reposo): rote durante una ventana de mantenimiento y
+   prevea descifrar/recifrar los documentos existentes con la nueva clave, no abandone la
+   anterior hasta haber migrado todos los archivos.
 2. Regenerar el `GMAIL_REFRESH_TOKEN` revocándolo en Google Cloud y reautorizando en
    `/api/gmail/authorize`.
 3. En Railway, fijar estas variables en el panel **Variables** (no en `.env`).

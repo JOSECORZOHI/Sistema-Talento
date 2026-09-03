@@ -17,7 +17,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const PDFDocument = require('pdfkit');
 const nodemailer = require('nodemailer');
-const { connect, col, isHealthy, reconnect, closeDb, storeFileBuffer, readFileStream, deleteFileByName, listFilesBySource, markFileRegistered, generateTempPassword } = require('./db');
+const { connect, col, isHealthy, reconnect, closeDb, storeFileBuffer, readFileStream, readFileBuffer, deleteFileByName, listFilesBySource, markFileRegistered, generateTempPassword } = require('./db');
 const { analyzeFile, warmupOcr } = require('./documentAnalyzer.js');
 const { parsePagination, wantsPagination, paginateQuery } = require('./lib/pagination');
 const {
@@ -921,6 +921,17 @@ async function validateDocumentReferences(documentTypeId, categoryId) {
   return { documentType, category };
 }
 
+// Tipos/categorías que contienen DATOS SENSIBLES (salud, seguridad social,
+// identificación) según la Ley 1581/2012 (art. 5). Estos documentos se cifran
+// en reposo (AES-256-GCM) para protegerlos durante el almacenamiento.
+const SENSITIVE_TYPE_IDS = ['incapacidad'];
+const SENSITIVE_CATEGORY_IDS = ['seguridad-social', 'novedades', 'identificacion'];
+
+function isSensitiveDocument(documentTypeId, categoryId) {
+  return SENSITIVE_TYPE_IDS.includes(documentTypeId || '') ||
+    SENSITIVE_CATEGORY_IDS.includes(categoryId || '');
+}
+
 /**
  * Genera un nombre único para evitar colisiones en GridFS (timestamp + aleatorio),
  * conservando la extensión original.
@@ -1142,11 +1153,12 @@ async function registerDocumentCore({ req, filename, employeeId, documentTypeId,
   let fileSize = 0;
   let stored = false;
   let deferredOriginalDelete = null;
+  const sensitive = isSensitiveDocument(documentTypeId, categoryId);
 
   try {
     if (fileBuffer) {
       targetFilename = getUniqueFilename(filename);
-      await storeFileBuffer(targetFilename, fileBuffer, { source: gridFSSource || 'upload', registered: true });
+      await storeFileBuffer(targetFilename, fileBuffer, { source: gridFSSource || 'upload', registered: true, sensitive });
       stored = true;
       fileSize = fileBuffer.length;
     } else if (mover) {
@@ -1166,7 +1178,7 @@ async function registerDocumentCore({ req, filename, employeeId, documentTypeId,
         }
         const buf = Buffer.concat(chunks);
         targetFilename = getUniqueFilename(filename);
-        await storeFileBuffer(targetFilename, buf, { source: gridFSSource || sourceDir || 'upload', registered: true });
+        await storeFileBuffer(targetFilename, buf, { source: gridFSSource || sourceDir || 'upload', registered: true, sensitive });
         stored = true;
         fileSize = buf.length;
         deferredOriginalDelete = { type: 'gridfs', name: filename };
@@ -1184,7 +1196,7 @@ async function registerDocumentCore({ req, filename, employeeId, documentTypeId,
         try { buf = fs.readFileSync(sourcePath); }
         catch { return { error: `El archivo '${filename}' ya no está disponible en la bandeja.`, status: 404 }; }
         targetFilename = getUniqueFilename(filename);
-        await storeFileBuffer(targetFilename, buf, { source: gridFSSource || sourceDir || 'upload', registered: true });
+        await storeFileBuffer(targetFilename, buf, { source: gridFSSource || sourceDir || 'upload', registered: true, sensitive });
         stored = true;
         fileSize = buf.length;
         deferredOriginalDelete = { type: 'disk', path: sourcePath };
@@ -1193,7 +1205,21 @@ async function registerDocumentCore({ req, filename, employeeId, documentTypeId,
       const gridFile = await readFileStream(filename).catch(() => null);
       if (gridFile) {
         targetFilename = filename;
-        fileSize = gridFile.file.length || 0;
+        if (sensitive) {
+          // Re-cifrar si el archivo existente aún no estaba cifrado (p.ej. un escaneo
+          // que se clasificó como sensible después de generarse en la bandeja).
+          const storedMeta = gridFile.file && gridFile.file.metadata;
+          if (!(storedMeta && storedMeta.encrypted === true)) {
+            const got = await readFileBuffer(filename).catch(() => null);
+            if (got && got.buffer) {
+              const buf = got.buffer;
+              await deleteFileByName(filename);
+              await storeFileBuffer(filename, buf, { source: gridFSSource || sourceDir || 'upload', registered: true, sensitive });
+              fileSize = buf.length;
+            }
+          }
+        }
+        if (!fileSize) fileSize = gridFile.file.length || 0;
         try { await markFileRegistered(filename); } catch (e) { console.warn('Error marcando archivo como registrado:', e.message); }
       }
     }

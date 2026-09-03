@@ -2,6 +2,8 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { MongoClient, GridFSBucket } = require('mongodb');
+const { Readable } = require('stream');
+const { encryptBuffer, decryptBuffer } = require('./lib/crypto');
 const bcrypt = require('bcryptjs');
 
 const MAX_ADMIN_USERS = 1;
@@ -392,12 +394,47 @@ function getBucket() {
 
 function storeFileBuffer(filename, buffer, metadata = {}) {
   return new Promise((resolve, reject) => {
-    const us = getBucket().openUploadStream(filename, { metadata });
+    let toStore = buffer;
+    const meta = { ...metadata };
+    // Cifrado en reposo de documentos sensibles (datos de salud / seguridad social).
+    if (metadata.sensitive === true && !metadata.encrypted) {
+      try {
+        toStore = encryptBuffer(buffer);
+        meta.encrypted = true;
+      } catch (err) {
+        return reject(new Error('No se pudo cifrar el documento sensible: ' + err.message));
+      }
+    }
+    const us = getBucket().openUploadStream(filename, { metadata: meta });
     const onErr = (err) => { try { us.destroy(); } catch {} reject(err); };
     us.on('finish', () => resolve(us.id));
     us.on('error', onErr);
-    us.end(buffer);
+    us.end(toStore);
   });
+}
+
+// Lee un archivo de GridFS y devuelve un Buffer descifrado si estaba cifrado.
+async function readFileBuffer(filename, maxBytes) {
+  const bucket = getBucket();
+  const cursor = bucket.find({ filename }).sort({ uploadDate: -1 }).limit(1);
+  const file = await cursor.next();
+  if (!file) return null;
+  const stream = bucket.openDownloadStream(file._id);
+  const chunks = [];
+  let total = 0;
+  for await (const chunk of stream) {
+    total += chunk.length;
+    if (maxBytes && total > maxBytes) {
+      stream.destroy();
+      throw new Error(`Archivo '${filename}' supera el tamaño máximo.`);
+    }
+    chunks.push(chunk);
+  }
+  let buf = Buffer.concat(chunks);
+  if (file.metadata && file.metadata.encrypted === true) {
+    buf = decryptBuffer(buf);
+  }
+  return { buffer: buf, file };
 }
 
 async function readFileStream(filename) {
@@ -406,6 +443,20 @@ async function readFileStream(filename) {
     const cursor = bucket.find({ filename }).sort({ uploadDate: -1 }).limit(1);
     const file = await cursor.next();
     if (!file) return null;
+    // Si el archivo está cifrado, se descifra y se devuelve un stream en claro.
+    if (file.metadata && file.metadata.encrypted === true) {
+      const stream = bucket.openDownloadStream(file._id);
+      const chunks = [];
+      for await (const chunk of stream) {
+        chunks.push(chunk);
+      }
+      const decrypted = decryptBuffer(Buffer.concat(chunks));
+      const out = Readable.from(decrypted);
+      out.on('error', (err) => {
+        console.error(`[GRIDFS] Error en stream descifrado '${filename}':`, err.message);
+      });
+      return { stream: out, file };
+    }
     const stream = bucket.openDownloadStream(file._id);
     // Capturar errores del stream GridFS antes de que escapen al uncaughtException
     stream.on('error', (err) => {
@@ -580,6 +631,7 @@ module.exports = {
   generateTempPassword,
   storeFileBuffer,
   readFileStream,
+  readFileBuffer,
   deleteFileByName,
   listFilesBySource,
   markFileRegistered,
