@@ -99,9 +99,10 @@ El sistema incorpora medidas de protección de datos personales, seguridad y acc
 - **Seguridad (OWASP)**: helmet con Content-Security-Policy por *nonce* (sin `'unsafe-inline'`
   en `script-src`), verificación de certificado TLS en SMTP por defecto, y *allowlist* estricta
   del nombre de archivo del escáner. La contraseña temporal **no** se expone por la API salvo que
-  se habilite explícitamente con `ALLOW_TEMP_PASSWORD_RESPONSE=true`. Las vulnerabilidades
-  conocidas de `qs` se corrigen mediante un `override` a una versión parcheada (`^6.16.0`) sin
-  migrar a Express 5; `npm audit` reporta **0 vulnerabilidades**.
+  se habilite explícitamente con `ALLOW_TEMP_PASSWORD_RESPONSE=true`. El servidor usa **Express 5**
+  (que incorpora `qs` parcheado y manejo nativo de errores asíncronos), por lo que `npm audit`
+  reporta **0 vulnerabilidades**. Se eliminó la dependencia de `express-async-errors` (innecesaria
+  en Express 5) y se adaptaron las rutas y la sanitización de Mongo a la API de Express 5.
 - **Accesibilidad (WCAG 2.1 AA)**: enlace "Saltar al contenido", gestión de foco en modales
   (trap, `Esc` y retorno de foco), anuncio de toasts con `aria-live`, etiquetas en campos sin
   `<label>`, contraste de texto corregido y soporte de `prefers-reduced-motion`.

@@ -1,7 +1,6 @@
 require('dotenv').config();
 require('dns').setDefaultResultOrder('ipv4first');
 const express = require('express');
-require('express-async-errors');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
@@ -264,6 +263,25 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '500kb' }));
 app.use(express.urlencoded({ extended: false, limit: '500kb' }));
+// En Express 5, req.query es un getter de SOLO LECTURA definido en el prototipo
+// de IncomingMessage. express-mongo-sanitize intenta reasignarlo y lanza un
+// TypeError. Se crea una propiedad PROPIA 'query' reescribible que sombrea el
+// getter del prototipo, antes de aplicar la sanitización (patrón de compatibilidad
+// con Express 5).
+app.use((req, res, next) => {
+  try {
+    const hadOwn = Object.prototype.hasOwnProperty.call(req, 'query');
+    if (!hadOwn) {
+      Object.defineProperty(req, 'query', {
+        value: req.query,
+        writable: true,
+        configurable: true,
+        enumerable: true
+      });
+    }
+  } catch {}
+  next();
+});
 app.use(mongoSanitize({ replaceWith: '_' }));
 app.use(hpp());
 
@@ -316,8 +334,15 @@ app.use('/api/auth/reset-password', authLimiter);
 // 'unsafe-inline' en script-src.
 
 // Inyecta el nonce en los <script> en línea de las páginas HTML servidas desde /public.
-app.get(/\.html$/, (req, res, next) => {
-  const filePath = path.join(__dirname, 'public', req.path.split('?')[0]);
+// Middleware compatible con Express 5: se verifica req.path en lugar de una ruta
+// regexp (path-to-regexp v8 ancla los regex y cambia su comportamiento).
+app.use((req, res, next) => {
+  if (req.method !== 'GET') return next();
+  const pathname = req.path.split('?')[0];
+  if (pathname.startsWith('/api/') || !pathname.toLowerCase().endsWith('.html')) {
+    return next();
+  }
+  const filePath = path.join(__dirname, 'public', pathname.replace(/^\/+/, ''));
   fs.readFile(filePath, 'utf8', (err, data) => {
     if (err) return next();
     const nonce = res.locals.cspNonce;
@@ -3571,8 +3596,13 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-// Respaldo SPA — solo para rutas que no sean API
-app.get('*', (req, res) => {
+// Respaldo SPA — solo para rutas GET que no sean API.
+// En Express 5, '*' no es válido como patrón (path-to-regexp v8); se usa un
+// middleware final que respeta el comportamiento original (solo GET, resto 404).
+app.use((req, res, next) => {
+  if (req.method !== 'GET') {
+    return next();
+  }
   if (req.path.startsWith('/api/')) {
     return res.status(404).json({ error: 'Ruta no encontrada.' });
   }
