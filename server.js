@@ -25,6 +25,7 @@ const {
   getHeader, parseDateHeader, validatePasswordStrength
 } = require('./lib/helpers');
 const { renderResetPasswordEmail } = require('./lib/emailTemplates');
+const { assertEncryptionKey } = require('./lib/crypto');
 
 // Manejo de errores no controlados.
 // unhandledRejection: se loguea sin salir (permite que la reconexión a Mongo se recupere).
@@ -52,6 +53,15 @@ const PORT = process.env.PORT || 3000;
 
 if (!process.env.JWT_SECRET) {
   console.error('FATAL: JWT_SECRET no está configurado en .env');
+  process.exit(1);
+}
+// Fail-fast de seguridad: en producción DOC_ENC_KEY es OBLIGATORIA para el cifrado
+// en reposo de documentos sensibles (AES-256-GCM, Ley 1581/2012). Si no está bien
+// configurada, se impide arrancar en lugar de cifrar con una clave fallback insegura.
+try {
+  assertEncryptionKey();
+} catch (encErr) {
+  console.error('FATAL: ' + encErr.message);
   process.exit(1);
 }
 const JWT_SECRET = process.env.JWT_SECRET;
