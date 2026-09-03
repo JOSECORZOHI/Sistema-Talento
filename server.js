@@ -2471,7 +2471,13 @@ app.get('/api/document-file/:filename', fileAuthMiddleware, async (req, res) => 
         return res.status(403).json({ error: 'No tiene permisos para acceder a este archivo.' });
       }
     } else if ((folder === 'gmail' || folder === 'email') && hasPermission(req.user.role, 'scanner.read')) {
-      const email = await col('emailsInbox').findOne({ 'attachments.filename': filename });
+      // Un funcionario solo puede leer adjuntos de los correos que se le han
+      // sugerido (suggestedEmployeeId === req.user.employeeId); no los de otros
+      // empleados, aunque conozca el nombre del archivo.
+      const email = await col('emailsInbox').findOne({
+        'attachments.filename': filename,
+        suggestedEmployeeId: req.user.employeeId
+      });
       if (!email) {
         return res.status(403).json({ error: 'No tiene permisos para acceder a este archivo.' });
       }
