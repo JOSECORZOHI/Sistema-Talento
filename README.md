@@ -99,7 +99,9 @@ El sistema incorpora medidas de protección de datos personales, seguridad y acc
 - **Seguridad (OWASP)**: helmet con Content-Security-Policy por *nonce* (sin `'unsafe-inline'`
   en `script-src`), verificación de certificado TLS en SMTP por defecto, y *allowlist* estricta
   del nombre de archivo del escáner. La contraseña temporal **no** se expone por la API salvo que
-  se habilite explícitamente con `ALLOW_TEMP_PASSWORD_RESPONSE=true`.
+  se habilite explícitamente con `ALLOW_TEMP_PASSWORD_RESPONSE=true`. Las vulnerabilidades
+  conocidas de `qs` se corrigen mediante un `override` a una versión parcheada (`^6.16.0`) sin
+  migrar a Express 5; `npm audit` reporta **0 vulnerabilidades**.
 - **Accesibilidad (WCAG 2.1 AA)**: enlace "Saltar al contenido", gestión de foco en modales
   (trap, `Esc` y retorno de foco), anuncio de toasts con `aria-live`, etiquetas en campos sin
   `<label>`, contraste de texto corregido y soporte de `prefers-reduced-motion`.
@@ -116,5 +118,26 @@ Estas tareas no son de código y quedan a cargo del administrador de la platafor
    `/api/gmail/authorize`.
 3. En Railway, fijar estas variables en el panel **Variables** (no en `.env`).
 4. Acotar los permisos del archivo `.env` al usuario del servicio.
+
+### Inscripción en el RNBD (Registro Nacional de Bases de Datos — acción del operador)
+
+Conforme al art. 25 de la Ley 1581/2012 y el Decreto 1377/2013, el tratamiento de datos
+personales que realiza la entidad debe inscribirse en el **Registro Nacional de Bases de Datos
+(RNBD)** administrado por la Superintendencia de Industria y Comercio (SIC). Esta es una gestión
+administrativa formal (no de código). Datos básicos de la base de datos a registrar:
+
+- **Responsable**: Alcaldía de Valledupar — Oficina de Talento Humano.
+- **Nombre de la base de datos**: Sistema de Gestión Documental de Talento Humano.
+- **Finalidad**: gestión, custodia y trazabilidad de los expedientes documentales y de personal de
+  los funcionarios (ver `public/privacy.html`).
+- **Tipos de datos**: identificación, laborales/nómina, documentos del expediente digital, datos
+  sensibles de salud y seguridad social (tratados con autorización facultativa) y datos de
+  acceso/auditoría.
+- **Medidas de seguridad**: cifrado en reposo (AES-256-GCM) de documentos sensibles, autenticación,
+  HTTPS y registros de auditoría.
+
+> Inscríbase en el portal de la SIC (RNBD) y mantenga actualizada la política de tratamiento de
+> datos personales; consérvela a disposición de los titulares. La información de contacto del
+> responsable figura en `public/privacy.html`.
 
 Véase `.env.example` para el detalle completo de variables y documentación.
