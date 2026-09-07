@@ -168,25 +168,10 @@ async function apiFetchWithRetry(url, options = {}, retries = 2) {
 function showToast(message, type = 'success') {
   const toast = document.createElement('div');
   toast.className = `toast-message toast-${type}`;
-  toast.innerHTML = `<span>${sanitize(message)}</span><button class="toast-close">&times;</button>`;
+  toast.innerHTML = `<span>${sanitize(message)}</span><button class="toast-close" aria-label="Cerrar notificación">&times;</button>`;
   // Accesibilidad WCAG 2.1: los toasts se anuncian a lectores de pantalla.
   toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
   toast.setAttribute('aria-live', type === 'error' ? 'assertive' : 'polite');
-
-  Object.assign(toast.style, {
-    position: 'fixed', bottom: '24px', right: '24px',
-    backgroundColor: type === 'success' ? 'var(--success)' : type === 'error' ? 'var(--danger)' : type === 'info' ? 'var(--primary)' : 'var(--warning)',
-    color: 'white', padding: '12px 20px', borderRadius: '8px',
-    boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
-    display: 'flex', alignItems: 'center', gap: '12px',
-    zIndex: '9999', fontSize: '13px', fontWeight: '600',
-    opacity: '0', transform: 'translateY(10px)',
-    transition: 'opacity 0.3s ease, transform 0.3s ease',
-    fontFamily: 'var(--font-body)'
-  });
-
-  const closeBtn = toast.querySelector('.toast-close');
-  closeBtn.style.cssText = 'background:none;border:none;color:white;font-size:16px;cursor:pointer;';
 
   // Evitar acumular toasts ilimitados: si hay demasiados, remover los más antiguos
   const existingToasts = document.querySelectorAll('.toast-message');
@@ -196,15 +181,16 @@ function showToast(message, type = 'success') {
 
   document.body.appendChild(toast);
 
-  setTimeout(() => { toast.style.opacity = '1'; toast.style.transform = 'translateY(0)'; }, 10);
+  // La presentación (estilo, colores, animación) vive en style.css (.toast-message).
+  requestAnimationFrame(() => requestAnimationFrame(() => toast.classList.add('show')));
 
   const autoRemove = setTimeout(() => removeToast(toast), 5000);
+  const closeBtn = toast.querySelector('.toast-close');
   closeBtn.addEventListener('click', () => { clearTimeout(autoRemove); removeToast(toast); });
 }
 
 function removeToast(toast) {
-  toast.style.opacity = '0';
-  toast.style.transform = 'translateY(10px)';
+  toast.classList.remove('show');
   setTimeout(() => toast.remove(), 300);
 }
 
@@ -218,12 +204,14 @@ function showLoader() {
     Object.assign(loader.style, {
       position: 'fixed', left: '0', top: '0', width: '100vw', height: '100vh',
       backgroundColor: 'rgba(255, 255, 255, 0.3)', backdropFilter: 'blur(3px)',
+      WebkitBackdropFilter: 'blur(3px)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: '99999'
     });
     const spinner = loader.querySelector('.spinner');
     Object.assign(spinner.style, {
       width: '40px', height: '40px', border: '4px solid var(--border-color)',
       borderTopColor: 'var(--primary)', borderRadius: '50%',
+      boxShadow: '0 0 14px var(--primary-soft)',
       animation: 'spin-loader 0.8s linear infinite'
     });
     if (!document.getElementById('loader-animation-styles')) {
@@ -406,13 +394,25 @@ function guardSubmit(form, handler) {
 }
 
 // --- TEMA / MODO OSCURO ---
+function setThemeColorMeta(theme) {
+  let meta = document.querySelector('meta[name="theme-color"]');
+  if (!meta) {
+    meta = document.createElement('meta');
+    meta.name = 'theme-color';
+    document.head.appendChild(meta);
+  }
+  meta.content = theme === 'dark-theme' ? '#15243a' : '#1A5276';
+}
+
 function initTheme(sunSelector, moonSelector, textSelector) {
   const savedTheme = localStorage.getItem('theme') || 'light-theme';
   document.body.className = savedTheme;
+  setThemeColorMeta(savedTheme);
   updateThemeUI(savedTheme, sunSelector, moonSelector, textSelector);
 }
 
 function updateThemeUI(theme, sunSelector, moonSelector, textSelector) {
+  setThemeColorMeta(theme);
   const sun = sunSelector ? document.querySelector(sunSelector) : null;
   const moon = moonSelector ? document.querySelector(moonSelector) : null;
   const text = textSelector ? document.querySelector(textSelector) : null;

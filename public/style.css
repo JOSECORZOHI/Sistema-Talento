@@ -135,6 +135,96 @@ input, select, textarea, button {
   outline: none;
 }
 
+/* ============================================================
+   COMPATIBILIDAD MULTI-NAVEGADOR
+   Línea base: Chrome/Edge ≥ 90 · Firefox ≥ 92 · Safari ≥ 15.4 ·
+   Opera ≥ 76 · Zen Browser (basado en Firefox)
+   ============================================================ */
+
+/* color-scheme: los controles nativos (select, checkbox, date, color),
+   autocompletado y scrollbars respetan el tema claro/oscuro del sitio
+   en TODOS los navegadores (Firefox incluido). */
+html {
+  color-scheme: light;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+html.dark-theme,
+body.dark-theme {
+  color-scheme: dark;
+}
+
+/* Barras de desplazamiento nativas de Firefox. Las reglas -webkit- anteriores
+   solo aplican en Chromium/Safari; estas cubren Firefox/Zen. */
+@supports (scrollbar-width: thin) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-color) transparent;
+  }
+  *:hover {
+    scrollbar-color: var(--text-muted) transparent;
+  }
+}
+
+/* Quitar el resaltado azul de toque en móviles (Android/Chrome) y
+   eliminar zonas fantasma indebidas al tocar. */
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Acento visual de controles nativos de formulario (checkbox, radio, range). */
+input,
+select,
+textarea {
+  accent-color: var(--primary);
+}
+
+/* Selección de texto coherente con la marca. */
+::selection {
+  background: var(--primary);
+  color: #fff;
+}
+
+/* Imágenes responsivas por defecto (evita desbordes en móvil). */
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Reset de apariencia nativa para formularios (cada navegador estiliza distinto:
+   Firefox conserva flechas/calendario mediante appearance: auto). */
+button,
+input[type='button'],
+input[type='submit'],
+input[type='reset'],
+textarea {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+}
+select,
+input[type='date'],
+input[type='time'],
+input[type='color'] {
+  -webkit-appearance: auto;
+  -moz-appearance: auto;
+  appearance: auto;
+}
+
+/* Placeholder con color del tema y opacidad 1 (Firefox lo atenúa por omisión). */
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+/* Foco visible accesible y consistente entre navegadores (solo teclado).
+   Complementa el box-shadow de foco que ya usan los campos. */
+:focus-visible {
+  outline: 3px solid var(--primary);
+  outline-offset: 2px;
+}
+
 /* BARRAS DE DESPLAZAMIENTO PERSONALIZADAS */
 ::-webkit-scrollbar {
   width: 8px;
@@ -2469,4 +2559,189 @@ textarea:focus {
     transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* ============================================================
+   PULIDO DE ESTÉTICA v2 — Sistema Talento Humano
+   Alcaldía de Valledupar · Azul ✓ / Rojo ✗ / Blanco
+   Mejoras visuales coherentes entre todas las pestañas.
+   NOTA: esta sección NO usa color-mix/:has; mantiene compat
+   Chrome/Edge ≥90, Firefox ≥92, Safari ≥15.4, Opera ≥76.
+   ============================================================ */
+:root {
+  --shadow-md: 0 6px 16px var(--shadow), 0 2px 6px var(--shadow);
+  --shadow-xl: 0 24px 60px rgba(10, 20, 40, 0.16), 0 6px 18px rgba(10, 20, 40, 0.08);
+  --gradient-brand: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+  --gradient-surface: linear-gradient(180deg, var(--surface) 0%, var(--background) 100%);
+  --zebra-row: rgba(26, 82, 118, 0.035);
+}
+.dark-theme {
+  --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.3);
+  --shadow-xl: 0 24px 60px rgba(0, 0, 0, 0.55), 0 6px 18px rgba(0, 0, 0, 0.4);
+  --gradient-brand: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+  --zebra-row: rgba(93, 173, 226, 0.05);
+}
+
+/* Fondo sutil con la bicolor de la bandera (tenue, ambos temas) */
+body {
+  background-image:
+    radial-gradient(1100px 520px at 100% -12%, var(--primary-soft), transparent 62%),
+    radial-gradient(900px 460px at -8% 108%, var(--secondary-soft), transparent 58%);
+  background-attachment: fixed;
+}
+
+/* ---- Tipografía fluida ---- */
+.header-title h2, .section-title, h1, h2, h3 {
+  letter-spacing: -0.012em;
+}
+.header-title h2 { font-size: clamp(19px, 2vw, 23px); }
+.section-title h2 { font-size: clamp(20px, 2.2vw, 27px); }
+.login-brand-content h1 { font-size: clamp(26px, 3vw, 34px); }
+
+/* ---- Botones: profundidad y microinteracciones ---- */
+.btn { transition: all var(--transition-fast) cubic-bezier(0.2, 0.7, 0.2, 1); }
+.btn-primary {
+  background-image: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+  border-color: transparent;
+  box-shadow: 0 2px 6px rgba(26, 82, 118, 0.2), 0 10px 24px -10px rgba(26, 82, 118, 0.5);
+}
+.btn-primary:hover {
+  background-image: linear-gradient(135deg, var(--primary-hover) 0%, var(--primary) 100%);
+  box-shadow: 0 4px 10px rgba(26, 82, 118, 0.25), 0 14px 30px -12px rgba(26, 82, 118, 0.55);
+}
+.btn-primary:active { transform: translateY(1px) scale(0.99); box-shadow: 0 1px 4px rgba(26, 82, 118, 0.3); }
+.btn-secondary { box-shadow: 0 1px 3px var(--shadow); }
+.btn-secondary:hover { box-shadow: 0 4px 10px var(--shadow); transform: translateY(-1px); }
+.btn:focus-visible {
+  outline: 3px solid var(--primary);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px var(--primary-soft);
+}
+
+/* ---- Barra lateral ---- */
+.sidebar { background-image: var(--gradient-surface); box-shadow: 2px 0 18px var(--shadow); }
+.menu-item { font-size: 13.5px; }
+.menu-item:hover { transform: translateX(3px); }
+.menu-item:active { transform: translateX(0); }
+.menu-item.active {
+  background-color: var(--primary-soft);
+  box-shadow: inset 0 0 0 1px rgba(26, 82, 118, 0.18);
+}
+.dark-theme .menu-item.active { box-shadow: inset 0 0 0 1px rgba(93, 173, 226, 0.28); }
+
+/* ---- Tarjetas y estadísticas ---- */
+.grid-card, .stat-card { box-shadow: var(--shadow-md); }
+.grid-card:hover, .stat-card:hover { box-shadow: var(--shadow-xl); }
+.stat-card { position: relative; overflow: hidden; }
+.stat-card::after {
+  content: '';
+  position: absolute; right: -22px; top: -22px;
+  width: 96px; height: 96px; border-radius: 50%;
+  background: var(--gradient-brand); opacity: 0.07; pointer-events: none;
+}
+.stat-icon {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55), 0 6px 12px var(--shadow);
+}
+
+/* ---- Cabecera superior ---- */
+.content-header { box-shadow: 0 1px 0 var(--border-color), 0 10px 24px -22px var(--shadow); }
+
+/* ---- Modales ---- */
+.modal-container {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+  overflow: hidden;
+}
+.modal-backdrop.show {
+  backdrop-filter: blur(9px) saturate(1.02);
+  -webkit-backdrop-filter: blur(9px) saturate(1.02);
+}
+/* Fallback: sin soporte de backdrop-filter, fondo sólido legible */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .content-header { background-color: var(--surface-header); }
+  .modal-backdrop { background-color: rgba(12, 22, 43, 0.88); }
+  .login-card, .modal-container { background-color: var(--surface); }
+}
+
+/* ---- Tablas: filas alternas + encabezado ---- */
+.data-table thead th {
+  padding: 14px 16px;
+  background-color: var(--bg-secondary);
+  letter-spacing: 0.02em;
+}
+.data-table tbody tr td { background-color: transparent; }
+.data-table tbody tr:nth-child(even) td { background-color: var(--zebra-row); }
+.data-table tbody tr:hover { background-color: var(--primary-soft); }
+.data-table tbody tr:hover td { background-color: transparent; }
+
+/* ---- Etiquetas de estado con punto de estado ---- */
+.badge-status { gap: 6px; border-radius: 999px; }
+.badge-status::before {
+  content: '';
+  width: 6px; height: 6px; border-radius: 50%;
+  background: currentColor; flex-shrink: 0; opacity: 0.9;
+}
+
+/* ---- Portal: tarjetas de correo / escáner ---- */
+.email-mini-card, .folder-doc-card, .portal-item-card {
+  box-shadow: 0 2px 8px var(--shadow);
+}
+.email-mini-card:hover, .folder-doc-card:hover, .portal-item-card:hover {
+  box-shadow: 0 8px 20px var(--shadow);
+}
+
+/* ---- Login / auth: tarjeta y campos ---- */
+.login-card, .fcp-form-card {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+}
+.login-card-header h3, .fcp-card-header h3 { letter-spacing: -0.01em; }
+.login-input, .fcp-form-card input, .forgot-form input, .activate-form input,
+input[type='text'], input[type='email'], input[type='password'], input[type='date'], select, textarea {
+  transition: border-color var(--transition-fast) ease, box-shadow var(--transition-fast) ease, background-color var(--transition-fast) ease;
+}
+input[type='text']:focus, input[type='email']:focus, input[type='password']:focus,
+input[type='date']:focus, select:focus, textarea:focus, .login-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 4px var(--primary-soft);
+}
+input[type='checkbox']:focus-visible { outline-offset: 2px; }
+
+/* ---- Contenedor de tarjetas de carpeta (subtabs) ---- */
+.folder-documents-grid { align-items: stretch; }
+
+/* ---- Avatares y contadores ---- */
+.count-badge, .portal-docs-header span { border-radius: 999px; letter-spacing: 0.03em; }
+
+/* ---- TOAST / NOTIFICACIONES (compartido con utils.js) ---- */
+.toast-message {
+  position: fixed; right: 24px; bottom: 24px; z-index: 99999;
+  display: flex; align-items: center; gap: 12px;
+  max-width: min(92vw, 400px);
+  padding: 14px 18px; border-radius: 12px;
+  font-family: var(--font-body); font-size: 13.5px; font-weight: 600; color: #fff;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.24), 0 4px 10px rgba(0, 0, 0, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  opacity: 0; transform: translateY(16px) scale(0.98);
+  transition: opacity 0.3s ease, transform 0.32s cubic-bezier(0.2, 0.9, 0.3, 1.18);
+  line-height: 1.45;
+}
+.toast-message.show { opacity: 1; transform: translateY(0) scale(1); }
+.toast-success { background: linear-gradient(135deg, #27ae60 0%, #1e8449 100%); }
+.toast-error { background: linear-gradient(135deg, #e74c3c 0%, #b03a2e 100%); }
+.toast-info { background: linear-gradient(135deg, #2980b9 0%, #1a5276 100%); }
+.toast-warning { background: linear-gradient(135deg, #f39c12 0%, #b7950b 100%); }
+.toast-close {
+  background: none; border: none; color: #fff; cursor: pointer;
+  font-size: 18px; line-height: 1; width: 24px; height: 24px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 7px; flex-shrink: 0; opacity: 0.85;
+  -webkit-appearance: none; appearance: none;
+  transition: background-color var(--transition-fast) ease, opacity var(--transition-fast) ease;
+}
+.toast-close:hover { background: rgba(255, 255, 255, 0.2); opacity: 1; }
+
+/* ---- Enlaces visibles en estados vacíos ---- */
+.portal-no-docs, .folder-blank-state, .email-blank-state {
+  background-image: linear-gradient(180deg, var(--surface) 0%, var(--background) 100%);
 }
