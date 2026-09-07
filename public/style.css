@@ -2582,6 +2582,7 @@ textarea:focus {
   --shadow-md: 0 6px 16px rgba(0, 0, 0, 0.4), 0 2px 6px rgba(0, 0, 0, 0.3);
   --shadow-xl: 0 24px 60px rgba(0, 0, 0, 0.55), 0 6px 18px rgba(0, 0, 0, 0.4);
   --gradient-brand: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+  --gradient-surface: linear-gradient(180deg, var(--surface) 0%, var(--background) 100%);
   --zebra-row: rgba(93, 173, 226, 0.05);
   --loader-overlay: rgba(8, 12, 20, 0.55);
   --badge-purple-text: hsl(285, 70%, 78%);
