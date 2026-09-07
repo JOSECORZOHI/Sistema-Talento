@@ -32,10 +32,10 @@ function renderEmployeesTable() {
     const status = emp.status || (emp.active !== false ? 'activa' : 'inactiva');
     let statusBadge = '';
     switch (status) {
-      case 'activa': statusBadge = '<span style="font-size:11px;font-weight:600;color:#1B5E20;background:#C8E6C9;border-radius:10px;padding:2px 8px;">Activo</span>'; break;
-      case 'pendiente': statusBadge = '<span style="font-size:11px;font-weight:600;color:#E65100;background:#FFE0B2;border-radius:10px;padding:2px 8px;">Pendiente</span>'; break;
-      case 'suspendida': statusBadge = '<span style="font-size:11px;font-weight:600;color:#B71C1C;background:#FFCDD2;border-radius:10px;padding:2px 8px;">Suspendido</span>'; break;
-      default: statusBadge = '<span style="font-size:11px;font-weight:600;color:#555;background:#E0E0E0;border-radius:10px;padding:2px 8px;">Inactivo</span>';
+      case 'activa': statusBadge = '<span class="badge-chip green">Activo</span>'; break;
+      case 'pendiente': statusBadge = '<span class="badge-chip orange">Pendiente</span>'; break;
+      case 'suspendida': statusBadge = '<span class="badge-chip red">Suspendido</span>'; break;
+      default: statusBadge = '<span class="badge-chip gray">Inactivo</span>';
     }
 
     const isActive = status === 'activa';
@@ -105,18 +105,18 @@ function renderEmployeeDirectory() {
     div.onclick = () => selectEmployeeForFolder(emp.id);
     div.style.opacity = isInactive ? '0.55' : '1';
     div.innerHTML = `
-      <div class="emp-avatar-sm" style="${isAutoRegistered ? 'background: linear-gradient(135deg, #1A5276, #2E86C1); color: white;' : ''}">${initials}</div>
+      <div class="emp-avatar-sm" style="${isAutoRegistered ? 'background: linear-gradient(135deg, var(--primary), var(--primary-hover)); color: white;' : ''}">${initials}</div>
       <div class="emp-info-sm" style="flex: 1;">
         <h4 style="${isInactive ? 'text-decoration: line-through; color: var(--text-muted);' : ''}">${sanitize(emp.name)}</h4>
         <p>C.C. ${sanitize(emp.id)} &bull; ${sanitize(emp.department)}</p>
         ${emp.position ? `<p style="font-size:11px;color:var(--text-muted);margin-top:2px;">${sanitize(emp.position)}</p>` : ''}
         ${emp.email ? `<p style="font-size:11px;color:${isInactive ? 'var(--text-muted)' : 'var(--primary)'};margin-top:1px;">${sanitize(emp.email)}</p>` : ''}
         <div style="display:flex;align-items:center;gap:6px;margin-top:4px;flex-wrap:wrap;">
-          ${isPending ? '<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;color:#7D6608;background:#FEF9E7;border:1px solid #F9E79F;border-radius:20px;padding:2px 8px;">⏳ Pendiente</span>' : ''}
-          ${isSuspended ? '<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;color:#922B21;background:#FADBD8;border:1px solid #F5B7B1;border-radius:20px;padding:2px 8px;">⊘ Suspendido</span>' : ''}
-          ${isBlocked ? '<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;color:#4A235A;background:#E8DAEF;border:1px solid #D2B4DE;border-radius:20px;padding:2px 8px;">🔒 Bloqueado</span>' : ''}
-          ${isInactive && !isPending && !isSuspended && !isBlocked ? '<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;color:#922B21;background:#FADBD8;border:1px solid #F5B7B1;border-radius:20px;padding:2px 8px;">✕ Inactivo</span>' : ''}
-          ${!isInactive && !isPending && !isSuspended && !isBlocked ? '<span style="display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;color:#1E8449;background:#D5F5E3;border:1px solid #82E0AA;border-radius:20px;padding:2px 8px;">✓ Activo</span>' : ''}
+          ${isPending ? '<span class="badge-chip orange">⏳ Pendiente</span>' : ''}
+          ${isSuspended ? '<span class="badge-chip red">⊘ Suspendido</span>' : ''}
+          ${isBlocked ? '<span class="badge-chip purple">🔒 Bloqueado</span>' : ''}
+          ${isInactive && !isPending && !isSuspended && !isBlocked ? '<span class="badge-chip red">✕ Inactivo</span>' : ''}
+          ${!isInactive && !isPending && !isSuspended && !isBlocked ? '<span class="badge-chip green">✓ Activo</span>' : ''}
           ${regDate ? `<span style="font-size:10px;color:var(--text-muted);">${regDate}</span>` : ''}
         </div>
       </div>
@@ -190,8 +190,8 @@ function renderEmployeeDossier() {
     badge.style.cssText = 'display:flex;align-items:center;gap:8px;margin-top:6px;flex-wrap:wrap;';
     badge.innerHTML = `
       ${isAutoRegistered
-        ? '<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#1A5276;background:#D4E6F1;border:1px solid #AED6F1;border-radius:20px;padding:3px 10px;">✓ Auto-Registrado</span>'
-        : '<span style="display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#1E8449;background:#D5F5E3;border:1px solid #82E0AA;border-radius:20px;padding:3px 10px;">✓ Creado por Admin</span>'}
+        ? '<span class="badge-chip blue" style="font-size:11px;">✓ Auto-Registrado</span>'
+        : '<span class="badge-chip green" style="font-size:11px;">✓ Creado por Admin</span>'}
       ${regDate ? `<span style="font-size:11px;color:var(--text-muted);">Registrado el ${regDate}</span>` : ''}
     `;
     badgeInfo.appendChild(badge);

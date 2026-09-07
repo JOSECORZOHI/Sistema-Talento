@@ -70,12 +70,12 @@ function renderDashboardEmployees() {
     div.style.cssText = `display:flex;align-items:center;gap:10px;padding:8px 10px;border-bottom:1px solid var(--border-color);cursor:pointer;${isInactive ? 'opacity:0.5;' : ''}`;
     div.onclick = () => { window.location.hash = '#expedientes'; setTimeout(() => selectEmployeeForFolder(emp.id), 100); };
     div.innerHTML = `
-      <div class="emp-avatar-sm" style="width:32px;height:32px;font-size:11px;flex-shrink:0;${isAuto ? 'background:linear-gradient(135deg,#1A5276,#2E86C1);color:#fff;' : ''}">${initials}</div>
+      <div class="emp-avatar-sm" style="width:32px;height:32px;font-size:11px;flex-shrink:0;${isAuto ? 'background:linear-gradient(135deg,var(--primary),var(--primary-hover));color:#fff;' : ''}">${initials}</div>
       <div style="flex:1;min-width:0;">
         <div style="font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;${isInactive ? 'text-decoration:line-through;color:var(--text-muted);' : ''}">${sanitize(emp.name)}</div>
         <div style="font-size:10px;color:var(--text-muted);">${sanitize(emp.department)} &bull; ${docCount} doc(s)</div>
       </div>
-      ${isInactive ? '<span style="font-size:9px;font-weight:700;color:#922B21;background:#FADBD8;border-radius:10px;padding:1px 6px;flex-shrink:0;">Inactivo</span>' : isAuto ? '<span style="font-size:9px;font-weight:700;color:#1A5276;background:#D4E6F1;border-radius:10px;padding:1px 6px;flex-shrink:0;">Auto</span>' : ''}
+      ${isInactive ? '<span class="badge-chip red" style="flex-shrink:0;">Inactivo</span>' : isAuto ? '<span class="badge-chip blue" style="flex-shrink:0;">Auto</span>' : ''}
     `;
     container.appendChild(div);
   });
