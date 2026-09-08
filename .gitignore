@@ -24,3 +24,4 @@ _tmp_*
 *.orig
 *.bak
 *.tmp
+gen-pregunta*

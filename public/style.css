@@ -244,7 +244,7 @@ textarea::placeholder {
 /* CONTENEDOR DE DISEÑO */
 .app-container {
   display: flex;
-  width: 100vw;
+  width: 100%;
   min-height: 100vh;
   position: relative;
 }
@@ -1775,6 +1775,10 @@ textarea:focus {
 @media (max-width: 768px) {
   body {
     flex-direction: column;
+  }
+  .app-container {
+    flex-direction: column;
+    width: 100%;
   }
   .sidebar {
     width: 100%;
