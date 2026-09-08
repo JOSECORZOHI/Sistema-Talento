@@ -467,10 +467,12 @@
                   <span style="width:8px;height:8px;border-radius:50%;background:#ccc;display:inline-block;" id="portal-scanner-dot"></span>
                   <span id="portal-scanner-dot-text">Verificando...</span>
                 </div>
-                <input type="text" id="input-scan-filename" aria-label="Nombre del documento a escanear" placeholder="Nombre del documento" style="padding:6px 10px;font-size:12px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);width:200px;" />
-                <button class="btn btn-primary" id="btn-portal-scan" style="padding:8px 18px;font-size:13px;">Escanear Documento</button>
-                <button class="btn btn-secondary" id="btn-portal-epson-scan" style="font-size:12px;padding:8px 14px;display:none;" title="Abrir EPSON Scan 2: escanee y guarde el PDF en la bandeja de escáner para registrarlo">EPSON Scan 2</button>
-                <button class="btn btn-secondary" id="btn-portal-refresh-scanners" style="font-size:12px;padding:8px 14px;">🔄 Actualizar lista</button>
+                <input type="text" id="input-scan-filename" aria-label="Nombre del documento a escanear" placeholder="Nombre del documento" style="padding:6px 10px;font-size:12px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);width:auto;flex:1 1 180px;min-width:150px;" />
+                <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+                  <button class="btn btn-primary" id="btn-portal-scan" style="padding:8px 18px;font-size:13px;">Escanear Documento</button>
+                  <button class="btn btn-secondary" id="btn-portal-epson-scan" style="font-size:12px;padding:8px 14px;display:none;" title="Abrir EPSON Scan 2: escanee y guarde el PDF en la bandeja de escáner para registrarlo">EPSON Scan 2</button>
+                  <button class="btn btn-secondary" id="btn-portal-refresh-scanners" style="font-size:12px;padding:8px 14px;">🔄 Actualizar lista</button>
+                </div>
               </div>
               <div id="portal-scanner-device-list" style="max-height:160px;overflow-y:auto;margin-bottom:16px;"></div>
               <div style="border-top:1px solid var(--border-color);padding-top:16px;margin-top:4px;">
