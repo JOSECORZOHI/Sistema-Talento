@@ -27,3 +27,9 @@ jobs:
 
       - name: Lint (ESLint)
         run: npm run lint
+
+      - name: Lint del frontend
+        run: npm run lint:frontend
+
+      - name: Tests unitarios
+        run: npm test

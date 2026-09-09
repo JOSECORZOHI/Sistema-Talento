@@ -25,6 +25,7 @@ const {
 } = require('./lib/helpers');
 const { renderResetPasswordEmail } = require('./lib/emailTemplates');
 const { assertEncryptionKey } = require('./lib/crypto');
+const { generateSecret, verifyTOTP, buildOtpauthURL } = require('./lib/totp');
 
 // Manejo de errores no controlados.
 // unhandledRejection: se loguea sin salir (permite que la reconexión a Mongo se recupere).
@@ -714,6 +715,20 @@ async function authenticateUser(user, collectionName, role, username, password, 
     if (valid) {
       await col(collectionName).updateOne({ _id: user._id }, { $set: { failedAttempts: 0, lockedUntil: null } });
       await col('loginAttempts').deleteMany({ identifier: normalizeEmail(username) });
+      // Si la cuenta tiene 2FA activo, no se emite el JWT de sesión: se genera un
+      // challenge de un solo uso que debe intercambiarse por el código TOTP.
+      if (user.totpEnabled) {
+        const challengeToken = crypto.randomBytes(32).toString('hex');
+        await col('twoFactorChallenges').insertOne({
+          tokenHash: crypto.createHash('sha256').update(challengeToken).digest('hex'),
+          email: user.email,
+          role,
+          createdAt: new Date(),
+          expiresAt: new Date(Date.now() + TWO_FACTOR_CHALLENGE_TTL_MS)
+        });
+        await addSecurityLog('2FA Requerido', `Contraseña correcta; se solicitó el código de verificación para ${user.email}.`, ip, user.email);
+        return res.json({ twoFactorRequired: true, challenge: challengeToken, expiresIn: Math.round(TWO_FACTOR_CHALLENGE_TTL_MS / 1000) });
+      }
       const tokenPayload = { email: user.email, name: user.name, role, v: user.jwtVersion || 0 };
       if (role === 'funcionario') tokenPayload.employeeId = user.id;
       const token = signToken(tokenPayload);
@@ -1495,6 +1510,126 @@ app.post('/api/auth/change-password', authMiddleware, async (req, res) => {
     return res.status(400).json({ error: 'La nueva contraseña debe ser diferente a la actual.' });
   }
   return handleChangePasswordForRole(req.user, currentPassword, newPassword, req.user.role, ip, res);
+});
+
+// --- AUTENTICACIÓN DE DOS FACTORES (TOTP) ---
+// El secreto se guarda en Base32 (estándar RFC 4648). El challenge de verificación
+// es de un solo uso (se consume con findOneAndDelete) y expira por TTL en Mongo.
+const TWO_FACTOR_CHALLENGE_TTL_MS = 5 * 60 * 1000;
+const TOTP_SECRET_RE = /^[A-Za-z2-7]{16,64}$/;
+const TOTP_CODE_RE = /^\d{6}$/;
+
+function isValidTotpCode(code) {
+  return typeof code === 'string' && TOTP_CODE_RE.test(code);
+}
+
+function isValidTotpSecret(secret) {
+  return typeof secret === 'string' && TOTP_SECRET_RE.test(secret);
+}
+
+// Estado 2FA del usuario autenticado.
+app.get('/api/auth/2fa/status', authMiddleware, async (req, res) => {
+  try {
+    const lookup = getLookupForRole(req.user.role, req.user);
+    const user = await col(getCollectionForRole(req.user.role)).findOne(lookup, { projection: { totpEnabled: 1 } });
+    return res.json({ enabled: !!(user && user.totpEnabled) });
+  } catch (error) {
+    console.error('[2FA] Error en status:', error.message);
+    return res.status(503).json({ error: 'Error temporal de base de datos. Intente de nuevo en unos segundos.' });
+  }
+});
+
+// Genera un secreto TOTP nuevo (aún no se activa).
+app.post('/api/auth/2fa/setup', authMiddleware, (req, res) => {
+  const secret = generateSecret();
+  const otpauth = buildOtpauthURL({ issuer: 'Sistema Talento Humano', account: req.user.email, secret });
+  return res.json({ secret, otpauth });
+});
+
+// Activa 2FA: valida un primer código con el secreto generado.
+app.post('/api/auth/2fa/enable', authMiddleware, async (req, res) => {
+  try {
+    const { secret, code } = req.body || {};
+    if (!isValidTotpSecret(secret)) return res.status(400).json({ error: 'Secreto de 2FA inválido. Genera uno nuevo.' });
+    if (!isValidTotpCode(code)) return res.status(400).json({ error: 'Ingrese el código de 6 dígitos de su aplicación de autenticación.' });
+    if (!verifyTOTP(secret, code)) return res.status(400).json({ error: 'El código de verificación no coincide.' });
+    const ip = getClientIp(req);
+    const lookup = getLookupForRole(req.user.role, req.user);
+    await col(getCollectionForRole(req.user.role)).updateOne(
+      lookup,
+      { $set: { totpEnabled: true, totpSecret: String(secret).toUpperCase() } }
+    );
+    await addSecurityLog('2FA Activado', `Se activó la autenticación de dos factores para ${req.user.email}.`, ip, req.user.email);
+    await addAuditLog('Seguridad', `El usuario ${req.user.name} activó la autenticación de dos factores.`, req.user.name, ip);
+    return res.json({ message: 'Autenticación de dos factores activada.', enabled: true });
+  } catch (error) {
+    console.error('[2FA] Error en enable:', error.message);
+    return res.status(503).json({ error: 'Error temporal de base de datos. Intente de nuevo en unos segundos.' });
+  }
+});
+
+// Desactiva 2FA: exige un código vigente del secreto ya almacenado.
+app.post('/api/auth/2fa/disable', authMiddleware, async (req, res) => {
+  try {
+    const { code } = req.body || {};
+    if (!isValidTotpCode(code)) return res.status(400).json({ error: 'Ingrese el código de 6 dígitos de su aplicación de autenticación.' });
+    const ip = getClientIp(req);
+    const lookup = getLookupForRole(req.user.role, req.user);
+    const user = await col(getCollectionForRole(req.user.role)).findOne(lookup);
+    if (!user || !user.totpEnabled || !user.totpSecret) return res.status(400).json({ error: 'La autenticación de dos factores no está activa.' });
+    if (!verifyTOTP(user.totpSecret, code)) {
+      await addSecurityLog('2FA Desactivación Fallida', `Código de verificación incorrecto para desactivar 2FA en ${req.user.email}.`, ip, req.user.email);
+      return res.status(401).json({ error: 'El código de verificación es incorrecto.' });
+    }
+    await col(getCollectionForRole(req.user.role)).updateOne(
+      lookup,
+      { $set: { totpEnabled: false, totpSecret: null } }
+    );
+    await addSecurityLog('2FA Desactivado', `Se desactivó la autenticación de dos factores para ${req.user.email}.`, ip, req.user.email);
+    await addAuditLog('Seguridad', `El usuario ${req.user.name} desactivó la autenticación de dos factores.`, req.user.name, ip);
+    return res.json({ message: 'Autenticación de dos factores desactivada.', enabled: false });
+  } catch (error) {
+    console.error('[2FA] Error en disable:', error.message);
+    return res.status(503).json({ error: 'Error temporal de base de datos. Intente de nuevo en unos segundos.' });
+  }
+});
+
+// Verifica el código durante el inicio de sesión (intercambia el challenge por sesión).
+app.post('/api/auth/2fa/verify', async (req, res) => {
+  try {
+    const { challenge, code } = req.body || {};
+    const ip = getClientIp(req);
+    if (!challenge || !isValidTotpCode(code)) {
+      return res.status(400).json({ error: 'Ingrese el código de 6 dígitos de su aplicación de autenticación.' });
+    }
+    const challengeHash = crypto.createHash('sha256').update(challenge).digest('hex');
+    const ch = await col('twoFactorChallenges').findOneAndDelete({ tokenHash: challengeHash });
+    if (!ch) return res.status(400).json({ error: 'La solicitud de verificación no es válida o ya fue utilizada.' });
+    if (new Date(ch.expiresAt) < new Date()) {
+      return res.status(400).json({ error: 'La solicitud de verificación expiró. Inicie sesión nuevamente.' });
+    }
+    const collection = getCollectionForRole(ch.role);
+    const user = await col(collection).findOne({ email: ch.email });
+    if (!user || !user.totpEnabled || !user.totpSecret) {
+      return res.status(400).json({ error: 'La autenticación de dos factores no está activa para esta cuenta.' });
+    }
+    if (!verifyTOTP(user.totpSecret, code)) {
+      await addSecurityLog('2FA Fallido', `Código de verificación incorrecto para ${user.email}.`, ip, user.email);
+      return res.status(401).json({ error: 'El código de verificación es incorrecto.' });
+    }
+    const tokenPayload = { email: user.email, name: user.name, role: ch.role, v: user.jwtVersion || 0 };
+    if (ch.role === 'funcionario') tokenPayload.employeeId = user.id;
+    const token = signToken(tokenPayload);
+    await addSecurityLog('2FA Exitoso', `Verificación de dos factores completada para ${user.email}.`, ip, user.email);
+    await addAuditLog('Inicio de Sesión (2FA)', `El ${ch.role === 'admin' ? 'usuario' : 'funcionario'} ${user.name} completó la autenticación de dos factores.`, user.name, ip);
+    const responseUser = { email: user.email, name: user.name, role: ch.role, department: user.department };
+    if (ch.role === 'funcionario') responseUser.employeeId = user.id;
+    if (user.mustChangePassword) responseUser.mustChangePassword = true;
+    return res.json({ token, user: responseUser });
+  } catch (error) {
+    console.error('[2FA] Error en verify:', error.message);
+    return res.status(503).json({ error: 'Error temporal de base de datos. Intente de nuevo en unos segundos.' });
+  }
 });
 
 // --- RUTAS DEL PORTAL DEL FUNCIONARIO ---

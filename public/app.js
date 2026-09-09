@@ -97,6 +97,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupNavigation();
   setupEventListeners();
   loadAllData();
+  initTwoFactorPanel();
 
   // Botón de cerrar sesión
   document.getElementById('btn-logout').addEventListener('click', logout);

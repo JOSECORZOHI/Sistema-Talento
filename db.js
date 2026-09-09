@@ -22,7 +22,8 @@ const COLLECTIONS = {
   activationTokens: 'activationTokens',
   passwordResetTokens: 'passwordResetTokens',
   loginAttempts: 'loginAttempts',
-  securityLogs: 'securityLogs'
+  securityLogs: 'securityLogs',
+  twoFactorChallenges: 'twoFactorChallenges'
 };
 
 const MONGO_OPTIONS = {
@@ -110,6 +111,14 @@ async function runMigrations() {
         { status: { $exists: false } },
         { $set: { status: 'activa', failedAttempts: 0, lockedUntil: null } }
       );
+      const twofaUsersRes = await db.collection(COLLECTIONS.users).updateMany(
+        { totpEnabled: { $exists: false } },
+        { $set: { totpEnabled: false, totpSecret: null } }
+      );
+      const twofaEmpsRes = await db.collection(COLLECTIONS.employees).updateMany(
+        { totpEnabled: { $exists: false } },
+        { $set: { totpEnabled: false, totpSecret: null } }
+      );
       const docsModified = docsRes.modifiedCount;
       const empsModified = empsRes.modifiedCount;
       const usersMigrated = usersRes.modifiedCount;
@@ -118,6 +127,10 @@ async function runMigrations() {
       if (empsModified > 0) console.log(`Migración: ${empsModified} funcionarios actualizados con active=true`);
       if (usersMigrated > 0) console.log(`Migración: ${usersMigrated} usuarios admin migrados con status=activa`);
       if (empsStatusMigrated > 0) console.log(`Migración: ${empsStatusMigrated} funcionarios migrados con status=activa`);
+      const twofaUsersMigrated = twofaUsersRes.modifiedCount;
+      const twofaEmpsMigrated = twofaEmpsRes.modifiedCount;
+      if (twofaUsersMigrated > 0) console.log(`Migración: ${twofaUsersMigrated} usuarios con campo 2FA inicializado`);
+      if (twofaEmpsMigrated > 0) console.log(`Migración: ${twofaEmpsMigrated} funcionarios con campo 2FA inicializado`);
       break;
     } catch (e) {
       if (migAttempt < 2) { await new Promise(r => setTimeout(r, 1000)); continue; }

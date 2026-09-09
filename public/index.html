@@ -103,7 +103,35 @@
           </button>
         </form>
 
-        <div class="login-footer-links">
+        <div id="login-2fa-step" style="display:none;">
+          <div class="login-card-header" style="margin-bottom:20px;">
+            <div class="login-icon-circle">
+              <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="var(--primary)" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+              </svg>
+            </div>
+            <h3>Verificación en dos pasos</h3>
+            <p>Ingrese el código de 6 dígitos de su aplicación de autenticación.</p>
+          </div>
+          <div class="login-field">
+            <label for="login-2fa-code">Código de verificación</label>
+            <div class="login-input-wrapper">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
+              <input type="text" id="login-2fa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" pattern="[0-9]{6}" required>
+            </div>
+          </div>
+          <div class="login-error-msg" id="login-2fa-error" style="display:none;"></div>
+          <button type="button" class="btn btn-primary btn-full-width login-submit" id="btn-2fa-verify">
+            Verificar y Continuar
+          </button>
+          <div class="login-footer-links" style="margin-top:14px;">
+            <a href="#" class="login-register-link" id="btn-2fa-back">Volver al inicio de sesión</a>
+          </div>
+        </div>
+
+        <div class="login-footer-links" id="login-footer-links">
           <a href="/forgot-password.html" class="login-register-link">¿Olvidó su contraseña?</a>
         </div>
       </div>
@@ -140,6 +168,86 @@
 
       maybeShowStorageConsentBanner();
 
+      let pendingChallenge = null;
+
+      const showLoginStep = (show2fa) => {
+        document.getElementById('form-login').style.display = show2fa ? 'none' : 'block';
+        document.getElementById('login-footer-links').style.display = show2fa ? 'none' : 'block';
+        const step = document.getElementById('login-2fa-step');
+        step.style.display = show2fa ? 'block' : 'none';
+        if (show2fa) document.getElementById('login-2fa-code').focus();
+      };
+
+      const finishLogin = (data) => {
+        localStorage.setItem('th_token', data.token);
+        localStorage.setItem('th_user', JSON.stringify(data.user));
+        if (data.user.role === 'admin') {
+          window.location.href = '/admin.html';
+        } else {
+          window.location.href = '/funcionario.html';
+        }
+      };
+
+      document.getElementById('btn-2fa-back').addEventListener('click', (e) => {
+        e.preventDefault();
+        pendingChallenge = null;
+        document.getElementById('login-2fa-error').style.display = 'none';
+        document.getElementById('login-2fa-code').value = '';
+        showLoginStep(false);
+      });
+
+      document.getElementById('btn-2fa-verify').addEventListener('click', async () => {
+        const codeInput = document.getElementById('login-2fa-code');
+        const errorDiv = document.getElementById('login-2fa-error');
+        const btn = document.getElementById('btn-2fa-verify');
+        errorDiv.style.display = 'none';
+        const code = codeInput.value.trim();
+        if (!/^\d{6}$/.test(code)) {
+          errorDiv.textContent = 'Ingrese el código de 6 dígitos.';
+          errorDiv.style.display = 'block';
+          return;
+        }
+        btn.disabled = true;
+        btn.textContent = 'Verificando...';
+        try {
+          const res = await fetch('/api/auth/2fa/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ challenge: pendingChallenge, code })
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            errorDiv.textContent = data.error || 'El código de verificación es incorrecto.';
+            errorDiv.style.display = 'block';
+            return;
+          }
+          finishLogin(data);
+        } catch (err) {
+          errorDiv.textContent = 'Error de conexión. Intente nuevamente.';
+          errorDiv.style.display = 'block';
+        } finally {
+          btn.disabled = false;
+          btn.textContent = 'Verificar y Continuar';
+        }
+      });
+
+      // Consumir el código con Enter y restringir a dígitos
+      document.getElementById('login-2fa-code').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          document.getElementById('btn-2fa-verify').click();
+          return;
+        }
+        if (/^\d$/.test(e.key) || e.key === 'Backspace' || e.key === 'Delete' || e.key === 'Tab' || e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'Home' || e.key === 'End') return;
+        if (!e.ctrlKey && !e.metaKey) e.preventDefault();
+      });
+      document.getElementById('login-2fa-code').addEventListener('input', () => {
+        document.getElementById('login-2fa-code').value = document.getElementById('login-2fa-code').value.replace(/\D/g, '').slice(0, 6);
+        if (document.getElementById('login-2fa-code').value.length === 6) {
+          document.getElementById('btn-2fa-verify').click();
+        }
+      });
+
       document.getElementById('form-login').addEventListener('submit', async (e) => {
         e.preventDefault();
         if (!storageWritesAllowed()) {
@@ -174,14 +282,13 @@
             return;
           }
 
-          localStorage.setItem('th_token', data.token);
-          localStorage.setItem('th_user', JSON.stringify(data.user));
-
-          if (data.user.role === 'admin') {
-            window.location.href = '/admin.html';
-          } else {
-            window.location.href = '/funcionario.html';
+          if (data.twoFactorRequired) {
+            pendingChallenge = data.challenge;
+            showLoginStep(true);
+            return;
           }
+
+          finishLogin(data);
         } catch (err) {
           errorDiv.textContent = 'Error de conexión. Intente nuevamente.';
           errorDiv.style.display = 'block';
