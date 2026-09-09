@@ -222,6 +222,23 @@ function cspNonceFromRes(req, res) {
 }
 const CSP_SCRIPT_SRC = ["'self'", cspNonceFromRes];
 
+// Inyecta el nonce CSP en los <script> y <style> en línea del HTML. Permite
+// eliminar 'unsafe-inline' de script-src y style-src sin romper páginas que
+// usan bloques en línea (login, activación, privacidad, etc.).
+function injectCspNonces(data, nonce) {
+  return data
+    .replace(/<script(?![^>]*\bsrc=)(?![^>]*\snonce=)[^>]*>/gi, (tag) => {
+      const close = tag.endsWith('/>') ? '/>' : '>';
+      const open = tag.slice(0, -close.length);
+      return `${open} nonce="${nonce}"${close}`;
+    })
+    .replace(/<style(?![^>]*\snonce=)[^>]*>/gi, (tag) => {
+      const close = tag.endsWith('/>') ? '/>' : '>';
+      const open = tag.slice(0, -close.length);
+      return `${open} nonce="${nonce}"${close}`;
+    });
+}
+
 // Genera un nonce por petición. Debe ejecutarse ANTES de helmet para que el encabezado
 // CSP se emita con el nonce correcto.
 app.use((req, res, next) => {
@@ -237,7 +254,10 @@ app.use(helmet({
       // Sin 'unsafe-inline' en atributos de eventos: los handlers inline
       // (onclick, onmouseover, ...) quedan bloqueados por CSP.
       scriptSrcAttr: ["'none'"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      styleSrc: ["'self'", cspNonceFromRes, 'https://fonts.googleapis.com'],
+      // Los atributos style="..." requieren 'unsafe-inline' (style-src-attr);
+      // los bloques <style> quedan protegidos por nonce en style-src.
+      styleSrcAttr: ["'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "blob:"],
       fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
       connectSrc: ["'self'"],
@@ -358,11 +378,7 @@ app.use((req, res, next) => {
   fs.readFile(filePath, 'utf8', (err, data) => {
     if (err) return next();
     const nonce = res.locals.cspNonce;
-    const injected = data.replace(/<script(?![^>]*\bsrc=)(?![^>]*\snonce=)[^>]*>/gi, (tag) => {
-      const close = tag.endsWith('/>') ? '/>' : '>';
-      const open = tag.slice(0, -close.length);
-      return `${open} nonce="${nonce}"${close}`;
-    });
+    const injected = injectCspNonces(data, nonce);
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(injected);
@@ -3770,11 +3786,7 @@ app.use((req, res, next) => {
   fs.readFile(filePath, 'utf8', (err, data) => {
     if (err) return res.status(404).send('Not found');
     const nonce = res.locals.cspNonce;
-    const injected = data.replace(/<script(?![^>]*\bsrc=)(?![^>]*\snonce=)[^>]*>/gi, (tag) => {
-      const close = tag.endsWith('/>') ? '/>' : '>';
-      const open = tag.slice(0, -close.length);
-      return `${open} nonce="${nonce}"${close}`;
-    });
+    const injected = injectCspNonces(data, nonce);
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
     res.set('Content-Type', 'text/html; charset=utf-8');
     res.send(injected);
