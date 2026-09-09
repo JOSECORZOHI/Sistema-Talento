@@ -6,6 +6,7 @@ const path = require('path');
 const { pathToFileURL } = require('url');
 const mammoth = require('mammoth');
 const { createWorker, PSM } = require('tesseract.js');
+const { stripAccentsAndLower } = require('./lib/helpers');
 
 // --- PDF.js v4 (extracción de capa de texto) + mupdf WASM (rasterizado escaneados),
 //     ambos sin dependencias nativas de sistema ---
@@ -167,7 +168,7 @@ async function extractText(buffer, filename) {
 }
 
 // --- Clasificador por palabras clave (catálogo fijo del sistema) ---
-const normalize = (t) => (t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+const normalize = stripAccentsAndLower;
 const countHits = (text, keywords) => keywords.reduce((acc, k) => acc + (text.includes(k) ? k.split(' ').length : 0), 0);
 
 const TYPE_RULES = [
@@ -187,25 +188,18 @@ const CATEGORY_RULES = [
   { id: 'seguridad-social', keywords: ['seguridad social', 'eps', 'pension', 'arl ', 'cesantias', 'cesantias', 'parafiscales', 'aportes', 'salud ocupacional', 'riesgos laborales'] }
 ];
 
-function classifyType(text) {
+function classifyByRules(text, rules, defaultId) {
   let best = null;
   let bestScore = 0;
-  for (const rule of TYPE_RULES) {
+  for (const rule of rules) {
     const score = countHits(text, rule.keywords);
     if (score > bestScore) { bestScore = score; best = rule.id; }
   }
-  return best || 'otro';
+  return best || defaultId;
 }
 
-function classifyCategory(text) {
-  let best = null;
-  let bestScore = 0;
-  for (const rule of CATEGORY_RULES) {
-    const score = countHits(text, rule.keywords);
-    if (score > bestScore) { bestScore = score; best = rule.id; }
-  }
-  return best || 'vinculacion';
-}
+const classifyType = (text) => classifyByRules(text, TYPE_RULES, 'otro');
+const classifyCategory = (text) => classifyByRules(text, CATEGORY_RULES, 'vinculacion');
 
 // --- Fechas ---
 const MONTHS = { enero: 1, febrero: 2, marzo: 3, abril: 4, mayo: 5, junio: 6, julio: 7, agosto: 8, septiembre: 9, octubre: 10, noviembre: 11, diciembre: 12 };

@@ -409,13 +409,15 @@ function storeFileBuffer(filename, buffer, metadata = {}) {
   return new Promise((resolve, reject) => {
     let toStore = buffer;
     const meta = { ...metadata };
-    // Cifrado en reposo de documentos sensibles (datos de salud / seguridad social).
-    if (metadata.sensitive === true && !metadata.encrypted) {
+    // Cifrado en reposo de TODOS los documentos (Ley 1581/2012, art. 4 y 5):
+    // ningún dato personal queda en claro en GridFS. El flag `sensitive` se
+    // conserva en metadatos como clasificación para auditoría.
+    if (!metadata.encrypted) {
       try {
         toStore = encryptBuffer(buffer);
         meta.encrypted = true;
       } catch (err) {
-        return reject(new Error('No se pudo cifrar el documento sensible: ' + err.message));
+        return reject(new Error('No se pudo cifrar el documento: ' + err.message));
       }
     }
     const us = getBucket().openUploadStream(filename, { metadata: meta });
@@ -640,7 +642,6 @@ module.exports = {
   col,
   isHealthy,
   closeDb,
-  createValidators,
   generateTempPassword,
   storeFileBuffer,
   readFileStream,

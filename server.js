@@ -23,7 +23,7 @@ const {
   escapeHtml, normalizeEmail, parseEmailFromHeader, parseToEmailHeader,
   getHeader, parseDateHeader, validatePasswordStrength
 } = require('./lib/helpers');
-const { renderResetPasswordEmail } = require('./lib/emailTemplates');
+const { renderResetPasswordEmail, renderCredentialsEmail } = require('./lib/emailTemplates');
 const { assertEncryptionKey } = require('./lib/crypto');
 const { generateSecret, verifyTOTP, buildOtpauthURL } = require('./lib/totp');
 
@@ -1199,7 +1199,8 @@ function generateId(prefix) {
 }
 
 function createDoc({ filename, originalName, employeeId, employeeName, documentTypeId, categoryId, description, issueDate, expiryDate, status, fileSize, uploadedBy, uploadedByEmployee, visibleToEmployee, sourceEmailId, sourceSenderEmail }) {
-  if (status !== undefined && !VALID_DOC_STATUSES.includes(status)) {
+  const statusErr = validateDocStatus(status);
+  if (statusErr) {
     throw new Error(`Estado no válido para el documento: ${status}`);
   }
   return {
@@ -1286,18 +1287,16 @@ async function registerDocumentCore({ req, filename, employeeId, documentTypeId,
       const gridFile = await readFileStream(filename).catch(() => null);
       if (gridFile) {
         targetFilename = filename;
-        if (sensitive) {
-          // Re-cifrar si el archivo existente aún no estaba cifrado (p.ej. un escaneo
-          // que se clasificó como sensible después de generarse en la bandeja).
-          const storedMeta = gridFile.file && gridFile.file.metadata;
-          if (!(storedMeta && storedMeta.encrypted === true)) {
-            const got = await readFileBuffer(filename).catch(() => null);
-            if (got && got.buffer) {
-              const buf = got.buffer;
-              await deleteFileByName(filename);
-              await storeFileBuffer(filename, buf, { source: gridFSSource || sourceDir || 'upload', registered: true, sensitive });
-              fileSize = buf.length;
-            }
+        // Re-cifrar si el archivo existente aún no estaba cifrado (legado anterior
+        // a la política de cifrado total). Al re-registrarlo queda cifrado en reposo.
+        const storedMeta = gridFile.file && gridFile.file.metadata;
+        if (!(storedMeta && storedMeta.encrypted === true)) {
+          const got = await readFileBuffer(filename).catch(() => null);
+          if (got && got.buffer) {
+            const buf = got.buffer;
+            await deleteFileByName(filename);
+            await storeFileBuffer(filename, buf, { source: gridFSSource || sourceDir || 'upload', registered: true, sensitive });
+            fileSize = buf.length;
           }
         }
         if (!fileSize) fileSize = gridFile.file.length || 0;
@@ -2031,7 +2030,7 @@ app.post('/api/employees', authMiddleware, requirePermission('employees.create')
   const emailSent = await sendEmail({
     to: normalizeEmail(email),
     subject: 'Credenciales de acceso — Sistema de Talento Humano',
-    html: `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head><body style="margin:0;padding:0;background:#f4f6f8;font-family:Arial,Helvetica,sans-serif;"><table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f8;padding:40px 20px;"><tr><td align="center"><table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08);"><tr><td style="background:linear-gradient(135deg,#1A5276 0%,#154360 50%,#0E2F44 100%);padding:32px 40px;text-align:center;"><img src="${logoUrl}" alt="Escudo" width="72" height="72" style="display:block;margin:0 auto 16px;border-radius:14px;background:rgba(255,255,255,0.12);padding:8px;"><h1 style="margin:0;color:#fff;font-size:22px;font-weight:700;">Sistema de Talento Humano</h1><p style="margin:6px 0 0;color:rgba(255,255,255,0.8);font-size:13px;">Alcald&iacute;a de Valledupar</p></td></tr><tr><td style="padding:36px 40px;"><p style="margin:0 0 16px;color:#333;font-size:15px;">Hola <strong>${escapeHtml(name)}</strong>,</p><p style="margin:0 0 20px;color:#555;font-size:14px;line-height:1.6;">Se cre&oacute; su cuenta en el Sistema de Gesti&oacute;n Documental de la Alcald&iacute;a de Valledupar. A continuaci&oacute;n sus credenciales de acceso iniciales:</p><table width="100%" cellpadding="0" cellspacing="0" style="background:#f0f7fb;border:1px solid #d6e8f2;border-radius:8px;margin-bottom:24px;"><tr><td style="padding:20px 24px;"><p style="margin:0 0 4px;color:#888;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Correo electr&oacute;nico</p><p style="margin:0 0 16px;color:#1A5276;font-size:16px;font-weight:700;">${escapeHtml(normalizeEmail(email))}</p><p style="margin:0 0 4px;color:#888;font-size:12px;text-transform:uppercase;letter-spacing:0.5px;">Contrase&ntilde;a temporal</p><p style="margin:0 0 4px;color:#c0392b;font-size:18px;font-weight:700;font-family:Consolas,Monaco,monospace;letter-spacing:1px;">${escapeHtml(tempPassword)}</p><p style="margin:8px 0 0;color:#e67e22;font-size:12px;font-weight:600;">Debe cambiar esta contrase&ntilde;a en su primer inicio de sesi&oacute;n.</p></td></tr></table><p style="margin:0 0 12px;color:#555;font-size:14px;line-height:1.6;">Ingrese al sistema con las credenciales anteriores. Ser&aacute; obligatorio crear una nueva contrase&ntilde;a.</p><table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:8px 0 24px;"><a href="${loginUrl}" style="display:inline-block;background:#1A5276;color:#fff;text-decoration:none;font-size:15px;font-weight:600;padding:14px 36px;border-radius:8px;">Ingresar al sistema</a></td></tr></table><p style="margin:0;color:#999;font-size:12px;line-height:1.5;">Por seguridad, cambie su contrase&ntilde;a lo antes posible. Si no solicit&oacute; esta cuenta, ignore este correo.</p></td></tr><tr><td style="background:#f8f9fa;border-top:1px solid #eee;padding:20px 40px;text-align:center;"><p style="margin:0;color:#aaa;font-size:11px;">Sistema de Gesti&oacute;n Documental &mdash; Talento Humano &middot; Alcald&iacute;a de Valledupar</p></td></tr></table></td></tr></table></body></html>`,
+    html: renderCredentialsEmail({ name, email: normalizeEmail(email), tempPassword, logoUrl, loginUrl }),
     text: `Hola ${name},\n\nSe creó su cuenta en el Sistema de Gestión Documental de la Alcaldía de Valledupar.\n\nCorreo: ${normalizeEmail(email)}\nContraseña temporal: ${tempPassword}\n\nDebe cambiar esta contraseña en su primer inicio de sesión.\nInicie sesión en: ${loginUrl}\n\nSi no solicitó esta cuenta, ignore este correo.`
   });
 
@@ -2372,9 +2371,8 @@ app.put('/api/documents/:id', authMiddleware, requirePermission('documents.updat
   if (issueDate !== undefined) updates.issueDate = issueDate;
   if (expiryDate !== undefined) updates.expiryDate = expiryDate;
   if (status !== undefined) {
-    if (!VALID_DOC_STATUSES.includes(status)) {
-      return res.status(400).json({ error: `Estado no válido. Valores permitidos: ${VALID_DOC_STATUSES.join(', ')}.` });
-    }
+    const statusErr = validateDocStatus(status);
+    if (statusErr) return res.status(400).json({ error: statusErr });
     updates.status = status;
   }
 
@@ -2554,24 +2552,15 @@ app.post('/api/documents/analyze', authMiddleware, requirePermission('documents.
     console.warn('[ANALYZE] No se pudieron cargar los empleados para sugerir:', e.message);
   }
 
-  const readBufferFromGridFs = () => new Promise((resolve, reject) => {
-    readFileStream(targetFilename).then((r) => {
-      if (!r) return resolve(null);
-      if (r.file.length > MAX_ANALYZE_BYTES) return resolve({ error: 'limite' });
-      const chunks = [];
-      let size = 0;
-      r.stream.on('data', (c) => {
-        size += c.length;
-        if (size > MAX_ANALYZE_BYTES) { try { r.stream.destroy(); } catch {} return reject({ error: 'limite' }); }
-        chunks.push(c);
-      });
-      r.stream.on('end', () => resolve(Buffer.concat(chunks)));
-      r.stream.on('error', (e) => reject(e));
-    }).catch((e) => reject(e));
-  });
-
+  // Lee el buffer (descifrado en reposo si aplica) respetando el límite de
+  // análisis; readFileBuffer lanza si el archivo excede `maxBytes`.
   let buf;
-  try { buf = await readBufferFromGridFs(); } catch { return res.status(413).json({ error: 'El archivo supera el tamaño máximo para análisis.' }); }
+  try {
+    const got = await readFileBuffer(targetFilename, MAX_ANALYZE_BYTES);
+    buf = got ? got.buffer : null;
+  } catch {
+    return res.status(413).json({ error: 'El archivo supera el tamaño máximo para análisis.' });
+  }
 
   // Fallback a disco SOLO para la bandeja del escáner (archivo físico aún no en GridFS).
   // Los documentos cargados y los adjuntos de correo ya viven en GridFS.

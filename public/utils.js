@@ -18,6 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // --- SEGURIDAD ---
+// Equivalente client-side de escapeHtml() en lib/helpers.js (server-side).
 function sanitize(str) {
   if (!str) return '';
   return String(str)

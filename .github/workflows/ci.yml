@@ -31,5 +31,7 @@ jobs:
       - name: Lint del frontend
         run: npm run lint:frontend
 
-      - name: Tests unitarios
+      - name: Tests unitarios y smoke
         run: npm test
+        env:
+          SMOKE_BASE_URL: https://sistema-talento-production.up.railway.app
