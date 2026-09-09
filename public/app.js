@@ -558,6 +558,7 @@ function setupEventListeners() {
 
   // Disparadores de modal de nuevo empleado
   document.getElementById('btn-add-employee-trigger').addEventListener('click', () => openModal(modalAddEmp));
+  document.getElementById('btn-add-employee-open').addEventListener('click', () => openModal(modalAddEmp));
   document.getElementById('btn-close-emp-modal').addEventListener('click', () => closeModal(modalAddEmp));
   document.getElementById('btn-cancel-emp').addEventListener('click', () => closeModal(modalAddEmp));
 
@@ -575,6 +576,14 @@ function setupEventListeners() {
   document.getElementById('btn-see-all-logs').addEventListener('click', () => {
     window.location.hash = '#auditoria';
   });
+  document.getElementById('btn-see-directory').addEventListener('click', () => {
+    window.location.hash = '#expedientes';
+  });
+
+  // Subtabs de digitalización (migrados desde onclick inline a addEventListener)
+  document.getElementById('btn-subtab-manual').addEventListener('click', () => switchSubTab('manual'));
+  document.getElementById('btn-subtab-scanner').addEventListener('click', () => switchSubTab('scanner'));
+  document.getElementById('btn-subtab-email').addEventListener('click', () => switchSubTab('email'));
 
   // Disparadores de filtro (filtro instantáneo al escribir/cambiar)
   document.getElementById('search-input').addEventListener('input', renderDocumentsTable);

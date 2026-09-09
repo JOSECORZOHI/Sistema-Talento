@@ -453,7 +453,7 @@
         <div class="portal-user-info">
           <div style="display:flex;align-items:center;gap:6px;">
             <h4 id="portal-user-name" style="margin:0;">Funcionario</h4>
-            <button class="btn-portal-action" id="btn-edit-name" title="Editar nombre" style="padding:4px;border:none;background:transparent;cursor:pointer;opacity:0.6;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.6'">
+            <button class="btn-portal-action" id="btn-edit-name" title="Editar nombre" style="padding:4px;border:none;background:transparent;cursor:pointer;opacity:0.6;">
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             </button>
           </div>
@@ -504,19 +504,19 @@
       </div>
 
       <div class="portal-tabs">
-        <button class="portal-tab active" data-tab="mis-docs" onclick="portalShowTab('mis-docs')">
+        <button class="portal-tab active" data-tab="mis-docs">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
           Mis Documentos
         </button>
-        <button class="portal-tab" data-tab="subir" onclick="portalShowTab('subir')">
+        <button class="portal-tab" data-tab="subir">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
           Subir Documento
         </button>
-        <button class="portal-tab" data-tab="scanner" onclick="portalShowTab('scanner')">
+        <button class="portal-tab" data-tab="scanner">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>
           Escáner
         </button>
-        <button class="portal-tab" data-tab="correo" onclick="portalShowTab('correo')">
+        <button class="portal-tab" data-tab="correo">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
           Correo
         </button>
@@ -613,8 +613,8 @@
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <span id="portal-email-count">0 correos</span>
             <span id="portal-gmail-status" class="badge" style="display:none;background:var(--secondary-soft);color:var(--secondary);padding:3px 10px;border-radius:20px;font-size:11px;"></span>
-            <button class="btn btn-secondary" id="btn-portal-link-gmail" style="padding:6px 12px;font-size:12px;" onclick="linkFuncionarioGmail()">Conectar mi Gmail</button>
-            <button class="btn btn-secondary" id="btn-portal-sync-email" style="padding:6px 12px;font-size:12px;" onclick="syncFuncionarioEmails()">Sincronizar correo</button>
+            <button class="btn btn-secondary" id="btn-portal-link-gmail" style="padding:6px 12px;font-size:12px;">Conectar mi Gmail</button>
+            <button class="btn btn-secondary" id="btn-portal-sync-email" style="padding:6px 12px;font-size:12px;">Sincronizar correo</button>
           </div>
         </div>
         <div id="portal-email-list" class="portal-email-list"></div>
@@ -640,7 +640,7 @@
     <div class="modal-container modal-small">
       <div class="modal-header">
         <h3>Solicitar Eliminación de Documento</h3>
-        <button class="btn-close" onclick="closeModal('modal-delete-request')">&times;</button>
+        <button class="btn-close" data-modal-close="modal-delete-request">&times;</button>
       </div>
       <div class="modal-body-scroll">
         <form id="form-delete-request">
@@ -672,7 +672,7 @@
     <div class="modal-container modal-small">
       <div class="modal-header">
         <h3>Registrar Documento Escaneado</h3>
-        <button class="btn-close" onclick="closeModal('modal-register-scanner')">&times;</button>
+        <button class="btn-close" data-modal-close="modal-register-scanner">&times;</button>
       </div>
       <div class="modal-body-scroll">
         <form id="form-register-scanner">
@@ -709,7 +709,7 @@
     <div class="modal-container modal-small">
       <div class="modal-header">
         <h3>Registrar Adjunto de Correo</h3>
-        <button class="btn-close" onclick="closeModal('modal-register-email')">&times;</button>
+        <button class="btn-close" data-modal-close="modal-register-email">&times;</button>
       </div>
       <div class="modal-body-scroll">
         <form id="form-register-email">
@@ -853,7 +853,7 @@
     <div class="modal-container modal-small">
       <div class="modal-header">
         <h3>Cambiar Contraseña</h3>
-        <button class="btn-close" onclick="closeModal('modal-change-password')">&times;</button>
+        <button class="btn-close" data-modal-close="modal-change-password">&times;</button>
       </div>
       <div class="modal-body-scroll">
         <form id="form-change-password">
@@ -877,6 +877,6 @@
   </div>
 
   <script src="utils.js?v=5"></script>
-  <script src="funcionario.js?v=12"></script>
+  <script src="funcionario.js?v=13"></script>
 </body>
 </html>

@@ -234,7 +234,9 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: CSP_SCRIPT_SRC,
-      scriptSrcAttr: ["'unsafe-inline'"],
+      // Sin 'unsafe-inline' en atributos de eventos: los handlers inline
+      // (onclick, onmouseover, ...) quedan bloqueados por CSP.
+      scriptSrcAttr: ["'none'"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       imgSrc: ["'self'", "data:", "blob:"],
       fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
@@ -316,6 +318,14 @@ const scannerLimiter = rateLimit({
   message: { error: 'Demasiadas solicitudes de refresco de escáner. Intente de nuevo en 15 minutos.' }
 });
 
+const twoFactorLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiados intentos de verificación 2FA. Intente de nuevo en 15 minutos.' }
+});
+
 const uploadLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 60,
@@ -329,6 +339,7 @@ app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/forgot-password', authLimiter);
 app.use('/api/auth/activate', authLimiter);
 app.use('/api/auth/reset-password', authLimiter);
+app.use('/api/auth/2fa/verify', twoFactorLimiter);
 // --- CSP con NONCE (endurecimiento Content-Security-Policy) ---
 // Se genera un nonce por petición (en el middleware global de arriba) y se inyecta
 // en los <script> en línea de las páginas HTML, eliminando la dependencia de

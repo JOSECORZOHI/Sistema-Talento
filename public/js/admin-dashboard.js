@@ -139,6 +139,15 @@ function formatRelativeTime(date) {
 }
 
 // --- PANEL DE ESTADO DEL SISTEMA ---
+// Delegación de eventos para el botón "Refrescar estado": el panel se
+// reconstruye en cada render (migrado desde onclick inline a addEventListener).
+document.addEventListener('click', (e) => {
+  const target = e.target;
+  if (target && target.closest && target.closest('#status-refresh-btn')) {
+    fetchSystemStatus().then(renderSystemStatus);
+  }
+});
+
 async function fetchSystemStatus() {
   try {
     const res = await apiFetch('/api/system/status');
@@ -189,10 +198,10 @@ function renderSystemStatus(status) {
       <div style="background:var(--background);border:1px solid var(--border-color);border-radius:8px;padding:10px;">
         <div style="color:var(--text-muted);font-size:11px;">Bandeja escáner / Archivos</div>
         <div style="font-weight:700;font-size:13px;">${status.scanner.localFolder ? '✓ Local' : '— No-local'} · ${status.documents.unregistered} por registrar</div>
-        <div style="color:var(--text-muted);">Node ${status.node || '—'} · v${status.version || '—'} · ${status.responseTimeMs} ms</div>
+        <div style="color:var(--text-muted);">Node ${sanitize(status.node || '—')} · v${sanitize(status.version || '—')} · ${status.responseTimeMs} ms</div>
       </div>
     </div>
-    <button class="btn btn-text btn-sm" style="margin-top:10px;font-size:12px;" onclick="fetchSystemStatus().then(renderSystemStatus)">↻ Refrescar estado</button>
+    <button class="btn btn-text btn-sm" id="status-refresh-btn" style="margin-top:10px;font-size:12px;">↻ Refrescar estado</button>
   `;
 }
 

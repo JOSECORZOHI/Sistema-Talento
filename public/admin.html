@@ -241,7 +241,7 @@
               <div id="dashboard-employee-list" style="max-height:260px;overflow-y:auto;">
                 <div class="no-data-placeholder">Cargando funcionarios...</div>
               </div>
-              <button class="btn btn-text btn-full-width" style="margin-top: 12px;" onclick="window.location.hash='#expedientes'">Ver directorio completo →</button>
+              <button class="btn btn-text btn-full-width" id="btn-see-directory" style="margin-top: 12px;">Ver directorio completo →</button>
             </div>
 
             <!-- Registros de actividad recientes -->
@@ -350,13 +350,13 @@
         <section id="section-registro" class="app-section">
           <!-- Subtabs Navigation -->
           <div class="subtabs-navigation" style="display: flex; gap: 12px; margin-bottom: 24px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px;">
-            <button class="btn btn-secondary active" id="btn-subtab-manual" onclick="switchSubTab('manual')">
+            <button class="btn btn-secondary active" id="btn-subtab-manual">
               Carga Manual / Locales
             </button>
-            <button class="btn btn-secondary" id="btn-subtab-scanner" onclick="switchSubTab('scanner')">
+            <button class="btn btn-secondary" id="btn-subtab-scanner">
               Bandeja de Escáner
             </button>
-            <button class="btn btn-secondary" id="btn-subtab-email" onclick="switchSubTab('email')">
+            <button class="btn btn-secondary" id="btn-subtab-email">
               Bandeja de Correo
               <span class="count-badge" id="badge-email-unread" style="margin-left: 8px; font-size: 10px; background-color: var(--danger); color: white; display: none;">0</span>
             </button>
@@ -584,7 +584,7 @@
                 </select>
               </div>
               <div class="filter-group" style="align-self: flex-end;">
-                <button class="btn btn-primary" onclick="document.getElementById('btn-add-employee-trigger').click()">
+                <button class="btn btn-primary" id="btn-add-employee-open">
                   <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
                   </svg>
@@ -1038,11 +1038,11 @@
 
   <!-- JS Logic -->
   <script src="utils.js?v=5"></script>
-  <script src="js/admin-dashboard.js?v=2"></script>
+  <script src="js/admin-dashboard.js?v=3"></script>
   <script src="js/admin-directory.js?v=1"></script>
   <script src="js/admin-documents.js?v=1"></script>
   <script src="js/admin-audit.js?v=1"></script>
   <script src="js/admin-scanner-email.js?v=1"></script>
-  <script src="app.js?v=13"></script>
+  <script src="app.js?v=14"></script>
 </body>
 </html>

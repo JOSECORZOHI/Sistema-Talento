@@ -32,7 +32,7 @@ test('replaceManyText actualiza solo documentos con datos personales por lotes',
     { _id: '2', details: 'Evento sin datos', action: 'leer' }
   ];
   const collection = {
-    find: () => ({ limit() { return this; }, toArray: async () => docs.splice(0, 2) }),
+    find: () => ({ skip() { return this; }, limit() { return this; }, toArray: async () => docs.splice(0, 2) }),
     updateOne: async () => {}
   };
   const updated = await replaceManyText(collection, ['Jose Perez']);

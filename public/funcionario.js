@@ -51,6 +51,27 @@ document.addEventListener('DOMContentLoaded', () => {
   // Cerrar sesión
   document.getElementById('btn-portal-logout').addEventListener('click', logout);
 
+  // Tabs del portal (migrados desde onclick inline a addEventListener)
+  document.querySelectorAll('.portal-tab').forEach(tab => {
+    tab.addEventListener('click', () => portalShowTab(tab.dataset.tab));
+  });
+
+  // Conexión y sincronización de Gmail (migrados desde onclick inline)
+  document.getElementById('btn-portal-link-gmail')?.addEventListener('click', linkFuncionarioGmail);
+  document.getElementById('btn-portal-sync-email')?.addEventListener('click', syncFuncionarioEmails);
+
+  // Cerrar modales desde su botón de cierre (migrados desde onclick inline)
+  document.querySelectorAll('[data-modal-close]').forEach(btn => {
+    btn.addEventListener('click', () => closeModal(btn.dataset.modalClose));
+  });
+
+  // Efecto hover del botón editar nombre (migrado desde onmouseover/onmouseout inline)
+  const editNameBtn = document.getElementById('btn-edit-name');
+  if (editNameBtn) {
+    editNameBtn.addEventListener('mouseover', () => { editNameBtn.style.opacity = '1'; });
+    editNameBtn.addEventListener('mouseout', () => { editNameBtn.style.opacity = '0.6'; });
+  }
+
   // Formulario de subida
   document.getElementById('form-portal-upload').addEventListener('submit', handlePortalUpload);
 

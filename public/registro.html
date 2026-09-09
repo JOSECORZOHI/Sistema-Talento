@@ -61,7 +61,7 @@
           <p style="margin:0;font-size:0.85rem;">Las cuentas de funcionario son creadas únicamente por el administrador del sistema. Si necesita acceso, contacte al área de Talento Humano.</p>
         </div>
 
-        <button type="button" class="btn btn-primary btn-full-width login-submit" onclick="window.location.href='/'">
+        <button type="button" class="btn btn-primary btn-full-width login-submit" id="btn-back-login">
           Ir al Inicio de Sesión
         </button>
       </div>
@@ -77,6 +77,9 @@
     document.addEventListener('DOMContentLoaded', () => {
       const form = document.getElementById('form-register');
       if (form) form.style.display = 'none';
+      document.getElementById('btn-back-login').addEventListener('click', () => {
+        window.location.href = '/';
+      });
     });
   </script>
 </body>
