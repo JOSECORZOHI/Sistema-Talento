@@ -251,9 +251,10 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: CSP_SCRIPT_SRC,
-      // Sin 'unsafe-inline' en atributos de eventos: los handlers inline
-      // (onclick, onmouseover, ...) quedan bloqueados por CSP.
-      scriptSrcAttr: ["'none'"],
+      // 'unsafe-inline' requerido para atributos onclick= generados dinámicamente
+      // por el frontend (admin-documents.js, funcionario.js, admin-scanner-email.js, etc.).
+      // Los <script> en línea siguen protegidos por el nonce en script-src.
+      scriptSrcAttr: ["'unsafe-inline'"],
       styleSrc: ["'self'", cspNonceFromRes, 'https://fonts.googleapis.com'],
       // Los atributos style="..." requieren 'unsafe-inline' (style-src-attr);
       // los bloques <style> quedan protegidos por nonce en style-src.
