@@ -360,36 +360,25 @@ function renderPortalScannerFiles() {
   if (trayCount) trayCount.textContent = `${files.length} archivo${files.length !== 1 ? 's' : ''}`;
 
   if (files.length === 0) {
-    list.innerHTML = `
-      <div class="portal-no-docs">
-        <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2"/>
-          <line x1="7" y1="12" x2="17" y2="12"/>
-        </svg>
-        <h4>No hay archivos en la bandeja de escáner</h4>
-        <p>Cuando un documento sea escaneado, aparecerá aquí para que pueda registrarlo en su expediente.</p>
-      </div>`;
+    list.innerHTML = scannerTrayEmptyHtml(ICONS.scanEmpty, 'Cuando un documento sea escaneado, aparecerá aquí para que pueda registrarlo en su expediente.');
     return;
   }
 
   let html = '';
   for (let i = 0; i < files.length; i++) {
     const f = files[i];
-    const sizeKB = f.fileSize ? Math.round(f.fileSize / 1024) : '—';
-    const safeFn = escOnclick(f.filename);
+    const meta = scannerTrayMeta(f);
     html += `<div class="portal-item-card">
       <div class="portal-item-icon">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="var(--primary)" stroke-width="2">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-        </svg>
+        ${ICONS.file}
       </div>
       <div class="portal-item-info">
         <h5 title="${sanitize(f.filename)}">${sanitize(f.filename)}</h5>
-        <span>${sizeKB} KB · ${new Date(f.createdAt).toLocaleDateString('es-CO')}</span>
+        <span>${meta.sizeKB} KB · ${meta.dateLabel}</span>
       </div>
       <div class="portal-item-actions">
-        <button class="btn-ver-doc" onclick="event.stopPropagation();openPortalPdf('${safeFn}', 'scanner')">Ver</button>
-        <button class="btn-register-item" onclick="openRegisterScanner('${safeFn}')">Registrar</button>
+        <button class="btn-ver-doc" onclick="event.stopPropagation();openPortalPdf('${meta.safeFn}', 'scanner')">Ver</button>
+        <button class="btn-register-item" onclick="openRegisterScanner('${meta.safeFn}')">Registrar</button>
       </div></div>`;
   }
   list.innerHTML = html;

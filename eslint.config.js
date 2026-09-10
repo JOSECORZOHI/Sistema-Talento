@@ -14,6 +14,7 @@ const frontendShared = [
   'escOnclick', 'getToken', 'getUser', 'logout', 'checkAuth', 'apiFetch',
   'apiFetchWithRetry', 'showToast', 'removeToast', 'showLoader', 'hideLoader',
   'openModal', 'closeModal', 'getInitials', 'formatIssueDate', 'formatDate',
+  'scannerTrayEmptyHtml', 'scannerTrayMeta', 'ICONS',
   'populateDropdown', 'populateSelect', 'guardSubmit', 'initTheme', 'updateThemeUI',
   'setupThemeToggle', 'evaluatePasswordStrength', 'bindPasswordStrengthMeter',
   'renderPdfFallback', 'openPdfViewer', 'closePdfViewer', 'setupDragDrop',

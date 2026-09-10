@@ -38,28 +38,23 @@ function renderScannerFiles() {
   if (!list) return;
 
   if (appState.scannerFiles.length === 0) {
-    list.innerHTML = `
-      <div class="portal-no-docs">
-        <h4>No hay archivos en la bandeja de escáner</h4>
-        <p>Cuando un documento sea escaneado, aparecerá aquí para que pueda registrarlo en un expediente.</p>
-      </div>`;
+    list.innerHTML = scannerTrayEmptyHtml(null, 'Cuando un documento sea escaneado, aparecerá aquí para que pueda registrarlo en un expediente.');
     return;
   }
 
   let html = '';
   for (let i = 0; i < appState.scannerFiles.length; i++) {
     const f = appState.scannerFiles[i];
-    const sizeKB = f.fileSize ? Math.round(f.fileSize / 1024) : '—';
-    const safeFn = escOnclick(f.filename);
+    const meta = scannerTrayMeta(f);
     html += `<div class="portal-item-card" style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--bg-secondary);border-radius:8px;margin-bottom:6px;border:1px solid var(--border-color);">
       <span style="font-size:22px;">📄</span>
       <div class="portal-item-info" style="flex:1;min-width:0;">
         <h5 style="margin:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${sanitize(f.filename)}">${sanitize(f.filename)}</h5>
-        <span style="font-size:11px;color:var(--text-muted);">${sizeKB} KB &bull; ${formatDate(f.createdAt)}</span>
+        <span style="font-size:11px;color:var(--text-muted);">${meta.sizeKB} KB &bull; ${meta.dateLabel}</span>
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0;">
-        <button class="btn btn-secondary" style="padding:5px 10px;font-size:11px;" onclick="event.stopPropagation();openPdfModal('${safeFn}', 'scanner')" title="Vista previa">👁 Ver</button>
-        <button class="btn btn-primary" style="padding:5px 12px;font-size:11px;" onclick="openRegisterScannerModal('${safeFn}')">Registrar</button>
+        <button class="btn btn-secondary" style="padding:5px 10px;font-size:11px;" onclick="event.stopPropagation();openPdfModal('${meta.safeFn}', 'scanner')" title="Vista previa">👁 Ver</button>
+        <button class="btn btn-primary" style="padding:5px 12px;font-size:11px;" onclick="openRegisterScannerModal('${meta.safeFn}')">Registrar</button>
       </div></div>`;
   }
   list.innerHTML = html;

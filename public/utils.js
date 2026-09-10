@@ -1,4 +1,4 @@
-/* exported sanitize, escOnclick, getToken, getUser, logout, checkAuth, apiFetch, apiFetchWithRetry, showToast, removeToast, showLoader, hideLoader, openModal, closeModal, attachModalBackdropClose, getInitials, formatIssueDate, formatDate, populateDropdown, populateSelect, guardSubmit, initTheme, updateThemeUI, setupThemeToggle, evaluatePasswordStrength, bindPasswordStrengthMeter, openPdfViewer, closePdfViewer, setupDragDrop, getStorageConsent, grantStorageConsent, declineStorageConsent, maybeShowStorageConsentBanner, storageWritesAllowed */
+/* exported sanitize, escOnclick, getToken, getUser, logout, checkAuth, apiFetch, apiFetchWithRetry, showToast, removeToast, showLoader, hideLoader, openModal, closeModal, attachModalBackdropClose, getInitials, formatIssueDate, formatDate, coerceLocalDate, scannerTrayEmptyHtml, scannerTrayMeta, populateDropdown, populateSelect, guardSubmit, initTheme, updateThemeUI, setupThemeToggle, evaluatePasswordStrength, bindPasswordStrengthMeter, openPdfViewer, closePdfViewer, setupDragDrop, getStorageConsent, grantStorageConsent, declineStorageConsent, maybeShowStorageConsentBanner, storageWritesAllowed */
 // ============================================================
 //  Funciones compartidas — utils.js
 //  Usado por admin.html (app.js) y funcionario.html (funcionario.js)
@@ -338,24 +338,46 @@ function getInitials(name) {
   return (first + second).toUpperCase();
 }
 
+// Convierte 'YYYY-MM-DD' a Date local SIN corrimiento de zona horaria
+// (un solo sitio para la regla usada por formatIssueDate y formatDate).
+function coerceLocalDate(value) {
+  const m = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return new Date(value);
+}
+
 // Formatea una fecha 'YYYY-MM-DD' sin corrimiento de zona horaria.
 function formatIssueDate(value) {
   if (!value) return '—';
-  const m = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (m) {
-    const [, y, mo, d] = m;
-    return new Date(Number(y), Number(mo) - 1, Number(d)).toLocaleDateString('es-CO');
-  }
-  const parsed = new Date(value);
+  const parsed = coerceLocalDate(value);
   return isNaN(parsed.getTime()) ? String(value) : parsed.toLocaleDateString('es-CO');
 }
 
 // Formatea una fecha ISO/timestamp de forma segura; devuelve '—' si es inválida.
+// Las cadenas 'YYYY-MM-DD' se tratan como formato de issue-date (sin TZ shift).
 function formatDate(value, opts, fallback = '—') {
   if (!value) return fallback;
-  const parsed = new Date(value);
+  const parsed = coerceLocalDate(value);
   if (isNaN(parsed.getTime())) return fallback;
   return opts && opts.timeStyle ? parsed.toLocaleString('es-CO', opts) : parsed.toLocaleDateString('es-CO', opts);
+}
+
+// --- BANDEJA DEL ESCÁNER (compartido entre portal del funcionario y panel admin) ---
+function scannerTrayEmptyHtml(iconSvg, note) {
+  return `
+    <div class="portal-no-docs">
+      ${iconSvg || ''}
+      <h4>No hay archivos en la bandeja de escáner</h4>
+      <p>${note || 'Cuando un documento sea escaneado, aparecerá aquí para que pueda registrarlo.'}</p>
+    </div>`;
+}
+
+function scannerTrayMeta(f) {
+  return {
+    safeFn: escOnclick(f.filename),
+    sizeKB: f.fileSize ? Math.round(f.fileSize / 1024) : '—',
+    dateLabel: formatDate(f.createdAt)
+  };
 }
 
 function populateDropdown(selectId, items, defaultVal, defaultText, keyField = 'id', textField = 'name') {

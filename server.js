@@ -1341,6 +1341,31 @@ async function registerDocumentCore({ req, filename, employeeId, documentTypeId,
   }
 }
 
+// Registro de un archivo de la bandeja del escáner como documento. Compartido por
+// el portal del funcionario (estado fijado) y el panel administrativo (estado elegido).
+// Valida campos obligatorios, estado, presencia en la bandeja y registra con lock.
+async function registerScannerDoc(req, res, { errorMessage, defaultStatus, core }) {
+  const { filename, employeeId, documentTypeId, categoryId, description, issueDate, expiryDate, status } = req.body;
+  if (requireFields(req.body, ['filename', 'documentTypeId', 'categoryId', 'issueDate'])) {
+    return res.status(400).json({ error: errorMessage || 'Faltan campos obligatorios.' });
+  }
+  const finalStatus = status !== undefined ? status : defaultStatus;
+  if (finalStatus !== undefined) {
+    const statusErr = validateDocStatus(finalStatus);
+    if (statusErr) return res.status(400).json({ error: statusErr });
+  }
+  if (!(await isFileInScannerTray(filename))) {
+    return res.status(403).json({ error: 'El archivo no se encuentra en la bandeja del escáner.' });
+  }
+  const result = await withRegisterLock(filename, () => registerDocumentCore({
+    req, filename, employeeId, documentTypeId, categoryId, description, issueDate, expiryDate,
+    status: finalStatus, sourceDir: SCANNER_DIR, mover: true, actor: req.user.name,
+    ...(core || {})
+  }));
+  if (result.error) return res.status(result.status).json({ error: result.error });
+  return res.status(201).json(result.doc);
+}
+
 // Registro compartido de adjunto de correo (admin y funcionario). `email` ya fue cargado
 // por la ruta (para validar propiedad o armar metadatos). Encapsula: verificación del adjunto,
 // registro con lock y marcado del adjunto como registrado. Devuelve { doc } o { error, status }.
@@ -1896,27 +1921,18 @@ app.post('/api/funcionario/subir-documento', authMiddleware, uploadLimiter, uplo
 
 app.post('/api/funcionario/register-scanner', authMiddleware, async (req, res) => {
   if (req.user.role !== 'funcionario') return res.status(403).json({ error: 'Acceso denegado.' });
-  const { filename, documentTypeId, categoryId, description, issueDate, expiryDate } = req.body;
-  if (requireFields(req.body, ['filename', 'documentTypeId', 'categoryId', 'issueDate'])) {
-    return res.status(400).json({ error: 'Faltan campos obligatorios.' });
-  }
-
-  if (!(await isFileInScannerTray(filename))) {
-    return res.status(403).json({ error: 'El archivo no se encuentra en la bandeja del escáner.' });
-  }
 
   // Un funcionario solo puede dejar el documento en revisión; el estado lo fija el administrador.
-  const result = await withRegisterLock(filename, () => registerDocumentCore({
-    req, filename, employeeId: req.user.employeeId, documentTypeId, categoryId, description, issueDate, expiryDate,
-    status: 'Pendiente',
-    sourceDir: SCANNER_DIR, mover: true,
-    auditAction: 'Escáner por Funcionario',
-    auditMessageTemplate: (emp, type, fn) => `${emp} registró el archivo escaneado '${fn}' (${type}).`,
-    extraDocFields: { uploadedBy: req.user.name || 'Funcionario', uploadedByEmployee: true },
-    actor: req.user.name
-  }));
-  if (result.error) return res.status(result.status).json({ error: result.error });
-  res.status(201).json(result.doc);
+  return registerScannerDoc(req, res, {
+    errorMessage: 'Faltan campos obligatorios.',
+    defaultStatus: 'Pendiente',
+    core: {
+      employeeId: req.user.employeeId,
+      auditAction: 'Escáner por Funcionario',
+      auditMessageTemplate: (emp, type, fn) => `${emp} registró el archivo escaneado '${fn}' (${type}).`,
+      extraDocFields: { uploadedBy: req.user.name || 'Funcionario', uploadedByEmployee: true }
+    }
+  });
 });
 
 app.post('/api/funcionario/register-email-attachment', authMiddleware, async (req, res) => {
@@ -3125,26 +3141,13 @@ app.post('/api/scanner/launch-epson-scan', authMiddleware, requireAnyPermission(
 });
 
 app.post('/api/documents/register-scanner', authMiddleware, requirePermission('documents.create'), async (req, res) => {
-  const { filename, employeeId, documentTypeId, categoryId, description, issueDate, expiryDate, status } = req.body;
-  if (requireFields(req.body, ['filename', 'employeeId', 'documentTypeId', 'categoryId', 'issueDate'])) {
-    return res.status(400).json({ error: 'Faltan campos obligatorios para registrar el documento escaneado.' });
-  }
-  const statusErr = validateDocStatus(status);
-  if (statusErr) return res.status(400).json({ error: statusErr });
-
-  if (!(await isFileInScannerTray(filename))) {
-    return res.status(403).json({ error: 'El archivo no se encuentra en la bandeja del escáner.' });
-  }
-
-  const result = await withRegisterLock(filename, () => registerDocumentCore({
-    req, filename, employeeId, documentTypeId, categoryId, description, issueDate, expiryDate, status,
-    sourceDir: SCANNER_DIR, mover: true,
-    auditAction: 'Ingesta de Escáner',
-    auditMessageTemplate: (emp, type, fn) => `Se procesó e ingresó el documento escaneado '${fn}' para el funcionario ${emp} (${type}).`,
-    actor: req.user.name
-  }));
-  if (result.error) return res.status(result.status).json({ error: result.error });
-  res.status(201).json(result.doc);
+  return registerScannerDoc(req, res, {
+    errorMessage: 'Faltan campos obligatorios para registrar el documento escaneado.',
+    core: {
+      auditAction: 'Ingesta de Escáner',
+      auditMessageTemplate: (emp, type, fn) => `Se procesó e ingresó el documento escaneado '${fn}' para el funcionario ${emp} (${type}).`
+    }
+  });
 });
 
 // --- BANDEJA DE CORREO ---
