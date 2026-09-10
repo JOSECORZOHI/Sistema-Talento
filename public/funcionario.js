@@ -772,10 +772,14 @@ async function refreshPortalScannerStatus() {
       dot.style.background = '#27AE60';
       dotText.textContent = `${count} escáner(es) disponible(s)`;
       dotText.style.color = '#27AE60';
+      dot.classList.toggle('show-ok', true);
+      dot.classList.toggle('show-err', false);
     } else {
       dot.style.background = '#E74C3C';
       dotText.textContent = 'Escáner inactivo — No conectado';
       dotText.style.color = '#E74C3C';
+      dot.classList.toggle('show-err', true);
+      dot.classList.toggle('show-ok', false);
     }
 
     if (btnScan) {

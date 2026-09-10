@@ -1,0 +1,449 @@
+/* ============================================================
+   funcionario-style.css — Rediseño visual del Portal del Funcionario
+   (cap aislada: SOLO se carga en funcionario.html, después de style.css)
+   Sigue el sistema de tokens globales (--primary, --surface, ...) y
+   añade una capa de refinamiento con identidad municipal Valledupar.
+   ============================================================ */
+
+/* ---------- 1. AMBIENTE DE FONDO ---------- */
+body {
+  background:
+    radial-gradient(1200px 520px at 88% -10%, rgba(26, 82, 118, 0.14), transparent 60%),
+    radial-gradient(900px 460px at -12% 108%, rgba(176, 58, 46, 0.10), transparent 55%),
+    linear-gradient(180deg, #f4f7fb 0%, #eef3f9 100%) !important;
+  color: var(--text-primary);
+}
+
+body.dark-theme {
+  background:
+    radial-gradient(1200px 520px at 88% -10%, rgba(93, 173, 226, 0.12), transparent 60%),
+    radial-gradient(900px 460px at -12% 108%, rgba(236, 112, 99, 0.08), transparent 55%),
+    linear-gradient(180deg, #0b111c 0%, #0e1522 100%) !important;
+}
+
+/* Scrollbars del portal */
+.portal-main::-webkit-scrollbar { width: 10px; }
+.portal-main::-webkit-scrollbar-track { background: transparent; }
+.portal-main::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(26, 82, 118, 0.35), rgba(26, 82, 118, 0.2));
+  border-radius: 999px; border: 2px solid transparent; background-clip: padding-box;
+}
+.portal-main::-webkit-scrollbar-thumb:hover { background: linear-gradient(180deg, #1a5276, #2471a3); background-clip: padding-box; }
+body.dark-theme .portal-main::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(93, 173, 226, 0.4), rgba(93, 173, 226, 0.2));
+  border: 2px solid transparent; background-clip: padding-box;
+}
+
+/* ---------- 2. TOPBAR ---------- */
+.portal-topbar {
+  background:
+    linear-gradient(135deg, #0a2233 0%, #143a57 38%, #1f6a9a 68%, #1a5276 100%);
+  height: 68px;
+  box-shadow: 0 8px 32px rgba(10, 34, 51, 0.35);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+body.dark-theme .portal-topbar {
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+.portal-topbar::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+  z-index: 3;
+}
+.portal-topbar-brand img {
+  width: 38px; height: 38px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.18), 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+.portal-topbar-brand .brand-text span {
+  font-size: 16px; letter-spacing: 0.5px;
+  background: linear-gradient(180deg, #ffffff, #cfe4f2);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.portal-topbar .bandera-strip { height: 3px; }
+
+.portal-avatar {
+  width: 38px; height: 38px; font-size: 14px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  background:
+    radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.5), transparent),
+    linear-gradient(135deg, rgba(26, 82, 118, 0.9), rgba(14, 47, 68, 0.9));
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.08), 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+.portal-user-info h4 { font-size: 13px; letter-spacing: 0.2px; }
+.portal-user-info span { font-size: 10.5px; color: rgba(255, 255, 255, 0.55); }
+
+.btn-portal-action {
+  border-radius: 10px; padding: 8px 14px; font-size: 11.5px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+.btn-portal-action:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+.btn-portal-logout { border-color: rgba(255, 255, 255, 0.1); color: rgba(255, 255, 255, 0.55); }
+
+/* ---------- 3. HERO DE BIENVENIDA ---------- */
+.portal-welcome {
+  background:
+    radial-gradient(720px 300px at 82% -30%, rgba(93, 173, 226, 0.35), transparent 60%),
+    radial-gradient(520px 260px at 6% 120%, rgba(255, 255, 255, 0.08), transparent 55%),
+    linear-gradient(120deg, #0a2233 0%, #143a57 45%, #216a9c 100%);
+  border-radius: 20px;
+  padding: 30px 34px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 20px 48px rgba(10, 34, 51, 0.3);
+}
+.portal-welcome::before {
+  top: -40%; right: -4%; width: 420px; height: 420px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 68%);
+}
+.portal-welcome h2 {
+  font-size: 26px; letter-spacing: 0.2px;
+}
+.portal-welcome h2 #portal-welcome-name {
+  background: linear-gradient(90deg, #ffffff, #a6d3ee);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.portal-welcome p { font-size: 13.5px; opacity: 0.78; }
+
+.portal-welcome .welcome-stats { gap: 14px; margin-top: 20px; }
+.portal-welcome .welcome-stat {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+.portal-welcome .welcome-stat strong {
+  font-size: 24px;
+  background: linear-gradient(180deg, #ffffff, #bfe0f3);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.portal-welcome .welcome-stat span { opacity: 0.75; letter-spacing: 0.4px; }
+
+/* ---------- 4. PESTAÑAS (segmentado) ---------- */
+.portal-tabs {
+  gap: 6px; padding: 6px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 6px 20px rgba(26, 82, 118, 0.1);
+}
+body.dark-theme .portal-tabs {
+  background: rgba(16, 24, 40, 0.7);
+}
+.portal-tab {
+  font-size: 12.5px; border-radius: 12px; padding: 12px 16px;
+  gap: 8px; position: relative;
+}
+.portal-tab svg { width: 16px; height: 16px; }
+.portal-tab:not(.active):hover {
+  color: var(--primary);
+  background: var(--primary-soft);
+  transform: translateY(-1px);
+}
+.portal-tab.active {
+  background: linear-gradient(135deg, #1a5276, #2471a3);
+  box-shadow: 0 6px 18px rgba(26, 82, 118, 0.38), inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+body.dark-theme .portal-tab.active {
+  background: linear-gradient(135deg, #2e6da2, #4a90c4);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+}
+
+/* ---------- 5. CABECERAS DE SECCIÓN ---------- */
+.portal-docs-header { padding-bottom: 14px; }
+.portal-docs-header h3 {
+  font-size: 18px; letter-spacing: 0.1px;
+  display: flex; align-items: center; gap: 10px;
+}
+.portal-docs-header h3::before {
+  content: ''; width: 5px; height: 20px; border-radius: 4px;
+  background: linear-gradient(180deg, #1a5276, #5dade2);
+  flex-shrink: 0;
+}
+body.dark-theme .portal-docs-header h3::before {
+  background: linear-gradient(180deg, #5dade2, #2471a3);
+}
+.portal-docs-header span {
+  background: linear-gradient(135deg, #d4e6f1, #eaf2f9);
+  border: 1px solid rgba(26, 82, 118, 0.12);
+  color: #1a5276;
+}
+body.dark-theme .portal-docs-header span {
+  background: linear-gradient(135deg, hsl(200, 45%, 18%), hsl(200, 45%, 22%));
+  color: #8fcaec; border-color: rgba(93, 173, 226, 0.25);
+}
+
+/* ---------- 6. TARJETAS DE DOCUMENTOS ---------- */
+.portal-docs-grid { gap: 20px; }
+.portal-doc-card {
+  border-radius: 18px;
+  border: 1px solid rgba(26, 82, 118, 0.12);
+  background:
+    radial-gradient(280px 160px at 100% -20%, rgba(93, 173, 226, 0.08), transparent 60%),
+    var(--surface);
+  box-shadow: 0 4px 14px rgba(26, 82, 118, 0.07);
+}
+body.dark-theme .portal-doc-card {
+  border-color: rgba(93, 173, 226, 0.16);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.portal-doc-card::before {
+  height: 4px;
+  background: linear-gradient(90deg, #1a5276 0%, #5dade2 45%, #f5b7b1 90%, #b03a2e 100%);
+  opacity: 0.9;
+}
+.portal-doc-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(26, 82, 118, 0.35);
+  box-shadow: 0 20px 44px rgba(26, 82, 118, 0.18);
+}
+body.dark-theme .portal-doc-card:hover {
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.55);
+  border-color: rgba(93, 173, 226, 0.4);
+}
+.portal-doc-card-body { padding: 22px 22px 14px; }
+.portal-doc-card .doc-icon {
+  width: 50px; height: 50px; border-radius: 14px;
+  background:
+    radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.45), transparent),
+    linear-gradient(135deg, #fadbd8, #f5b7b1);
+  box-shadow: 0 6px 16px rgba(176, 58, 46, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+.portal-doc-card h5 { font-size: 14.5px; line-height: 1.35; }
+.portal-doc-card .doc-type {
+  font-size: 10.5px; border-radius: 8px;
+  background: linear-gradient(135deg, #d4e6f1, #e3eef7);
+  border: 1px solid rgba(26, 82, 118, 0.1);
+  padding: 4px 11px; letter-spacing: 0.3px;
+}
+body.dark-theme .portal-doc-card .doc-type {
+  background: linear-gradient(135deg, hsl(200, 45%, 18%), hsl(200, 45%, 21%));
+  color: #8fcaec; border-color: rgba(93, 173, 226, 0.2);
+}
+.portal-doc-card .doc-meta { font-size: 11.5px; }
+.portal-doc-card .doc-footer {
+  background: transparent;
+  border-top: 1px solid rgba(26, 82, 118, 0.08);
+  padding: 13px 20px;
+}
+body.dark-theme .portal-doc-card .doc-footer { border-color: rgba(93, 173, 226, 0.1); }
+
+/* ---------- 7. BOTONES DEL PORTAL ---------- */
+.btn-ver-doc, .btn-register-item, .btn-submit-upload {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), transparent 45%),
+    linear-gradient(135deg, #1a5276, #2471a3);
+  box-shadow: 0 6px 16px rgba(26, 82, 118, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  border-radius: 10px;
+}
+.btn-ver-doc:hover, .btn-register-item:hover, .btn-submit-upload:hover {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 45%),
+    linear-gradient(135deg, #154360, #1a5276);
+  box-shadow: 0 10px 24px rgba(26, 82, 118, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  transform: translateY(-2px);
+}
+.btn-submit-upload { border-radius: 12px; font-size: 14.5px; letter-spacing: 0.3px; }
+
+.portal-panel .btn.btn-primary {
+  background: linear-gradient(135deg, #1a5276, #2471a3);
+  border: none; box-shadow: 0 4px 12px rgba(26, 82, 118, 0.25);
+}
+.portal-panel .btn.btn-secondary {
+  background: var(--surface); border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+.portal-panel .btn.btn-secondary:hover {
+  border-color: var(--primary); color: var(--primary);
+  background: var(--primary-soft);
+}
+
+/* ---------- 8. FORMULARIOS ---------- */
+.portal-upload-card {
+  border-radius: 20px;
+  border: 1px solid rgba(26, 82, 118, 0.12);
+  background:
+    radial-gradient(360px 200px at 100% 0%, rgba(93, 173, 226, 0.07), transparent 60%),
+    var(--surface);
+  box-shadow: 0 18px 44px rgba(26, 82, 118, 0.12);
+}
+body.dark-theme .portal-upload-card { border-color: rgba(93, 173, 226, 0.16); }
+.portal-upload-card h3 { font-size: 22px; }
+.portal-upload-card p.hint { font-size: 12.5px; max-width: 460px; margin-left: auto; margin-right: auto; }
+
+.form-field label {
+  font-size: 11.5px; letter-spacing: 0.5px;
+  color: var(--text-secondary);
+}
+.form-field input, .form-field select, .form-field textarea {
+  border-radius: 12px;
+  border: 1.5px solid var(--border-color);
+  background: var(--background);
+  transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
+}
+.form-field input:focus, .form-field select:focus, .form-field textarea:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 4px var(--primary-soft);
+  background: var(--surface);
+}
+.drop-area-portal {
+  border-radius: 16px; border-style: dashed;
+  background:
+    radial-gradient(220px 140px at 50% 0%, var(--primary-soft), transparent 70%),
+    var(--background);
+  transition: all 0.25s;
+}
+.drop-area-portal:hover, .drop-area-portal.drag-over {
+  border-color: var(--primary);
+  background:
+    radial-gradient(260px 160px at 50% 0%, var(--primary-soft), var(--primary-soft)),
+    var(--surface);
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px var(--shadow);
+}
+#portal-file-preview {
+  border-radius: 8px; font-size: 11.5px;
+  background: linear-gradient(135deg, #d4e6f1, #eaf2f9);
+  color: #17506e;
+}
+body.dark-theme #portal-file-preview {
+  background: linear-gradient(135deg, hsl(200, 45%, 18%), hsl(200, 45%, 21%));
+  color: #8fcaec;
+}
+
+/* ---------- 9. LISTAS DE ÍTEMS (escáner / correo) ---------- */
+.portal-item-card {
+  border-radius: 14px;
+  border: 1px solid rgba(26, 82, 118, 0.12);
+  background: var(--surface);
+  padding: 14px 18px;
+  box-shadow: 0 2px 8px rgba(26, 82, 118, 0.05);
+}
+body.dark-theme .portal-item-card { border-color: rgba(93, 173, 226, 0.16); }
+.portal-item-card:hover {
+  transform: translateY(-2px) translateX(2px);
+  box-shadow: 0 10px 24px var(--shadow);
+}
+.portal-item-icon {
+  width: 42px; height: 42px; border-radius: 12px;
+  background: linear-gradient(135deg, #d4e6f1, #eaf2f9);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+body.dark-theme .portal-item-icon { background: linear-gradient(135deg, hsl(200, 45%, 18%), hsl(200, 45%, 22%)); }
+.portal-item-info h5 { font-size: 13.5px; }
+.portal-item-info span { font-size: 10.5px; }
+
+/* ---------- 10. ESTADOS VACÍOS ---------- */
+.portal-no-docs {
+  border-radius: 18px;
+  border: 1px dashed rgba(26, 82, 118, 0.25);
+  background:
+    radial-gradient(300px 180px at 50% -20%, var(--primary-soft), transparent 70%),
+    var(--surface);
+  padding: 60px 24px;
+}
+.portal-no-docs svg {
+  opacity: 0.55;
+  padding: 14px; width: 72px; height: 72px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #d4e6f1, #eaf2f9);
+  color: var(--primary);
+}
+body.dark-theme .portal-no-docs svg { background: linear-gradient(135deg, hsl(200, 45%, 18%), hsl(200, 45%, 22%)); }
+.portal-no-docs h4 { font-size: 17px; font-weight: 700; }
+
+/* ---------- 11. MODALES ---------- */
+.modal-backdrop { background: rgba(8, 18, 32, 0.55); }
+.modal-container {
+  border-radius: 22px;
+  border: 1px solid rgba(26, 82, 118, 0.14);
+  box-shadow: 0 40px 96px rgba(0, 0, 0, 0.35);
+}
+.modal-header {
+  padding: 20px 24px;
+  background:
+    radial-gradient(360px 120px at 100% 0%, var(--primary-soft), transparent 70%),
+    var(--surface);
+}
+.modal-header h3 {
+  font-size: 17px;
+  display: flex; align-items: center; gap: 10px;
+}
+.modal-header h3::before {
+  content: ''; width: 4px; height: 18px; border-radius: 4px;
+  background: linear-gradient(180deg, #1a5276, #5dade2); flex-shrink: 0;
+}
+body.dark-theme .modal-header h3::before { background: linear-gradient(180deg, #5dade2, #2471a3); }
+.btn-close { border-radius: 10px; font-size: 20px; }
+.modal-body-scroll { padding: 26px; }
+
+/* ---------- 12. TOAST Y LOADER ---------- */
+.portal-toast {
+  border-radius: 14px; padding: 14px 24px; font-size: 12.5px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+.portal-toast.success { background: linear-gradient(135deg, #239b56, #27ae60); }
+.portal-toast.error { background: linear-gradient(135deg, #c0392b, #e74c3c); }
+.portal-toast.info { background: linear-gradient(135deg, #2471a3, #2980b9); }
+
+.spinner-ring { width: 46px; height: 46px; border-width: 4px; }
+
+/* ---------- 13. NOTA PENDIENTE / AVISOS ---------- */
+.pending-notice {
+  border-radius: 14px;
+  background: linear-gradient(135deg, #d5efdf, #c8ecdb);
+  border: 1px solid #9fe0b5;
+  box-shadow: 0 8px 24px rgba(30, 132, 73, 0.14);
+}
+body.dark-theme .pending-notice {
+  background: linear-gradient(135deg, hsl(145, 40%, 15%), hsl(145, 38%, 18%));
+  border-color: rgba(39, 174, 96, 0.3);
+  color: #7fd6a4;
+}
+
+/* ---------- 14. CHIPS DE ESTADO DE SOLICITUDES ---------- */
+.solicitud-status-pendiente { background: rgba(243, 156, 18, 0.16); color: #b7790a; }
+.solicitud-status-aprobada { background: rgba(39, 174, 96, 0.16); color: #1e8449; }
+.solicitud-status-rechazada { background: rgba(231, 76, 60, 0.16); color: #922b21; }
+
+/* Estado del escáner: punto con pulso */
+#portal-scanner-dot.show-ok {
+  background: #27ae60 !important;
+  box-shadow: 0 0 0 0 rgba(39, 174, 96, 0.5);
+  animation: pulseDot 1.8s infinite;
+}
+#portal-scanner-dot.show-warn { background: #f39c12 !important; }
+#portal-scanner-dot.show-err { background: #e74c3c !important; }
+@keyframes pulseDot {
+  0% { box-shadow: 0 0 0 0 rgba(39, 174, 96, 0.5); }
+  70% { box-shadow: 0 0 0 8px rgba(39, 174, 96, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(39, 174, 96, 0); }
+}
+
+/* ---------- 15. MICRO-ANIMACIONES ---------- */
+.portal-tab, .portal-item-card, .btn-ver-doc, .btn-register-item, .portal-welcome .welcome-stat {
+  transition: all 0.24s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.portal-doc-card { transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.28s, border-color 0.28s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .portal-doc-card, .portal-item-card, .portal-tab, .btn-ver-doc, .btn-register-item,
+  .portal-welcome .welcome-stat, .drop-area-portal { transition: none !important; }
+  #portal-scanner-dot.show-ok { animation: none; }
+}
+
+/* ---------- 16. RESPONSIVE REFINADO ---------- */
+@media (max-width: 768px) {
+  .portal-welcome { padding: 22px; border-radius: 18px; }
+  .portal-welcome h2 { font-size: 21px; }
+  .portal-main { padding: 0 14px 20px !important; }
+  .portal-docs-grid { gap: 14px; }
+  #portal-scanner-dot, #portal-scanner-dot-text { position: static; }
+}
