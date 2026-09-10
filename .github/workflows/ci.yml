@@ -1,10 +1,13 @@
-name: Lint y Sintaxis
+name: CI (Lint + Tests + Smoke)
 
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: '0 12 * * *'
 
 jobs:
   check:
@@ -35,3 +38,5 @@ jobs:
         run: npm test
         env:
           SMOKE_BASE_URL: https://sistema-talento-production.up.railway.app
+          # El smoke reintenta hasta ~40s ante 5xx/red (reinicio de Railway durante
+          # el despliegue); una regresión real (200 donde se espera 404) falla al instante.
