@@ -1706,6 +1706,7 @@ textarea:focus {
 .analyze-status .spin { display: inline-block; margin-right: 6px; animation: spin 1s linear infinite; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes spin-loader { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
 /* ESTILOS RESPONSIVOS */
 @media (max-width: 1024px) {

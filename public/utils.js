@@ -216,10 +216,7 @@ function showLoader() {
       animation: 'spin-loader 0.8s linear infinite'
     });
     if (!document.getElementById('loader-animation-styles')) {
-      const styles = document.createElement('style');
-      styles.id = 'loader-animation-styles';
-      styles.innerHTML = `@keyframes spin-loader { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`;
-      document.head.appendChild(styles);
+      /* Los keyframes spin-loader viven en style.css (CSP style-src sin unsafe-inline) */
     }
     document.body.appendChild(loader);
   }
