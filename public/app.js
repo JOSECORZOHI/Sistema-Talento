@@ -163,7 +163,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Botón de sincronización de correo
+  // Botón de sincronización de correo (en segundo plano con progreso)
   const btnSync = document.getElementById('btn-sync-email');
   if (btnSync) {
     btnSync.addEventListener('click', async () => {
@@ -175,20 +175,56 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!res.ok) {
           if (res.status === 503) {
             showToast('Gmail no está configurado. Revise las instrucciones en la bandeja de correo.', 'warning');
+            btnSync.disabled = false;
+            btnSync.textContent = 'Sincronizar';
+          } else if (res.status === 409) {
+            showToast('Ya hay una sincronización en curso. Verificando progreso...', 'warning');
+            pollEmailSyncStatus(btnSync);
           } else {
             showToast(data.error || 'Error al sincronizar correos.', 'error');
+            btnSync.disabled = false;
+            btnSync.textContent = 'Sincronizar';
           }
-        } else {
-          showToast(data.message || 'Bandeja sincronizada con éxito.', 'success');
-          await fetchEmails();
+          return;
         }
+        showToast('Sincronización de correo iniciada en segundo plano.', 'success');
+        pollEmailSyncStatus(btnSync);
       } catch (e) {
         showToast('Error de red al sincronizar correos.', 'error');
-      } finally {
         btnSync.disabled = false;
         btnSync.textContent = 'Sincronizar';
       }
     });
+  }
+
+  async function pollEmailSyncStatus(btn) {
+    const poll = setInterval(async () => {
+      try {
+        const res = await apiFetch('/api/email-inbox/sync/status');
+        const st = await res.json();
+        if (st.running) {
+          const done = (st.processed || 0);
+          btn.textContent = done ? `Sincronizando... (${done} correo(s))` : 'Sincronizando...';
+          return;
+        }
+        clearInterval(poll);
+        btn.disabled = false;
+        btn.textContent = 'Sincronizar';
+        if (st.error) {
+          showToast(st.error.message || 'Error al sincronizar correos.', 'error');
+          return;
+        }
+        const done = st.processed || 0;
+        if (done > 0) {
+          showToast(`${done} correo(s) sincronizado(s), ${st.downloaded || 0} archivo(s) descargado(s).`, 'success');
+        } else {
+          showToast('No hay correos nuevos para sincronizar.', 'success');
+        }
+        await fetchEmails();
+      } catch (e) {
+        // Transitorio: no cortar el polling por un fallo de red puntual.
+      }
+    }, 3000);
   }
 
   // Botón de cancelar subida

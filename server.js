@@ -3302,9 +3302,84 @@ app.get('/api/email-inbox', authMiddleware, requireAnyPermission('email.manage',
   }
 });
 
-// Mutex simple: evita dos sincronizaciones concurrentes que dupliquen archivos/correos
-let gmailSyncInProgress = false;
-const GMAIL_SYNC_TIMEOUT_MS = 10 * 60 * 1000;
+// Sincronización de Gmail en SEGUNDO PLANO: la ingesta de una bandeja grande tarda
+// más que el límite del proxy (el cliente veía 502 'upstream error' aunque el
+// servidor seguía trabajando). El POST solo arranca el job y devuelve 202; el
+// frontend consulta el estado en '.../sync/status' hasta que termina.
+const gmailSyncJobs = new Map(); // key: 'admin' | employeeId
+const GMAIL_SYNC_TIMEOUT_MS = 60 * 60 * 1000;
+
+function getSyncJobState(key) {
+  return gmailSyncJobs.get(key) || { running: false, processed: 0, downloaded: 0, remaining: 0 };
+}
+
+// Arranca la sincronización de una cuenta en segundo plano. La cuenta se procesa
+// por lotes (MAX_NEW_MESSAGES_PER_SYNC) hasta agotar los pendientes, con respiro
+// entre lotes para respetar la cuota de la Gmail API (250 unidades/min/usuario).
+// Devuelve { conflict, state }: 'conflict' true si ya hay un job en curso.
+function launchGmailSyncJob(key, gmail, opts) {
+  const existing = gmailSyncJobs.get(key);
+  if (existing && existing.running) {
+    return { conflict: true, state: existing };
+  }
+  const state = {
+    running: true,
+    startedAt: new Date().toISOString(),
+    processed: 0, downloaded: 0, remaining: 0,
+    error: null, expired: false, finishedAt: null
+  };
+  gmailSyncJobs.set(key, state);
+
+  // Watchdog: si una llamada a Google se cuelga pese a los reintentos, liberar
+  // el estado para no dejar el botón de sincronizar bloqueado para siempre.
+  const watchdog = setTimeout(() => {
+    const s = gmailSyncJobs.get(key);
+    if (s && s.running) {
+      s.running = false;
+      s.finishedAt = new Date().toISOString();
+      s.error = { message: 'La sincronización tardó demasiado y se canceló. Intente de nuevo.' };
+    }
+  }, GMAIL_SYNC_TIMEOUT_MS);
+  if (watchdog.unref) watchdog.unref();
+
+  (async () => {
+    try {
+      let first = true;
+      while (true) {
+        const result = await performGmailSync(gmail, opts);
+        state.processed += result.count;
+        state.downloaded += result.downloaded;
+        state.remaining = result.remaining;
+        if (!result.updated || result.remaining <= 0) break;
+        if (first) {
+          // Primera corrida: la paginación de lista ya consumió cuota; dar aire.
+          await sleep(4000);
+          first = false;
+        }
+        // Respiro entre lotes para que la ventana por minuto/usuario se renueve.
+        await sleep(2500);
+      }
+    } catch (error) {
+      console.error(`Error al sincronizar Gmail (${key}):`, error);
+      const expired = error && (
+        (error.response && error.response.data && error.response.data.error === 'invalid_grant') ||
+        /invalid_grant|expired or revoked/i.test(error.message || '')
+      );
+      state.expired = expired;
+      state.error = {
+        message: expired
+          ? 'Su conexión de Gmail expiró. Vuelva a conectar su cuenta para seguir sincronizando.'
+          : (error.message || 'Ocurrió un error durante la sincronización de Gmail.')
+      };
+    } finally {
+      state.running = false;
+      state.finishedAt = state.finishedAt || new Date().toISOString();
+      clearTimeout(watchdog);
+    }
+  })();
+
+  return { conflict: false, state };
+}
 
 /**
  * Lógica central de sincronización de la bandeja de una cuenta Gmail.
@@ -3495,33 +3570,31 @@ async function performGmailSync(gmail, opts = {}) {
 }
 
 app.post('/api/email-inbox/sync', authMiddleware, requireAnyPermission('email.manage', 'email.sync'), async (req, res) => {
-  if (gmailSyncInProgress) {
-    return res.status(409).json({ error: 'Ya hay una sincronización de correo en curso.' });
-  }
-  gmailSyncInProgress = true;
-  // Watchdog: si una llamada a Google se cuelga pese al timeout, liberar el mutex
-  const watchdog = setTimeout(() => { gmailSyncInProgress = false; }, GMAIL_SYNC_TIMEOUT_MS);
-  if (watchdog.unref) watchdog.unref();
+  let gmail;
   try {
-    const gmail = getGmailClient();
-    const result = await performGmailSync(gmail, { mode: 'admin', actorName: req.user.name || 'Sistema', ip: getClientIp(req) });
-    if (!result.updated) {
-      return res.json({ message: 'No hay correos nuevos para sincronizar.', updated: false });
-    }
-    const tail = result.remaining > 0 ? ` Quedan ${result.remaining} correo(s) pendientes; sincronice de nuevo para continuar por lotes.` : '';
-    res.json({ message: `${result.count} correo(s) sincronizado(s), ${result.downloaded} archivo(s) descargado(s).${tail}`, updated: true, emails: result.emails });
+    gmail = getGmailClient();
   } catch (error) {
-    console.error('Error al sincronizar Gmail:', error);
     const status = error.code === 'GMAIL_NOT_CONFIGURED' ? 503 : 502;
-    res.status(status).json({
+    return res.status(status).json({
       error: error.code === 'GMAIL_NOT_CONFIGURED'
         ? 'Gmail no está configurado.'
-        : 'No se pudo sincronizar la bandeja de Gmail.'
+        : 'No se pudo iniciar la sincronización de Gmail.'
     });
-  } finally {
-    clearTimeout(watchdog);
-    gmailSyncInProgress = false;
   }
+  const { conflict, state } = launchGmailSyncJob('admin', gmail, {
+    mode: 'admin',
+    actorName: req.user.name || 'Sistema',
+    ip: getClientIp(req)
+  });
+  if (conflict) {
+    return res.status(409).json({ error: 'Ya hay una sincronización de correo en curso.', state });
+  }
+  res.status(202).json({ message: 'Sincronización de correo iniciada en segundo plano.', state });
+});
+
+// Progreso de la sincronización en segundo plano de la bandeja del sistema.
+app.get('/api/email-inbox/sync/status', authMiddleware, requireAnyPermission('email.manage', 'email.sync'), (req, res) => {
+  res.json(getSyncJobState('admin'));
 });
 
 // ============================================================
@@ -3650,39 +3723,29 @@ app.post('/api/funcionario/gmail/sync', authMiddleware, async (req, res) => {
   if (!employee || !employee.gmailRefreshToken) {
     return res.status(400).json({ error: 'Debe vincular su cuenta de Gmail primero.' });
   }
+  let gmail;
   try {
-    const gmail = getGmailClient(employee.gmailRefreshToken);
-    const result = await performGmailSync(gmail, {
-      mode: 'funcionario',
-      employeeId: req.user.employeeId,
-      actorName: req.user.name || 'Funcionario',
-      ip: getClientIp(req)
-    });
-    if (!result.updated) {
-      return res.json({ message: 'No hay correos nuevos para sincronizar.', updated: false });
-    }
-    const tail = result.remaining > 0 ? ` Quedan ${result.remaining} correo(s) pendientes; siga sincronizando por lotes.` : '';
-    res.json({ message: `${result.count} correo(s) sincronizado(s), ${result.downloaded} archivo(s) descargado(s).${tail}`, updated: true, emails: result.emails });
+    gmail = getGmailClient(employee.gmailRefreshToken);
   } catch (error) {
-    console.error('Error al sincronizar Gmail del funcionario:', error);
-    // En apps sin verificar (modo "En pruebas") Google expira los refresh tokens
-    // a los 7 días: se informa para que el funcionario vuelva a conectar.
-    const expired = error && (
-      (error.response && error.response.data && error.response.data.error === 'invalid_grant') ||
-      /invalid_grant|expired or revoked/i.test(error.message || '')
-    );
-    if (expired) {
-      return res.status(401).json({
-        error: 'Su conexión de Gmail expiró. Vuelva a conectar su cuenta en "Conectar Gmail" para seguir sincronizando.'
-      });
-    }
     const status = error.code === 'GMAIL_NOT_CONFIGURED' ? 503 : 502;
-    res.status(status).json({
-      error: error.code === 'GMAIL_NOT_CONFIGURED'
-        ? 'Gmail no está configurado.'
-        : 'No se pudo sincronizar su bandeja de Gmail.'
-    });
+    return res.status(status).json({ error: 'No se pudo iniciar la sincronización de Gmail.' });
   }
+  const { conflict, state } = launchGmailSyncJob(req.user.employeeId, gmail, {
+    mode: 'funcionario',
+    employeeId: req.user.employeeId,
+    actorName: req.user.name || 'Funcionario',
+    ip: getClientIp(req)
+  });
+  if (conflict) {
+    return res.status(409).json({ error: 'Ya hay una sincronización de sus correos en curso.', state });
+  }
+  res.status(202).json({ message: 'Sincronización de su correo iniciada en segundo plano.', state });
+});
+
+// Progreso de la sincronización en segundo plano de la cuenta del funcionario.
+app.get('/api/funcionario/gmail/sync/status', authMiddleware, async (req, res) => {
+  if (req.user.role !== 'funcionario') return res.status(403).json({ error: 'Acceso denegado.' });
+  res.json(getSyncJobState(req.user.employeeId));
 });
 
 app.post('/api/documents/register-email-attachment', authMiddleware, requirePermission('documents.create'), async (req, res) => {

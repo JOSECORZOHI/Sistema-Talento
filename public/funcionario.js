@@ -443,15 +443,52 @@ window.syncFuncionarioEmails = async function() {
   try {
     const res = await apiFetchWithRetry('/api/funcionario/gmail/sync', { method: 'POST' });
     const data = await res.json();
-    if (!res.ok) { showToast(data.error || 'Error al sincronizar.', 'error'); return; }
-    showToast(data.message || 'Correo sincronizado.', 'success');
-    await loadPortalData();
+    if (!res.ok) {
+      if (res.status === 409) {
+        showToast('Ya hay una sincronización de sus correos en curso. Verificando progreso...', 'warning');
+      } else {
+        showToast(data.error || 'Error al sincronizar.', 'error');
+        if (btn) { btn.disabled = false; btn.textContent = 'Sincronizar correo'; }
+        return;
+      }
+    } else {
+      showToast('Sincronización de su correo iniciada en segundo plano.', 'success');
+    }
+    pollFuncionarioSyncStatus(btn);
   } catch (e) {
     showToast('Error de conexión al sincronizar.', 'error');
-  } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Sincronizar correo'; }
   }
 };
+
+async function pollFuncionarioSyncStatus(btn) {
+  const poll = setInterval(async () => {
+    try {
+      const res = await apiFetch('/api/funcionario/gmail/sync/status');
+      const st = await res.json();
+      if (st.running) {
+        const done = (st.processed || 0);
+        if (btn) btn.textContent = done ? `Sincronizando... (${done} correo(s))` : 'Sincronizando...';
+        return;
+      }
+      clearInterval(poll);
+      if (btn) { btn.disabled = false; btn.textContent = 'Sincronizar correo'; }
+      if (st.error) {
+        showToast(st.error.message || 'Error al sincronizar.', 'error');
+        return;
+      }
+      const done = st.processed || 0;
+      if (done > 0) {
+        showToast(`${done} correo(s) sincronizado(s), ${st.downloaded || 0} archivo(s) descargado(s).`, 'success');
+      } else {
+        showToast('No hay correos nuevos para sincronizar.', 'success');
+      }
+      await loadPortalData();
+    } catch (e) {
+      // Transitorio: no cortar el polling por un fallo de red puntual.
+    }
+  }, 3000);
+}
 
 // ============================================================
 // RENDERIZAR BANDEJA DE CORREO
