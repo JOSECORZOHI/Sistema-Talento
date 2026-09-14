@@ -3537,9 +3537,11 @@ app.get('/api/funcionario/gmail/authorize', authMiddleware, async (req, res) => 
     for (const [s, v] of funcionarioGmailStates) {
       if (Date.now() - v.at > 15 * 60 * 1000) funcionarioGmailStates.delete(s);
     }
+    // Solo lectura: el envío saliente va por SMTP; mantener el scope mínimo
+    // (menor privilegio) reduce superficie de auditoría de la app OAuth.
     const url = auth.generateAuthUrl({
       access_type: 'offline', prompt: 'consent', state,
-      scope: ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.send']
+      scope: ['https://www.googleapis.com/auth/gmail.readonly']
     });
     res.json({ url });
   } catch (error) {
@@ -3620,6 +3622,17 @@ app.post('/api/funcionario/gmail/sync', authMiddleware, async (req, res) => {
     res.json({ message: `${result.count} correo(s) sincronizado(s), ${result.downloaded} archivo(s) descargado(s).`, updated: true, emails: result.emails });
   } catch (error) {
     console.error('Error al sincronizar Gmail del funcionario:', error);
+    // En apps sin verificar (modo "En pruebas") Google expira los refresh tokens
+    // a los 7 días: se informa para que el funcionario vuelva a conectar.
+    const expired = error && (
+      (error.response && error.response.data && error.response.data.error === 'invalid_grant') ||
+      /invalid_grant|expired or revoked/i.test(error.message || '')
+    );
+    if (expired) {
+      return res.status(401).json({
+        error: 'Su conexión de Gmail expiró. Vuelva a conectar su cuenta en "Conectar Gmail" para seguir sincronizando.'
+      });
+    }
     const status = error.code === 'GMAIL_NOT_CONFIGURED' ? 503 : 502;
     res.status(status).json({
       error: error.code === 'GMAIL_NOT_CONFIGURED'
