@@ -3495,14 +3495,18 @@ const FUNCIONARIO_GMAIL_CALLBACK = '/api/funcionario/gmail/callback';
  * es la específica del funcionario.
  */
 function createFuncionarioGmailAuthClient() {
-  const { GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET } = process.env;
-  if (!GMAIL_CLIENT_ID || !GMAIL_CLIENT_SECRET) {
+  const { GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REDIRECT_URI } = process.env;
+  if (!GMAIL_CLIENT_ID || !GMAIL_CLIENT_SECRET || !GMAIL_REDIRECT_URI) {
     const error = new Error('Faltan variables de configuración de Gmail.');
     error.code = 'GMAIL_NOT_CONFIGURED';
     throw error;
   }
   const { google } = require('googleapis');
-  return new google.auth.OAuth2(GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, FUNCIONARIO_GMAIL_CALLBACK);
+  // Google exige redirect URIs absolutas: se deriva el origen (host HTTPS) de la
+  // URI del admin y se conserva la ruta propia del funcionario en ese mismo host.
+  const origin = new URL(GMAIL_REDIRECT_URI).origin;
+  const redirectUri = origin + FUNCIONARIO_GMAIL_CALLBACK;
+  return new google.auth.OAuth2(GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, redirectUri);
 }
 
 // Consulta el estado de vínculo de la cuenta de cada funcionario (no expone el token).
