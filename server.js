@@ -3314,10 +3314,40 @@ const GMAIL_SYNC_TIMEOUT_MS = 10 * 60 * 1000;
  * - modo 'admin': por remitente (el funcionario cuyo correo coincide con el remitente).
  * - modo 'funcionario': fijado al propio funcionario (ve solo sus correos).
  *
- * @param {object} gmail - Cliente Gmail autenticado.
- * @param {object} opts - { mode, employeeId, actorName }
- * @returns {Promise<{updated: boolean, count: number, downloaded: number, emails: Array}>}
- */
+* @param {object} gmail - Cliente Gmail autenticado.
+  * @param {object} opts - { mode, employeeId, actorName }
+  * @returns {Promise<{updated: boolean, count: number, downloaded: number, emails: Array, remaining: number}>}
+  */
+
+// Límite de correos nuevos procesados por corrida: acota el tiempo de la petición
+// y el consumo de unidades de la Gmail API (cuota por minuto y por usuario). Con
+// la cuota por defecto (~250 unidades/min) son ~16 correos/min realistas; cada
+// corrida siguiente continúa donde quedó.
+const MAX_NEW_MESSAGES_PER_SYNC = 30;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Reintento ante 'Quota exceeded'/'rateLimitExceeded' (429/403) de la Gmail API
+// con backoff progresivo. Las fallas por otra causa se propagan de inmediato.
+async function gmailCallWithRetry(fn, label) {
+  const delays = [1500, 5000, 15000, 30000];
+  let lastError;
+  for (let attempt = 0; attempt <= delays.length; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastError = e;
+      const message = `${e.message || ''} ${e.code || ''}`;
+      const isQuota = e.code === 429 || e.code === 403 || /rateLimitExceeded|Quota exceeded|quota/i.test(message);
+      if (!isQuota) throw e;
+      if (attempt === delays.length) break;
+      console.warn(`[GMAIL-SYNC] Cuota excedida en '${label}'; reintento ${attempt + 1}/${delays.length} en ${delays[attempt]} ms.`);
+      await sleep(delays[attempt]);
+    }
+  }
+  throw lastError;
+}
+
 async function performGmailSync(gmail, opts = {}) {
   const employeeId = opts.employeeId || null;
   const knownEmailIds = new Set((await col('emailsInbox').find().toArray()).map(e => e.id));
@@ -3328,16 +3358,17 @@ async function performGmailSync(gmail, opts = {}) {
   const messageRefs = [];
   let pageToken = null;
   for (let page = 0; page < 5; page++) {
-    const list = await gmail.users.messages.list({
+    const list = await gmailCallWithRetry(() => gmail.users.messages.list({
       userId: 'me', maxResults: 100, q: 'has:attachment',
       ...(pageToken ? { pageToken } : {})
-    });
+    }), `messages.list (pagina ${page + 1})`);
     messageRefs.push(...(list.data.messages || []));
     console.log(`[GMAIL-SYNC] Página ${page + 1}: ${(list.data.messages || []).length} mensajes, nextToken: ${list.data.nextPageToken ? 'sí' : 'no'}`);
     pageToken = list.data.nextPageToken || null;
     if (!pageToken) break;
   }
   console.log(`[GMAIL-SYNC] Total mensajes con adjuntos: ${messageRefs.length}, conocidos: ${knownEmailIds.size}`);
+  const pendingRefs = messageRefs.filter((m) => !knownEmailIds.has(m.id));
   const newEmails = [];
   let attachmentsDownloaded = 0;
 
@@ -3346,11 +3377,18 @@ async function performGmailSync(gmail, opts = {}) {
   const storedAttachmentFilenames = new Set();
 
   try {
-    for (const messageRef of messageRefs) {
-      if (knownEmailIds.has(messageRef.id)) {
-        continue;
+    for (const messageRef of pendingRefs) {
+      // Corridas acotadas: al llegar al tope se corta y se informan los pendientes.
+      if (newEmails.length >= MAX_NEW_MESSAGES_PER_SYNC) {
+        break;
       }
-      const message = await gmail.users.messages.get({ userId: 'me', id: messageRef.id, format: 'full' });
+      // Respiro de ritmo: distribuye el consumo de unidades entre las ventanas
+      // por minuto/usuario para no agotar la cuota (el reintento cubre los picos).
+      await sleep(3200);
+      const message = await gmailCallWithRetry(
+        () => gmail.users.messages.get({ userId: 'me', id: messageRef.id, format: 'full' }),
+        `messages.get ${messageRef.id}`
+      );
       const payload = message.data.payload || {};
       const attachmentParts = getAttachmentParts(payload);
 
@@ -3362,7 +3400,10 @@ async function performGmailSync(gmail, opts = {}) {
         }
         let attachment;
         try {
-          attachment = await gmail.users.messages.attachments.get({ userId: 'me', messageId: messageRef.id, id: part.body.attachmentId });
+          attachment = await gmailCallWithRetry(
+            () => gmail.users.messages.attachments.get({ userId: 'me', messageId: messageRef.id, id: part.body.attachmentId }),
+            `attachments.get ${messageRef.id}/${part.filename}`
+          );
         } catch (e) {
           console.warn(`[GMAIL-SYNC] Error descargando '${part.filename}': ${e.message}`);
           continue;
@@ -3433,7 +3474,7 @@ async function performGmailSync(gmail, opts = {}) {
   }
 
   if (!newEmails.length) {
-    return { updated: false, count: 0, downloaded: 0, emails: [] };
+    return { updated: false, count: 0, downloaded: 0, emails: [], remaining: pendingRefs.length };
   }
 
   try {
@@ -3450,7 +3491,7 @@ async function performGmailSync(gmail, opts = {}) {
     opts.actorName || 'Sistema',
     opts.ip || ''
   );
-  return { updated: true, count: newEmails.length, downloaded: attachmentsDownloaded, emails: newEmails };
+  return { updated: true, count: newEmails.length, downloaded: attachmentsDownloaded, emails: newEmails, remaining: Math.max(0, pendingRefs.length - newEmails.length) };
 }
 
 app.post('/api/email-inbox/sync', authMiddleware, requireAnyPermission('email.manage', 'email.sync'), async (req, res) => {
@@ -3467,7 +3508,8 @@ app.post('/api/email-inbox/sync', authMiddleware, requireAnyPermission('email.ma
     if (!result.updated) {
       return res.json({ message: 'No hay correos nuevos para sincronizar.', updated: false });
     }
-    res.json({ message: `${result.count} correo(s) sincronizado(s), ${result.downloaded} archivo(s) descargado(s).`, updated: true, emails: result.emails });
+    const tail = result.remaining > 0 ? ` Quedan ${result.remaining} correo(s) pendientes; sincronice de nuevo para continuar por lotes.` : '';
+    res.json({ message: `${result.count} correo(s) sincronizado(s), ${result.downloaded} archivo(s) descargado(s).${tail}`, updated: true, emails: result.emails });
   } catch (error) {
     console.error('Error al sincronizar Gmail:', error);
     const status = error.code === 'GMAIL_NOT_CONFIGURED' ? 503 : 502;
@@ -3619,7 +3661,8 @@ app.post('/api/funcionario/gmail/sync', authMiddleware, async (req, res) => {
     if (!result.updated) {
       return res.json({ message: 'No hay correos nuevos para sincronizar.', updated: false });
     }
-    res.json({ message: `${result.count} correo(s) sincronizado(s), ${result.downloaded} archivo(s) descargado(s).`, updated: true, emails: result.emails });
+    const tail = result.remaining > 0 ? ` Quedan ${result.remaining} correo(s) pendientes; siga sincronizando por lotes.` : '';
+    res.json({ message: `${result.count} correo(s) sincronizado(s), ${result.downloaded} archivo(s) descargado(s).${tail}`, updated: true, emails: result.emails });
   } catch (error) {
     console.error('Error al sincronizar Gmail del funcionario:', error);
     // En apps sin verificar (modo "En pruebas") Google expira los refresh tokens
