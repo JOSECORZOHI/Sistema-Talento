@@ -293,6 +293,36 @@ body.dark-theme .portal-upload-card { border-color: rgba(93, 173, 226, 0.16); }
   box-shadow: 0 0 0 4px var(--primary-soft);
   background: var(--surface);
 }
+/* Botón mostrar/ocultar contraseña (ojo) — previsualización de la clave al digitar. */
+.form-field.has-pw-toggle { position: relative; }
+.form-field.has-pw-toggle input[type="password"],
+.form-field.has-pw-toggle input[type="text"] { padding-right: 44px; }
+.form-field .pw-toggle-btn {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  margin: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 8px;
+  transition: color 0.18s, background 0.18s;
+  z-index: 1;
+}
+.form-field .pw-toggle-btn:hover {
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+.form-field .pw-toggle-btn:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
 .drop-area-portal {
   border-radius: 16px; border-style: dashed;
   background:

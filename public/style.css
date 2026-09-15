@@ -2296,6 +2296,38 @@ textarea:focus {
   color: var(--text-primary);
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
+.login-input-wrapper input[type="password"],
+.login-input-wrapper input[type="text"] {
+  padding-right: 44px;
+}
+
+/* Botón mostrar/ocultar contraseña (ojo) — previsualización de la clave. */
+.pw-toggle-btn {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  margin: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: color var(--transition-fast), background var(--transition-fast);
+  z-index: 1;
+}
+.pw-toggle-btn:hover {
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+.pw-toggle-btn:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
 
 .login-input-wrapper input:focus {
   outline: none;
