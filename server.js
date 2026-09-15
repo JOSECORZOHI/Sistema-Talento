@@ -1107,10 +1107,10 @@ function validateDescription(description) {
  * @param {string} filename - Nombre del archivo.
  * @returns {Promise<boolean>}
  */
-async function isFileInScannerTray(filename) {
+async function isFileInScannerTray(filename, ownerEmployeeId) {
   const scanPath = getSafeFilePath(SCANNER_DIR, filename);
   if (scanPath && fs.existsSync(scanPath)) return true;
-  return (await listFilesBySource('scanner', false).catch(() => []))
+  return (await listFilesBySource('scanner', false, ownerEmployeeId).catch(() => []))
     .some(f => f.filename === filename);
 }
 
@@ -1168,9 +1168,9 @@ async function withRegisterLock(filename, fn) {
   }
 }
 
-async function getScannerFiles() {
+async function getScannerFiles(ownerEmployeeId) {
   try {
-    const files = await listFilesBySource('scanner', false);
+    const files = await listFilesBySource('scanner', false, ownerEmployeeId);
     const result = files.map(f => ({ filename: f.filename, fileSize: f.length || 0, createdAt: f.uploadDate || new Date() }));
     try {
       if (fs.existsSync(SCANNER_DIR)) {
@@ -1355,7 +1355,7 @@ async function registerScannerDoc(req, res, { errorMessage, defaultStatus, core 
     const statusErr = validateDocStatus(finalStatus);
     if (statusErr) return res.status(400).json({ error: statusErr });
   }
-  if (!(await isFileInScannerTray(filename))) {
+  if (!(await isFileInScannerTray(filename, req.user.role === 'funcionario' ? req.user.employeeId : undefined))) {
     return res.status(403).json({ error: 'El archivo no se encuentra en la bandeja del escáner.' });
   }
   const result = await withRegisterLock(filename, () => registerDocumentCore({
@@ -1875,7 +1875,7 @@ app.get('/api/funcionario/init', authMiddleware, async (req, res) => {
     const dtResult = await col('documentTypes').find().toArray();
     const catResult = await col('categories').find().toArray();
 
-    const scannerFiles = await getScannerFiles();
+    const scannerFiles = await getScannerFiles(req.user.employeeId);
 
     let emails = [];
     try {
@@ -2638,7 +2638,8 @@ app.get('/api/document-file/:filename', fileAuthMiddleware, async (req, res) => 
     } else if (folder === 'scanner' && hasPermission(req.user.role, 'scanner.read')) {
       const trayPath = getSafeFilePath(SCANNER_DIR, filename);
       const inScannerTray = (trayPath && fs.existsSync(trayPath)) ||
-        (await listFilesBySource('scanner', false)).some(f => f.filename === filename);
+        (await listFilesBySource('scanner', false, req.user.employeeId))
+          .some(f => f.filename === filename);
       if (!inScannerTray) {
         return res.status(403).json({ error: 'No tiene permisos para acceder a este archivo.' });
       }
@@ -2763,7 +2764,7 @@ app.get('/api/security-logs', authMiddleware, requirePermission('audit.read'), a
 
 // --- ESCÁNER ---
 app.get('/api/scanner-files', authMiddleware, requirePermission('scanner.read'), async (req, res) => {
-  res.json(await getScannerFiles());
+  res.json(await getScannerFiles(req.user.employeeId));
 });
 
 // --- ESTADO DEL ESCÁNER (Detección USB + Red + Monitoreo de bandeja) ---
@@ -2987,7 +2988,7 @@ app.get('/api/scanner/status', authMiddleware, requirePermission('scanner.read')
   // (escaneo de red) y no debe bloquear el event loop.
   if (stale) refreshScannerCacheAsync();
 
-  const trayFiles = await getScannerFiles();
+  const trayFiles = await getScannerFiles(req.user.employeeId);
 
   const connected = cachedScanners.length > 0;
 
@@ -3012,7 +3013,7 @@ app.post('/api/scanner/refresh', authMiddleware, requireAnyPermission('scanner.m
   res.json({ message: 'Actualización de escáneres iniciada. El estado se actualizará en unos segundos.', scanners: cachedScanners, count: cachedScanners.length, refreshing: true });
 });
 
-async function scanWithScanner(customName) {
+async function scanWithScanner(customName, ownerEmployeeId) {
   const escapedDir = SCANNER_DIR.replace(/\\/g, '\\\\');
   const timestamp = Date.now();
   // Nombre base único: el sufijo aleatorio evita colisiones de archivos en la bandeja
@@ -3084,9 +3085,13 @@ async function scanWithScanner(customName) {
       doc.end();
     });
     try { fs.unlinkSync(tempPath); } catch (e) { console.warn('Error limpiando tempPath:', e.message); }
-    // Se cifra en reposo desde la ingesta: el contenido del escáner puede ser
-    // sensible (salud/identificación) y aún no se conoce su clasificación aquí.
-    await storeFileBuffer(pdfBase, pdfBuffer, { source: 'scanner', registered: false, sensitive: true });
+    // El contenido del escáner puede ser sensible (salud/identificación) y aún no se
+    // conoce su clasificación aquí. Se etiqueta el dueño (funcionario que escanea) para
+    // que cada quien solo vea su propia bandeja (aislamiento por funcionario).
+    await storeFileBuffer(pdfBase, pdfBuffer, {
+      source: 'scanner', registered: false, sensitive: true,
+      ...(ownerEmployeeId ? { ownerEmployeeId } : {})
+    });
     return pdfBase;
   } catch (e) {
     console.warn('Error en convertImageToPdf:', e.message);
@@ -3107,7 +3112,8 @@ app.post('/api/scanner/scan', authMiddleware, requireAnyPermission('scanner.mana
     scanInProgress = true;
     try {
       const customName = req.body.filename ? req.body.filename.trim() : '';
-      const result = await scanWithScanner(customName);
+      const ownerEmployeeId = req.user.employeeId || undefined;
+      const result = await scanWithScanner(customName, ownerEmployeeId);
       if (!result || result.startsWith('ERROR:')) {
         return res.status(500).json({ error: result ? result.replace('ERROR:', '') : 'Error al escanear.' });
       }

@@ -493,9 +493,13 @@ async function deleteFileByName(filename) {
   }
 }
 
-async function listFilesBySource(source, registered = false) {
+async function listFilesBySource(source, registered = false, ownerEmployeeId) {
   const bucket = getBucket();
-  return bucket.find({ 'metadata.source': source, 'metadata.registered': registered })
+  const query = { 'metadata.source': source, 'metadata.registered': registered };
+  if (ownerEmployeeId !== undefined && ownerEmployeeId !== null && ownerEmployeeId !== '') {
+    query['metadata.ownerEmployeeId'] = String(ownerEmployeeId);
+  }
+  return bucket.find(query)
     .sort({ uploadDate: -1 }).toArray();
 }
 
