@@ -1114,10 +1114,6 @@ async function isFileInScannerTray(filename, ownerEmployeeId) {
     .some(f => f.filename === filename);
 }
 
-async function rollbackStoredAttachments(filenames) {
-  for (const fn of filenames) { try { await deleteFileByName(fn); } catch { /* ignorar */ } }
-}
-
 // Valida que el contenido coincida con la extensión (magic bytes).
 // Evita que un .pdf sea en realidad HTML/script u otro binario.
 /**
@@ -1375,12 +1371,23 @@ async function registerEmailAttachmentCore({ req, email, emailId, filename, empl
   if (!attachment) return { error: 'Archivo adjunto no encontrado.', status: 404 };
   if (attachment.registered) return { error: 'Este adjunto ya fue registrado como documento.', status: 409 };
 
+  // ON-DEMAND: desde el rediseño la sync no persiste el binario en GridFS (para no
+  // llenar la cuota). Al registrar se descarga el adjunto desde su cuenta Gmail.
+  const fetched = await fetchEmailAttachmentContent(email, attachment);
+  if (!fetched) return { error: 'No se pudo recuperar el adjunto desde Gmail.', status: 502 };
+  if (fetched.buffer.length > MAX_REGISTER_BYTES) {
+    return { error: `El archivo '${filename}' supera el tamaño máximo permitido (${Math.round(MAX_REGISTER_BYTES / 1024 / 1024)} MB).`, status: 400 };
+  }
+  const contentErr = validateFileContent(filename, fetched.buffer);
+  if (contentErr) return { error: contentErr, status: 400 };
+
   const result = await withRegisterLock(filename, () => registerDocumentCore({
     req, filename, employeeId, documentTypeId, categoryId,
     description: description || `Ingresado desde correo de ${email.senderName} (${email.senderEmail}) - Asunto: ${email.subject}.`,
     issueDate, expiryDate,
     status: status || 'Pendiente',
-    mover: true,
+    fileBuffer: fetched.buffer,
+    gridFSSource: 'gmail',
     auditAction,
     auditMessageTemplate,
     extraDocFields: { sourceEmailId: emailId, sourceSenderEmail: email.senderEmail || email.sender, ...(extraDocFields || {}) },
@@ -1442,6 +1449,58 @@ function getGmailClient(refreshToken) {
   // timeout acota cada llamada a la API de Google (evita que una llamada colgada
   // deje la sincronización atascada para siempre).
   return require('googleapis').google.gmail({ version: 'v1', auth, timeout: 60000 });
+}
+
+// Devuelve el cliente Gmail de la cuenta a la que pertenece un correo de la
+// bandeja: 'admin' usa el token del sistema (GMAIL_REFRESH_TOKEN); cualquier
+// otro inboxOwner es el employeeId del funcionario (su propio refresh token).
+async function getGmailClientForInboxOwner(inboxOwner) {
+  if (inboxOwner === 'admin' || !inboxOwner) {
+    return { gmail: getGmailClient(), label: 'admin' };
+  }
+  const employee = await col('employees').findOne({ id: inboxOwner });
+  if (!employee || !employee.gmailRefreshToken) {
+    const error = new Error('La cuenta Gmail del funcionario ya no está vinculada.');
+    error.code = 'GMAIL_NOT_LINKED';
+    throw error;
+  }
+  return { gmail: getGmailClient(employee.gmailRefreshToken), label: inboxOwner };
+}
+
+// Descarga on-demand el contenido de un adjunto de un correo desde la cuenta a
+// la que pertenece (admin o el funcionario dueño de la bandeja). No persiste el
+// binario: sirve para vista previa o para registrar el documento al momento.
+async function fetchEmailAttachmentContent(email, attachment) {
+  const { gmail } = await getGmailClientForInboxOwner(email.inboxOwner);
+  const messageId = email.id;
+  // Se usa el attachmentId guardado en la metadata si existe; si no, se localiza
+  // dentro del mensaje (correos previos a este cambio no lo persistían).
+  let attachmentId = attachment.attachmentId;
+  if (!attachmentId) {
+    const message = await gmail.users.messages.get({ userId: 'me', id: messageId, format: 'full' });
+    const parts = getAttachmentParts(message.data.payload || {});
+    // Candidatos de nombre: el original explícito, el nombre persistido, o el
+    // nombre original reconstruido a partir del sufijo único de getUniqueFilename
+    // (correos migrados que se guardaron solo con nombre único).
+    const ext = path.extname(attachment.filename || '');
+    const reconstructedBase = path.basename(attachment.filename || '', ext)
+      .replace(/_\d{13}_[0-9a-f]{10}$/, '');
+    const candidates = [
+      attachment.originalFilename,
+      attachment.filename,
+      reconstructedBase + ext
+    ].filter(Boolean);
+    const part = parts.find(p => candidates.includes(p.filename));
+    if (!part || !part.body || !part.body.attachmentId) return null;
+    attachmentId = part.body.attachmentId;
+  }
+  const got = await gmail.users.messages.attachments.get({
+    userId: 'me', messageId, id: attachmentId
+  });
+  if (!got.data || !got.data.data) return null;
+  const buffer = Buffer.from(got.data.data, 'base64url');
+  if (buffer.length > MAX_GMAIL_ATTACHMENT_BYTES) return null;
+  return { buffer, sizeBytes: buffer.length };
 }
 
 function getAttachmentParts(part, attachmentParts = []) {
@@ -1944,7 +2003,11 @@ app.post('/api/funcionario/register-email-attachment', authMiddleware, async (re
   }
   const email = await col('emailsInbox').findOne({ id: emailId });
   if (!email) return res.status(404).json({ error: 'Correo electrónico no encontrado.' });
-  // Bandeja compartida: cualquier funcionario puede registrar adjuntos
+  // Aislamiento: el funcionario solo puede registrar adjuntos de correos sugeridos
+  // a él o que provienen de su propia bandeja; no de bandejas de otros.
+  if (email.suggestedEmployeeId !== req.user.employeeId && email.inboxOwner !== req.user.employeeId) {
+    return res.status(403).json({ error: 'No tiene permisos para registrar este adjunto.' });
+  }
 
   // Un funcionario solo puede dejar el documento en revisión; el estado lo fija el administrador.
   const result = await registerEmailAttachmentCore({
@@ -2258,7 +2321,9 @@ app.get('/api/dashboard', authMiddleware, requirePermission('employees.read'), a
 
     let emails = [];
     try {
-      emails = await col('emailsInbox').find().sort({ date: -1 }).limit(200).toArray();
+      // El admin solo ve los correos de la bandeja institucional (inboxOwner:'admin');
+      // los de las cuentas personales de los funcionarios quedan aislados.
+      emails = await col('emailsInbox').find({ inboxOwner: 'admin' }).sort({ date: -1 }).limit(200).toArray();
     } catch (e) { console.warn('Error obteniendo inbox:', e.message); }
 
     const typeNames = {};
@@ -2735,6 +2800,35 @@ app.get('/api/document-file/:filename', fileAuthMiddleware, async (req, res) => 
     } catch (e) {
       console.error(`[FILE-SERVE] Error sirviendo archivo de escáner '${filename}':`, e.message);
       if (!res.headersSent) res.status(500).json({ error: 'Error al servir archivo.' });
+    }
+  } else if (folder === 'gmail' || folder === 'email') {
+    // DISEÑO ON-DEMAND: los adjuntos de Gmail ya no se persisten en GridFS durante
+    // la sync, así que la vista previa descarga el binario desde la cuenta al vuelo.
+    try {
+      const email = await col('emailsInbox').findOne({ 'attachments.filename': filename });
+      const attachment = email && email.attachments.find(a => a.filename === filename);
+      const fetchResult = email && attachment
+        ? await fetchEmailAttachmentContent(email, attachment)
+        : null;
+      if (!fetchResult) {
+        console.warn(`[FILE-SERVE] Adjunto '${filename}' no descargable on-demand.`);
+        return res.status(404).json({ error: 'Archivo no encontrado en el servidor.' });
+      }
+      const { buffer } = fetchResult;
+      const contentErr = validateFileContent(filename, buffer);
+      if (contentErr) {
+        console.warn(`[FILE-SERVE] Adjunto '${filename}' rechazado on-demand: ${contentErr}`);
+        return res.status(415).json({ error: contentErr });
+      }
+      const mimeType = getMimeType(filename);
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Content-Disposition', buildContentDisposition(mimeType, filename));
+      res.end(buffer);
+    } catch (e) {
+      console.error(`[FILE-SERVE] Error sirviendo adjunto on-demand '${filename}':`, e.message);
+      const status = e.code === 'GMAIL_NOT_LINKED' ? 403
+        : (e.code === 403 || e.code === 404) ? 404 : 500;
+      if (!res.headersSent) res.status(status).json({ error: 'No se pudo recuperar el adjunto desde Gmail.' });
     }
   } else {
     res.status(404).json({ error: 'Archivo no encontrado en el servidor.' });
@@ -3295,11 +3389,12 @@ h2{margin:0 0 8px}code{display:block;background:#f1f3f5;border:1px solid #e0e2e6
 
 app.get('/api/email-inbox', authMiddleware, requireAnyPermission('email.manage', 'email.read'), async (req, res) => {
   try {
-    // Un funcionario solo ve los correos sugeridos para él (suggestedEmployeeId);
-    // el admin (email.manage) ve la bandeja completa.
+    // Aislamiento por bandeja: el admin solo ve los correos de la cuenta
+    // institucional (inboxOwner:'admin'); un funcionario ve los correos sugeridos
+    // para él (de su propia bandeja o compartidos por el admin). Nadie más accede.
     const filter = (req.user.role === 'funcionario')
       ? { suggestedEmployeeId: req.user.employeeId }
-      : {};
+      : { inboxOwner: 'admin' };
     if (wantsPagination(req)) {
       const pagination = parsePagination(req, { defaultLimit: 50, maxLimit: 200 });
       res.json(await paginateQuery(col('emailsInbox'), filter, { date: -1 }, pagination));
@@ -3456,128 +3551,97 @@ async function performGmailSync(gmail, opts = {}) {
   console.log(`[GMAIL-SYNC] Total mensajes con adjuntos: ${messageRefs.length}, conocidos: ${knownEmailIds.size}`);
   const pendingRefs = messageRefs.filter((m) => !knownEmailIds.has(m.id));
   const newEmails = [];
-  let attachmentsDownloaded = 0;
+  let attachmentsIndexed = 0;
 
-  // Todos los adjuntos persistidos a GridFS durante este lote, para revertir
-  // cualquier huérfano si algo falla antes del insertMany.
-  const storedAttachmentFilenames = new Set();
+  for (const messageRef of pendingRefs) {
+    // Corridas acotadas: al llegar al tope se corta y se informan los pendientes.
+    if (newEmails.length >= MAX_NEW_MESSAGES_PER_SYNC) {
+      break;
+    }
+    // Respiro de ritmo: distribuye el consumo de unidades entre las ventanas
+    // por minuto/usuario para no agotar la cuota (el reintento cubre los picos).
+    await sleep(3200);
+    const message = await gmailCallWithRetry(
+      () => gmail.users.messages.get({ userId: 'me', id: messageRef.id, format: 'full' }),
+      `messages.get ${messageRef.id}`
+    );
+    const payload = message.data.payload || {};
+    const attachmentParts = getAttachmentParts(payload);
 
-  try {
-    for (const messageRef of pendingRefs) {
-      // Corridas acotadas: al llegar al tope se corta y se informan los pendientes.
-      if (newEmails.length >= MAX_NEW_MESSAGES_PER_SYNC) {
-        break;
-      }
-      // Respiro de ritmo: distribuye el consumo de unidades entre las ventanas
-      // por minuto/usuario para no agotar la cuota (el reintento cubre los picos).
-      await sleep(3200);
-      const message = await gmailCallWithRetry(
-        () => gmail.users.messages.get({ userId: 'me', id: messageRef.id, format: 'full' }),
-        `messages.get ${messageRef.id}`
-      );
-      const payload = message.data.payload || {};
-      const attachmentParts = getAttachmentParts(payload);
+    if (await col('emailsInbox').findOne({ id: messageRef.id })) continue;
 
-      const buffered = [];
-      for (const part of attachmentParts) {
-        if (!part.body || !part.body.attachmentId) {
-          console.warn(`[GMAIL-SYNC] Adjunto '${part.filename}' sin attachmentId, se omite.`);
-          continue;
-        }
-        let attachment;
-        try {
-          attachment = await gmailCallWithRetry(
-            () => gmail.users.messages.attachments.get({ userId: 'me', messageId: messageRef.id, id: part.body.attachmentId }),
-            `attachments.get ${messageRef.id}/${part.filename}`
-          );
-        } catch (e) {
-          console.warn(`[GMAIL-SYNC] Error descargando '${part.filename}': ${e.message}`);
-          continue;
-        }
-        if (!attachment.data || !attachment.data.data) {
-          console.warn(`[GMAIL-SYNC] Adjunto '${part.filename}' sin datos, se omite.`);
-          continue;
-        }
-        const content = Buffer.from(attachment.data.data, 'base64url');
-        if (content.length > MAX_GMAIL_ATTACHMENT_BYTES) {
-          console.warn(`[GMAIL-SYNC] Adjunto '${part.filename}' excede ${MAX_GMAIL_ATTACHMENT_BYTES} bytes; se omite.`);
-          continue;
-        }
-        buffered.push({ filename: path.basename(part.filename), content });
-      }
-
-      if (await col('emailsInbox').findOne({ id: messageRef.id })) continue;
-
-      const attachments = [];
-      for (const b of buffered) {
-        const contentErr = validateFileContent(b.filename, b.content);
-        if (contentErr) {
-          console.warn(`[GMAIL-SYNC] Adjunto '${b.filename}' omitido: ${contentErr}`);
-          continue;
-        }
-        const filename = getUniqueFilename(b.filename);
-        // Adjuntos de correo se cifran en reposo desde la ingesta: pueden contener
-        // datos sensibles y aún no se ha clasificado la categoría del documento.
-        await storeFileBuffer(filename, b.content, { source: 'gmail', registered: false, sensitive: true });
-        attachments.push({ filename, sizeBytes: b.content.length, registered: false, source: 'gmail' });
-        storedAttachmentFilenames.add(filename);
-        attachmentsDownloaded++;
-      }
-
-      // Solo se registran correos que traen al menos un archivo adjunto válido.
-      if (!attachments.length) {
+    // DISEÑO ON-DEMAND: la sync ya NO descarga los binarios a GridFS (eso llenó
+    // la cuota de la BD). Solo se persisten los metadatos (nombre, tamaño,
+    // attachmentId de Gmail) y el adjunto se descarga al momento de previsualizar
+    // o registrar. El attachmentId permite localizarlo en la cuenta sin reescaneo.
+    const attachments = [];
+    for (const part of attachmentParts) {
+      if (!part.body || !part.body.attachmentId) {
+        console.warn(`[GMAIL-SYNC] Adjunto '${part.filename}' sin attachmentId, se omite.`);
         continue;
       }
-
-      const headers = payload.headers || [];
-      const fromHeader = getHeader(headers, 'From');
-      const { senderName, senderEmail } = parseEmailFromHeader(fromHeader);
-
-      let suggestedEmployeeId = null;
-      if (opts.mode === 'funcionario') {
-        suggestedEmployeeId = employeeId;
-      } else {
-        const matchedEmployee = await col('employees').findOne({ email: senderEmail });
-        suggestedEmployeeId = matchedEmployee ? matchedEmployee.id : null;
+      const sizeBytes = part.body.size || 0;
+      if (sizeBytes > MAX_GMAIL_ATTACHMENT_BYTES) {
+        console.warn(`[GMAIL-SYNC] Adjunto '${part.filename}' excede ${MAX_GMAIL_ATTACHMENT_BYTES} bytes; se omite.`);
+        continue;
       }
-
-      newEmails.push({
-        id: messageRef.id, sender: senderEmail || fromHeader,
-        senderName, senderEmail,
-        toEmail: parseToEmailHeader(getHeader(headers, 'To')),
-        subject: getHeader(headers, 'Subject') || '(Sin asunto)',
-        body: message.data.snippet || '',
-        date: parseDateHeader(getHeader(headers, 'Date')),
-        read: false, syncedBy: 'Sistema',
-        suggestedEmployeeId,
-        attachments
+      attachments.push({
+        filename: getUniqueFilename(path.basename(part.filename)),
+        originalFilename: path.basename(part.filename),
+        sizeBytes,
+        registered: false,
+        source: 'gmail',
+        attachmentId: part.body.attachmentId
       });
+      attachmentsIndexed++;
     }
-  } catch (e) {
-    // Revertir TODOS los adjuntos guardados del lote para no dejar huérfanos.
-    await rollbackStoredAttachments([...storedAttachmentFilenames]);
-    throw e;
+
+    // Solo se registran correos que traen al menos un archivo adjunto válido.
+    if (!attachments.length) {
+      continue;
+    }
+
+    const headers = payload.headers || [];
+    const fromHeader = getHeader(headers, 'From');
+    const { senderName, senderEmail } = parseEmailFromHeader(fromHeader);
+
+    let suggestedEmployeeId = null;
+    if (opts.mode === 'funcionario') {
+      suggestedEmployeeId = employeeId;
+    } else {
+      const matchedEmployee = await col('employees').findOne({ email: senderEmail });
+      suggestedEmployeeId = matchedEmployee ? matchedEmployee.id : null;
+    }
+
+    newEmails.push({
+      id: messageRef.id, sender: senderEmail || fromHeader,
+      senderName, senderEmail,
+      toEmail: parseToEmailHeader(getHeader(headers, 'To')),
+      subject: getHeader(headers, 'Subject') || '(Sin asunto)',
+      body: message.data.snippet || '',
+      date: parseDateHeader(getHeader(headers, 'Date')),
+      read: false, syncedBy: 'Sistema',
+      suggestedEmployeeId,
+      // Origen de la bandeja: 'admin' para la cuenta institucional; employeeId
+      // para la cuenta personal de un funcionario. Permite aislar quién ve qué.
+      inboxOwner: opts.mode === 'funcionario' ? employeeId : 'admin',
+      attachments
+    });
   }
 
   if (!newEmails.length) {
     return { updated: false, count: 0, downloaded: 0, emails: [], remaining: pendingRefs.length };
   }
 
-  try {
-    await col('emailsInbox').insertMany(newEmails);
-  } catch (e) {
-    // Si el insert falla, limpiar los adjuntos guardados para no dejarlos huérfanos.
-    await rollbackStoredAttachments([...storedAttachmentFilenames]);
-    throw e;
-  }
+  await col('emailsInbox').insertMany(newEmails);
 
   await addAuditLog(
     'Sincronización de Correo',
-    `Se descargaron ${attachmentsDownloaded} archivo(s) desde ${newEmails.length} correo(s) de Gmail.`,
+    `Se indexaron ${attachmentsIndexed} adjunto(s) de ${newEmails.length} correo(s) de Gmail (descarga on-demand).`,
     opts.actorName || 'Sistema',
     opts.ip || ''
   );
-  return { updated: true, count: newEmails.length, downloaded: attachmentsDownloaded, emails: newEmails, remaining: Math.max(0, pendingRefs.length - newEmails.length) };
+  return { updated: true, count: newEmails.length, downloaded: attachmentsIndexed, emails: newEmails, remaining: Math.max(0, pendingRefs.length - newEmails.length) };
 }
 
 app.post('/api/email-inbox/sync', authMiddleware, requireAnyPermission('email.manage', 'email.sync'), async (req, res) => {

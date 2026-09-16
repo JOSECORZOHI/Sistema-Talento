@@ -479,7 +479,7 @@ async function pollFuncionarioSyncStatus(btn) {
       }
       const done = st.processed || 0;
       if (done > 0) {
-        showToast(`${done} correo(s) sincronizado(s), ${st.downloaded || 0} archivo(s) descargado(s).`, 'success');
+        showToast(`${done} correo(s) sincronizado(s), ${st.downloaded || 0} adjunto(s) disponible(s).`, 'success');
       } else {
         showToast('No hay correos nuevos para sincronizar.', 'success');
       }
