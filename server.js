@@ -3690,12 +3690,25 @@ app.get('/api/funcionario/gmail/callback', async (req, res) => {
       return res.status(400).json({ error: 'Google no devolvió un refresh token. Vuélvalo a intentar.' });
     }
 
+    // Consultar el correo de la cuenta vinculada (gmail.readonly incluye users.getProfile,
+    // que devuelve la dirección de la cuenta propietaria del token).
+    let gmailEmail = null;
+    try {
+      auth.setCredentials(tokens);
+      const gmail = require('googleapis').google.gmail({ version: 'v1', auth, timeout: 30000 });
+      const profile = await gmail.users.getProfile({ userId: 'me' });
+      if (profile && profile.data && profile.data.emailAddress) gmailEmail = profile.data.emailAddress;
+    } catch (e) {
+      console.warn('[GMAIL-FUNC] No se pudo obtener el correo del perfil de Google:', e.message);
+    }
+
     // Guardar el token en el empleado y limpiar correos previos de la bandeja que
     // pertenecían a este funcionario (para evitar mezclas entre cuentas).
     const result = await col('employees').updateOne({ id: employeeId }, {
       $set: {
         gmailRefreshToken: tokens.refresh_token,
-        gmailLinkedAt: new Date().toISOString()
+        gmailLinkedAt: new Date().toISOString(),
+        ...(gmailEmail ? { gmailEmail } : {})
       }
     });
     if (result.matchedCount === 0) {
