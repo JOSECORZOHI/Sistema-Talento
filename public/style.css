@@ -928,7 +928,7 @@ textarea::placeholder {
   align-items: center;
 }
 
-.input-wrapper svg {
+.input-wrapper > svg {
   position: absolute;
   left: 12px;
   color: var(--text-muted);
@@ -2278,7 +2278,7 @@ textarea:focus {
   align-items: center;
 }
 
-.login-input-wrapper svg {
+.login-input-wrapper > svg {
   position: absolute;
   left: 14px;
   color: var(--text-muted);

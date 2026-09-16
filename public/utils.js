@@ -57,7 +57,30 @@ function bindPasswordToggles() {
       input.focus();
     });
     host.insertBefore(btn, input.nextSibling);
+    alignPwToggle(btn, input);
   });
+}
+
+// Alinea el ojito con el centro vertical del input, no del contenedor. En
+// .form-field el contenedor incluye el label, donde top:50% quedaría desplazado.
+// Se recalcula al abrir modales y al redimensionar (los modales inician ocultos).
+function alignPwToggle(btn, input) {
+  if (!btn || !input || !input.offsetParent) return;
+  const centerTop = input.offsetTop + input.offsetHeight / 2 - btn.offsetHeight / 2;
+  if (Number.isFinite(centerTop) && centerTop >= 0) {
+    btn.style.top = centerTop + 'px';
+    btn.style.transform = 'none';
+  }
+}
+
+function alignAllPasswordToggles(scope) {
+  (scope || document).querySelectorAll('.pw-toggle-btn').forEach(btn => {
+    const input = btn.previousElementSibling;
+    alignPwToggle(btn, input && input.tagName === 'INPUT' ? input : null);
+  });
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener('resize', () => alignAllPasswordToggles());
 }
 
 // --- SEGURIDAD ---
@@ -299,6 +322,10 @@ function openModal(modal) {
   if (modal.dataset.modalOpen === '1') return;
   modal.dataset.modalOpen = '1';
   modal.classList.add('show');
+
+  // Re-posicionar los botones de ojo al interior del modal recién mostrado
+  // (los modales inician con display:none, no había layout al binderlos).
+  alignAllPasswordToggles(modal);
 
   // Recordar el elemento que tenía el foco para devolverlo al cerrar.
   if (!modal._lastFocused) {
