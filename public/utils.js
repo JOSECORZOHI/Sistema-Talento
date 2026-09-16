@@ -374,7 +374,12 @@ function closeModal(modal) {
   modal.dataset.modalOpen = '0';
   if (modal.id === 'modal-view-pdf') {
     const iframe = modal.querySelector('iframe');
-    if (iframe) { iframe.src = ''; iframe.style.display = 'block'; }
+    if (iframe) {
+      // Revocar el Blob URL para no dejar objetos retenidos en memoria.
+      if (iframe._blobUrl) { URL.revokeObjectURL(iframe._blobUrl); iframe._blobUrl = null; }
+      iframe.src = '';
+      iframe.style.display = 'block';
+    }
     const downloadMsg = iframe?.parentElement?.querySelector('.download-fallback-msg');
     if (downloadMsg) downloadMsg.style.display = 'none';
   }

@@ -264,7 +264,7 @@ function renderEmployeeDossier() {
         </svg>
         <h5 title="${sanitize(doc.filename)}">${sanitize(doc.filename)}</h5>
         <span style="font-weight: 500; color: var(--text-secondary); margin-top: 4px;">${sanitize(typeName)}</span>
-        <span>Emisión: ${dateFormatted}</span>
+        <span>Emisión: ${sanitize(dateFormatted)}</span>
       </div>
       <div class="folder-doc-card-footer">
         <span class="badge-status ${(doc.status || '').toLowerCase()}" style="padding: 2px 6px; font-size: 9px;">${sanitize(doc.status)}</span>

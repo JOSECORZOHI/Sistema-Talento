@@ -198,18 +198,32 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function pollEmailSyncStatus(btn) {
+    let attempts = 0;
+    let consecutiveErrors = 0;
+    const MAX_ATTEMPTS = 400; // ~20 min a 3 s por intento
+    const MAX_ERRORS = 10;
+    const stop = () => {
+      clearInterval(poll);
+      btn.disabled = false;
+      btn.textContent = 'Sincronizar';
+    };
     const poll = setInterval(async () => {
+      attempts++;
+      if (attempts > MAX_ATTEMPTS) {
+        stop();
+        showToast('La sincronización tardó más de lo esperado. Intente de nuevo.', 'error');
+        return;
+      }
       try {
         const res = await apiFetch('/api/email-inbox/sync/status');
+        consecutiveErrors = 0;
         const st = await res.json();
         if (st.running) {
           const done = (st.processed || 0);
           btn.textContent = done ? `Sincronizando... (${done} correo(s))` : 'Sincronizando...';
           return;
         }
-        clearInterval(poll);
-        btn.disabled = false;
-        btn.textContent = 'Sincronizar';
+        stop();
         if (st.error) {
           showToast(st.error.message || 'Error al sincronizar correos.', 'error');
           return;
@@ -222,7 +236,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         await fetchEmails();
       } catch (e) {
-        // Transitorio: no cortar el polling por un fallo de red puntual.
+        // Transitorio: se toleran fallos de red puntuales, pero no infinitos.
+        if (++consecutiveErrors >= MAX_ERRORS) {
+          stop();
+          showToast('No se pudo consultar el estado de la sincronización.', 'error');
+        }
       }
     }, 3000);
   }

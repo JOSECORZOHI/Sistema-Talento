@@ -120,9 +120,13 @@ function getMailTransporter() {
 // El header Host solo se confía en modo development explícito.
 function getAppBaseUrl(req) {
   if (process.env.APP_BASE_URL) return process.env.APP_BASE_URL.replace(/\/$/, '');
-  const proto = req.get('x-forwarded-proto') || req.protocol;
-  const host = req.get('x-forwarded-host') || req.get('host');
-  if (proto && host) return `${proto}://${host}`;
+  // Solo en development se confía en los encabezados (Host/X-Forwarded-Host son
+  // falsificables por el cliente y podrían envenenar los enlaces de correo).
+  if (process.env.NODE_ENV === 'development') {
+    const proto = req.get('x-forwarded-proto') || req.protocol;
+    const host = req.get('x-forwarded-host') || req.get('host');
+    if (proto && host) return `${proto}://${host}`;
+  }
   return null;
 }
 
@@ -1741,6 +1745,14 @@ app.post('/api/auth/2fa/verify', async (req, res) => {
     const user = await col(collection).findOne({ email: ch.email });
     if (!user || !user.totpEnabled || !user.totpSecret) {
       return res.status(400).json({ error: 'La autenticación de dos factores no está activa para esta cuenta.' });
+    }
+    // Revalidar el estado de la cuenta: pudo suspenderse/bloquearse después de
+    // emitir el reto de verificación (el reto vive hasta 5 minutos).
+    const locked = user.status === 'bloqueada' && user.lockedUntil && new Date(user.lockedUntil) > new Date();
+    if (user.status === 'suspendida' || user.status === 'inactiva'
+      || (ch.role === 'funcionario' && user.active === false && user.status !== 'pendiente')
+      || locked) {
+      return res.status(401).json({ error: 'La cuenta no está habilitada. Contacte al administrador.' });
     }
     if (!verifyTOTP(user.totpSecret, code)) {
       await addSecurityLog('2FA Fallido', `Código de verificación incorrecto para ${user.email}.`, ip, user.email);

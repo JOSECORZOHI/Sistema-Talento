@@ -39,7 +39,9 @@ test('totp: verifyTOTP rechaza códigos inválidos', () => {
 
 test('totp: tolera ±1 paso de ventana (drift de reloj)', () => {
   const secret = totp.generateSecret();
-  const time = Date.now();
+  // Se ancla el instante al centro de una ventana de 30 s para que el cálculo sea
+  // determinista (si se usa Date.now() crudo, el resultado depende de la fase del reloj).
+  const time = Math.floor(Date.now() / 30000) * 30000 + 15000;
   const code = totp.generateTOTP(secret, { time });
   // Código del paso anterior debe seguir siendo válido
   assert.equal(totp.verifyTOTP(secret, code, { time: time - 35 * 1000 }), true);

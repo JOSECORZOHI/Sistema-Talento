@@ -81,8 +81,28 @@ test('assertEncryptionKey lanza en producción cuando DOC_ENC_KEY falta/incorrec
   assert.doesNotThrow(() => goodKey.assertEncryptionKey());
 });
 
-test('fuera de producción, sin DOC_ENC_KEY se usa fallback (no lanza)', () => {
+test('fuera de producción, sin DOC_ENC_KEY se deriva de JWT_SECRET (no lanza)', () => {
   delete process.env.DOC_ENC_KEY;
-  const dev = loadWithEnv('development');
-  assert.doesNotThrow(() => dev.assertEncryptionKey());
+  const prevJwt = process.env.JWT_SECRET;
+  process.env.JWT_SECRET = 'test-jwt-secret';
+  try {
+    const dev = loadWithEnv('development');
+    assert.doesNotThrow(() => dev.assertEncryptionKey());
+  } finally {
+    if (prevJwt === undefined) delete process.env.JWT_SECRET;
+    else process.env.JWT_SECRET = prevJwt;
+  }
+});
+
+test('sin DOC_ENC_KEY ni JWT_SECRET lanza (no hay clave hardcodeada)', () => {
+  delete process.env.DOC_ENC_KEY;
+  const prevJwt = process.env.JWT_SECRET;
+  delete process.env.JWT_SECRET;
+  try {
+    const dev = loadWithEnv('development');
+    assert.throws(() => dev.assertEncryptionKey());
+  } finally {
+    if (prevJwt === undefined) delete process.env.JWT_SECRET;
+    else process.env.JWT_SECRET = prevJwt;
+  }
 });
