@@ -3820,7 +3820,10 @@ app.get('/api/funcionario/gmail/callback', async (req, res) => {
       return res.status(404).json({ error: 'Funcionario no encontrado.' });
     }
 
-    await col('emailsInbox').deleteMany({ suggestedEmployeeId: employeeId });
+    // Limpiar solo los correos de la bandeja PROPIA de este funcionario (los que
+    // trajo su cuenta Gmail anterior). Los correos institucionales (inboxOwner:'admin')
+    // sugeridos a él no se borran: siguen en la bandeja del administrador.
+    await col('emailsInbox').deleteMany({ suggestedEmployeeId: employeeId, inboxOwner: employeeId });
     const linkedEmployee = await col('employees').findOne({ id: employeeId });
     await addAuditLog('Autorización Gmail', `El funcionario vinculó su cuenta de Gmail para la sincronización de correos.`, (linkedEmployee && linkedEmployee.name) || 'Funcionario', '');
     return res.send(`
@@ -3881,6 +3884,11 @@ app.post('/api/documents/register-email-attachment', authMiddleware, requirePerm
   if (statusErr) return res.status(400).json({ error: statusErr });
   const email = await col('emailsInbox').findOne({ id: emailId });
   if (!email) return res.status(404).json({ error: 'Correo electrónico no encontrado.' });
+  // Aislamiento: la bandeja institucional (admin) es la única accesible desde esta
+  // ruta; no se deben registrar adjuntos de bandejas privadas de funcionarios.
+  if (email.inboxOwner !== 'admin') {
+    return res.status(403).json({ error: 'No tiene permisos para registrar este adjunto.' });
+  }
 
   const result = await registerEmailAttachmentCore({
     req, emailId, filename, employeeId, documentTypeId, categoryId,

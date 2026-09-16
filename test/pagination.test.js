@@ -34,6 +34,12 @@ test('parsePagination usa defaultLimit cuando no hay limit', () => {
   assert.equal(pag.limit, 10);
 });
 
+test('parsePagination acota page a maxPage (evita skip desmesurado)', () => {
+  const pag = parsePagination({ query: { page: '99999999' } }, { maxPage: 1000 });
+  assert.equal(pag.page, 1000);
+  assert.equal(pag.skip, 999 * 50);
+});
+
 test('wantsPagination detecta page o paginate según el query', () => {
   assert.equal(wantsPagination({ query: { page: '1' } }), true);
   assert.equal(wantsPagination({ query: { paginate: 'true' } }), true);
