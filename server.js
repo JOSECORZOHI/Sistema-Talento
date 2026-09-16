@@ -1375,8 +1375,8 @@ async function registerEmailAttachmentCore({ req, email, emailId, filename, empl
   // llenar la cuota). Al registrar se descarga el adjunto desde su cuenta Gmail.
   const fetched = await fetchEmailAttachmentContent(email, attachment);
   if (!fetched) return { error: 'No se pudo recuperar el adjunto desde Gmail.', status: 502 };
-  if (fetched.buffer.length > MAX_REGISTER_BYTES) {
-    return { error: `El archivo '${filename}' supera el tamaño máximo permitido (${Math.round(MAX_REGISTER_BYTES / 1024 / 1024)} MB).`, status: 400 };
+  if (fetched.tooLarge) {
+    return { error: `El archivo '${filename}' supera el tamaño máximo permitido (${Math.round(MAX_GMAIL_ATTACHMENT_BYTES / 1024 / 1024)} MB).`, status: 413 };
   }
   const contentErr = validateFileContent(filename, fetched.buffer);
   if (contentErr) return { error: contentErr, status: 400 };
@@ -1499,8 +1499,11 @@ async function fetchEmailAttachmentContent(email, attachment) {
   });
   if (!got.data || !got.data.data) return null;
   const buffer = Buffer.from(got.data.data, 'base64url');
-  if (buffer.length > MAX_GMAIL_ATTACHMENT_BYTES) return null;
-  return { buffer, sizeBytes: buffer.length };
+  const sizeBytes = buffer.length;
+  // Límite único y coherente para adjuntos de correo (mismo que la sync y la
+  // subida). Se distingue del "no encontrado" para devolver un 413 claro.
+  if (sizeBytes > MAX_GMAIL_ATTACHMENT_BYTES) return { tooLarge: true, sizeBytes };
+  return { buffer, sizeBytes };
 }
 
 function getAttachmentParts(part, attachmentParts = []) {
@@ -1543,10 +1546,16 @@ async function authMiddleware(req, res, next) {
     if (dbUser.status === 'suspendida' || dbUser.status === 'inactiva' || dbUser.status === 'bloqueada') {
       return res.status(401).json({ error: 'Su cuenta no está activa. Contacte al administrador.' });
     }
-    if (decoded.role === 'funcionario' && dbUser.active === false && !req.originalUrl.includes('/auth/change-password')) {
+    // Rutas de arranque permitidas mientras la cuenta exige cambio de contraseña
+    // o está pendiente de activación. La comparación es sobre la RUTA exacta
+    // (req.baseUrl + req.path), nunca sobre originalUrl, para que un query string
+    // como `?x=/auth/change-password` no permita evadir el control.
+    const bootstrapPath = req.baseUrl + req.path;
+    const allowedWhileRestricted = ['/api/auth/change-password', '/api/auth/me'].includes(bootstrapPath);
+    if (decoded.role === 'funcionario' && dbUser.active === false && !allowedWhileRestricted) {
       return res.status(401).json({ error: 'Su cuenta no está activa. Contacte al administrador.' });
     }
-    if (dbUser.mustChangePassword && !req.originalUrl.includes('/auth/change-password')) {
+    if (dbUser.mustChangePassword && !allowedWhileRestricted) {
       return res.status(403).json({ error: 'Debe cambiar su contraseña antes de continuar.', mustChangePassword: true });
     }
     req.user = decoded;
@@ -2042,7 +2051,10 @@ app.patch('/api/documents/:id/visibilidad', authMiddleware, requirePermission('d
 
 // --- EMPLEADOS ---
 app.get('/api/employees', authMiddleware, requirePermission('employees.read'), async (req, res) => {
-  res.json(await col('employees').find({}, { projection: { password: 0, passwordHistory: 0 } }).limit(2000).toArray());
+  // Se excluyen credenciales y secretos (contraseñas, tokens OAuth de Gmail y
+  // secretos TOTP de 2FA) para no enviarlos nunca al navegador.
+  const projection = { password: 0, passwordHistory: 0, gmailRefreshToken: 0, totpSecret: 0 };
+  res.json(await col('employees').find({}, { projection }).limit(2000).toArray());
 });
 
 app.post('/api/employees', authMiddleware, requirePermission('employees.create'), createLimiter, async (req, res) => {
@@ -2288,7 +2300,7 @@ app.get('/api/dashboard', authMiddleware, requirePermission('employees.read'), a
     // Con límites para no cargar colecciones completas en memoria (paginación liviana).
     const documentTypes = await col('documentTypes').find().toArray();
     const categories = await col('categories').find().toArray();
-    const employees = await col('employees').find({}, { projection: { password: 0, passwordHistory: 0 } }).toArray();
+    const employees = await col('employees').find({}, { projection: { password: 0, passwordHistory: 0, gmailRefreshToken: 0, totpSecret: 0 } }).toArray();
     const documents = await col('documents').find().sort({ registeredAt: -1 }).limit(1000).toArray();
     const auditLogs = await col('auditLogs').find().sort({ timestamp: -1 }).limit(500).toArray();
     const deletionRequests = await col('deletionRequests').find().sort({ createdAt: -1 }).limit(200).toArray();
@@ -2645,7 +2657,7 @@ app.post('/api/documents/analyze', authMiddleware, requirePermission('documents.
   }
 
   // Fallback a disco SOLO para la bandeja del escáner (archivo físico aún no en GridFS).
-  // Los documentos cargados y los adjuntos de correo ya viven en GridFS.
+  // Los documentos cargados ya viven en GridFS.
   if (!buf && folder === 'scanner') {
     const filePath = getSafeFilePath(SCANNER_DIR, targetFilename);
     if (!filePath || !fs.existsSync(filePath)) {
@@ -2655,6 +2667,18 @@ app.post('/api/documents/analyze', authMiddleware, requirePermission('documents.
       return res.status(413).json({ error: 'El archivo supera el tamaño máximo para análisis.' });
     }
     buf = fs.readFileSync(filePath);
+  }
+
+  // Adjuntos de correo: como la sync ya no persiste el binario en GridFS, se
+  // descarga on-demand desde la cuenta dueña para poder analizarlo.
+  if (!buf && (folder === 'gmail' || folder === 'email')) {
+    const email = await col('emailsInbox').findOne({ 'attachments.filename': targetFilename });
+    const attachment = email && email.attachments.find(a => a.filename === targetFilename);
+    const fetched = email && attachment ? await fetchEmailAttachmentContent(email, attachment) : null;
+    if (fetched && fetched.tooLarge) {
+      return res.status(413).json({ error: 'El adjunto supera el tamaño máximo para análisis.' });
+    }
+    if (fetched) buf = fetched.buffer;
   }
 
   try {
@@ -2813,6 +2837,9 @@ app.get('/api/document-file/:filename', fileAuthMiddleware, async (req, res) => 
       if (!fetchResult) {
         console.warn(`[FILE-SERVE] Adjunto '${filename}' no descargable on-demand.`);
         return res.status(404).json({ error: 'Archivo no encontrado en el servidor.' });
+      }
+      if (fetchResult.tooLarge) {
+        return res.status(413).json({ error: 'El adjunto supera el tamaño máximo permitido.' });
       }
       const { buffer } = fetchResult;
       const contentErr = validateFileContent(filename, buffer);
@@ -3644,7 +3671,7 @@ async function performGmailSync(gmail, opts = {}) {
   return { updated: true, count: newEmails.length, downloaded: attachmentsIndexed, emails: newEmails, remaining: Math.max(0, pendingRefs.length - newEmails.length) };
 }
 
-app.post('/api/email-inbox/sync', authMiddleware, requireAnyPermission('email.manage', 'email.sync'), async (req, res) => {
+app.post('/api/email-inbox/sync', authMiddleware, requirePermission('email.manage'), async (req, res) => {
   let gmail;
   try {
     gmail = getGmailClient();
@@ -3668,7 +3695,7 @@ app.post('/api/email-inbox/sync', authMiddleware, requireAnyPermission('email.ma
 });
 
 // Progreso de la sincronización en segundo plano de la bandeja del sistema.
-app.get('/api/email-inbox/sync/status', authMiddleware, requireAnyPermission('email.manage', 'email.sync'), (req, res) => {
+app.get('/api/email-inbox/sync/status', authMiddleware, requirePermission('email.manage'), (req, res) => {
   res.json(getSyncJobState('admin'));
 });
 
