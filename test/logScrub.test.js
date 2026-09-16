@@ -21,6 +21,21 @@ test('scrubText tolera mayúsculas/minúsculas al buscar coincidencias', () => {
   assert.ok(!out.includes('JOSE PEREZ'));
 });
 
+test('scrubText detecta el valor aunque el texto tenga tildes (y viceversa)', () => {
+  const out = scrubText('Contrató a JOSÉ PÉREZ en la oficina', ['jose perez']);
+  assert.ok(out.includes(SCRUB_PATTERN));
+  assert.ok(!out.includes('JOSÉ PÉREZ'));
+});
+
+test('scrubText no destruye subcadenas de valores más largos', () => {
+  const text = 'Radicado 51234 asignado';
+  assert.equal(scrubText(text, ['1234']), text);
+});
+
+test('scrubText respeta el reemplazo personalizado', () => {
+  assert.equal(scrubText('contacto juan@x.co', ['juan@x.co'], '***'), 'contacto ***');
+});
+
 test('scrubText no altera texto sin valores personales', () => {
   const text = 'Evento normal sin datos';
   assert.equal(scrubText(text, ['inexistente']), text);
@@ -32,7 +47,7 @@ test('replaceManyText actualiza solo documentos con datos personales por lotes',
     { _id: '2', details: 'Evento sin datos', action: 'leer' }
   ];
   const collection = {
-    find: () => ({ skip() { return this; }, limit() { return this; }, toArray: async () => docs.splice(0, 2) }),
+    find: () => ({ sort() { return this; }, limit() { return this; }, toArray: async () => docs.splice(0, 2) }),
     updateOne: async () => {}
   };
   const updated = await replaceManyText(collection, ['Jose Perez']);

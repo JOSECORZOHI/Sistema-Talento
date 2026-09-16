@@ -1366,40 +1366,49 @@ async function registerScannerDoc(req, res, { errorMessage, defaultStatus, core 
 // Registro compartido de adjunto de correo (admin y funcionario). `email` ya fue cargado
 // por la ruta (para validar propiedad o armar metadatos). Encapsula: verificación del adjunto,
 // registro con lock y marcado del adjunto como registrado. Devuelve { doc } o { error, status }.
-async function registerEmailAttachmentCore({ req, email, emailId, filename, employeeId, documentTypeId, categoryId, description, issueDate, expiryDate, status, auditAction, auditMessageTemplate, extraDocFields }) {
-  const attachment = (email.attachments || []).find(a => a.filename === filename);
-  if (!attachment) return { error: 'Archivo adjunto no encontrado.', status: 404 };
-  if (attachment.registered) return { error: 'Este adjunto ya fue registrado como documento.', status: 409 };
+async function registerEmailAttachmentCore({ req, emailId, filename, employeeId, documentTypeId, categoryId, description, issueDate, expiryDate, status, auditAction, auditMessageTemplate, extraDocFields }) {
+  // Toda la operación (verificar no registrado, descargar, registrar y marcar)
+  // ocurre dentro del lock por filename. Así dos peticiones concurrentes no
+  // descargan ni registran el mismo adjunto dos veces.
+  return withRegisterLock(filename, async () => {
+    // Relectura dentro del lock: el estado `registered` puede haber cambiado
+    // mientras otra petición esperaba el turno.
+    const freshEmail = await col('emailsInbox').findOne({ id: emailId });
+    const attachment = freshEmail && (freshEmail.attachments || []).find(a => a.filename === filename);
+    if (!attachment) return { error: 'Archivo adjunto no encontrado.', status: 404 };
+    if (attachment.registered) return { error: 'Este adjunto ya fue registrado como documento.', status: 409 };
+    const source = freshEmail;
 
-  // ON-DEMAND: desde el rediseño la sync no persiste el binario en GridFS (para no
-  // llenar la cuota). Al registrar se descarga el adjunto desde su cuenta Gmail.
-  const fetched = await fetchEmailAttachmentContent(email, attachment);
-  if (!fetched) return { error: 'No se pudo recuperar el adjunto desde Gmail.', status: 502 };
-  if (fetched.tooLarge) {
-    return { error: `El archivo '${filename}' supera el tamaño máximo permitido (${Math.round(MAX_GMAIL_ATTACHMENT_BYTES / 1024 / 1024)} MB).`, status: 413 };
-  }
-  const contentErr = validateFileContent(filename, fetched.buffer);
-  if (contentErr) return { error: contentErr, status: 400 };
+    // ON-DEMAND: desde el rediseño la sync no persiste el binario en GridFS (para no
+    // llenar la cuota). Al registrar se descarga el adjunto desde su cuenta Gmail.
+    const fetched = await fetchEmailAttachmentContent(source, attachment);
+    if (!fetched) return { error: 'No se pudo recuperar el adjunto desde Gmail.', status: 502 };
+    if (fetched.tooLarge) {
+      return { error: `El archivo '${filename}' supera el tamaño máximo permitido (${Math.round(MAX_GMAIL_ATTACHMENT_BYTES / 1024 / 1024)} MB).`, status: 413 };
+    }
+    const contentErr = validateFileContent(filename, fetched.buffer);
+    if (contentErr) return { error: contentErr, status: 400 };
 
-  const result = await withRegisterLock(filename, () => registerDocumentCore({
-    req, filename, employeeId, documentTypeId, categoryId,
-    description: description || `Ingresado desde correo de ${email.senderName} (${email.senderEmail}) - Asunto: ${email.subject}.`,
-    issueDate, expiryDate,
-    status: status || 'Pendiente',
-    fileBuffer: fetched.buffer,
-    gridFSSource: 'gmail',
-    auditAction,
-    auditMessageTemplate,
-    extraDocFields: { sourceEmailId: emailId, sourceSenderEmail: email.senderEmail || email.sender, ...(extraDocFields || {}) },
-    actor: req.user.name
-  }));
-  if (result.error) return result;
+    const result = await registerDocumentCore({
+      req, filename, employeeId, documentTypeId, categoryId,
+      description: description || `Ingresado desde correo de ${source.senderName} (${source.senderEmail}) - Asunto: ${source.subject}.`,
+      issueDate, expiryDate,
+      status: status || 'Pendiente',
+      fileBuffer: fetched.buffer,
+      gridFSSource: 'gmail',
+      auditAction,
+      auditMessageTemplate,
+      extraDocFields: { sourceEmailId: emailId, sourceSenderEmail: source.senderEmail || source.sender, ...(extraDocFields || {}) },
+      actor: req.user.name
+    });
+    if (result.error) return result;
 
-  await col('emailsInbox').updateOne(
-    { id: emailId, 'attachments.filename': filename },
-    { $set: { 'attachments.$.registered': true } }
-  );
-  return result;
+    await col('emailsInbox').updateOne(
+      { id: emailId, 'attachments.filename': filename },
+      { $set: { 'attachments.$.registered': true } }
+    );
+    return result;
+  });
 }
 
 // Eliminación compartida de un documento y su archivo físico (GridFS y/o disco).
@@ -2020,7 +2029,7 @@ app.post('/api/funcionario/register-email-attachment', authMiddleware, async (re
 
   // Un funcionario solo puede dejar el documento en revisión; el estado lo fija el administrador.
   const result = await registerEmailAttachmentCore({
-    req, email, emailId, filename, employeeId: req.user.employeeId, documentTypeId, categoryId,
+    req, emailId, filename, employeeId: req.user.employeeId, documentTypeId, categoryId,
     description: description || `Ingresado desde correo de ${email.senderName} - Asunto: ${email.subject}.`,
     issueDate, expiryDate, status: 'Pendiente',
     auditAction: 'Correo por Funcionario',
@@ -3874,7 +3883,7 @@ app.post('/api/documents/register-email-attachment', authMiddleware, requirePerm
   if (!email) return res.status(404).json({ error: 'Correo electrónico no encontrado.' });
 
   const result = await registerEmailAttachmentCore({
-    req, email, emailId, filename, employeeId, documentTypeId, categoryId,
+    req, emailId, filename, employeeId, documentTypeId, categoryId,
     description, issueDate, expiryDate, status,
     auditAction: 'Ingesta de Correo',
     auditMessageTemplate: (emp, type, fn) => `Se registró el archivo adjunto '${fn}' del correo de ${email.senderName} asignándolo a ${emp} (${type}).`

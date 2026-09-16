@@ -15,7 +15,7 @@ require('dotenv').config();
 
 const { GridFSBucket } = require('mongodb');
 const dbmod = require('../db');
-const { encryptBuffer } = require('../lib/crypto');
+const { encryptBuffer, decryptBuffer } = require('../lib/crypto');
 
 const BUCKET_NAME = 'documentos';
 const BATCH = 25;
@@ -44,18 +44,29 @@ const BATCH = 25;
       try {
         const chunks = [];
         for await (const c of bucket.openDownloadStream(f._id)) chunks.push(c);
-        const enc = encryptBuffer(Buffer.concat(chunks));
+        const original = Buffer.concat(chunks);
+        const enc = encryptBuffer(original);
+        // Verifica el round-trip ANTES de tocar el original: nunca se debe
+        // destruir el claro si el cifrado no se puede descifrar de vuelta.
+        const back = decryptBuffer(enc);
+        if (!back.equals(original)) {
+          fail++;
+          console.error(`[RE-ENC] FALLO ${f.filename}: la verificación de descifrado no coincidió; no se modificó nada.`);
+          continue;
+        }
         const meta = { ...(f.metadata || {}) };
         meta.encrypted = true;
-        await bucket.delete(f._id);
+        // 1) Subir PRIMERO el archivo cifrado.
         await new Promise((resolve, reject) => {
           const up = bucket.openUploadStream(f.filename, { metadata: meta, contentType: f.contentType });
           up.on('finish', resolve);
           up.on('error', reject);
           up.end(enc);
         });
+        // 2) Solo tras subir el cifrado (verificado), eliminar el original.
+        await bucket.delete(f._id);
         ok++;
-        console.log(`[RE-ENC] OK ${f.filename} (${Buffer.concat(chunks).length} B -> ${enc.length} B cifrados)`);
+        console.log(`[RE-ENC] OK ${f.filename} (${original.length} B -> ${enc.length} B cifrados)`);
         if (ok % BATCH === 0) console.log(`[RE-ENC] progreso: ${ok}/${files.length}`);
       } catch (e) {
         fail++;

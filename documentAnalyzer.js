@@ -8,6 +8,10 @@ const mammoth = require('mammoth');
 const { createWorker, PSM } = require('tesseract.js');
 const { stripAccentsAndLower } = require('./lib/helpers');
 
+// Tope de píxeles por página rasterizada para OCR (25 MP ≈ 75 MB en RGB).
+// Evita que un PDF con páginas de tamaño desmesurado agote la memoria del proceso.
+const MAX_RASTER_PIXELS = 25 * 1000 * 1000;
+
 // --- PDF.js v4 (extracción de capa de texto) + mupdf WASM (rasterizado escaneados),
 //     ambos sin dependencias nativas de sistema ---
 let pdfjsPromise = null;
@@ -52,7 +56,21 @@ async function pdfToPngImages(buffer, maxPages = 2, scale = 2) {
   try {
     for (let p = 0; p < pageCount; p++) {
       const page = doc.loadPage(p);
-      const pixmap = page.toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceRGB, false);
+      // Tope de píxeles: un PDF puede declarar páginas enormes (poca compresión)
+      // y una rasterización a escala fija agotaría la memoria (OOM/DoS). Se
+      // reduce la escala lo necesario y se descarta la página si quedaría ilegible.
+      let effectiveScale = scale;
+      try {
+        const bounds = page.getBounds();
+        const width = bounds[2] - bounds[0];
+        const height = bounds[3] - bounds[1];
+        if (width > 0 && height > 0) {
+          const maxScale = Math.sqrt(MAX_RASTER_PIXELS / (width * height));
+          effectiveScale = Math.min(scale, maxScale);
+        }
+      } catch { /* si no se pueden leer los límites, se usa la escala base */ }
+      if (effectiveScale < 0.1) continue;
+      const pixmap = page.toPixmap(mupdf.Matrix.scale(effectiveScale, effectiveScale), mupdf.ColorSpace.DeviceRGB, false);
       const png = pixmap.asPNG();
       images.push(Buffer.from(png));
     }
