@@ -3295,12 +3295,17 @@ h2{margin:0 0 8px}code{display:block;background:#f1f3f5;border:1px solid #e0e2e6
 
 app.get('/api/email-inbox', authMiddleware, requireAnyPermission('email.manage', 'email.read'), async (req, res) => {
   try {
+    // Un funcionario solo ve los correos sugeridos para él (suggestedEmployeeId);
+    // el admin (email.manage) ve la bandeja completa.
+    const filter = (req.user.role === 'funcionario')
+      ? { suggestedEmployeeId: req.user.employeeId }
+      : {};
     if (wantsPagination(req)) {
       const pagination = parsePagination(req, { defaultLimit: 50, maxLimit: 200 });
-      res.json(await paginateQuery(col('emailsInbox'), {}, { date: -1 }, pagination));
+      res.json(await paginateQuery(col('emailsInbox'), filter, { date: -1 }, pagination));
       return;
     }
-    const emails = await col('emailsInbox').find().sort({ date: -1 }).limit(200).toArray();
+    const emails = await col('emailsInbox').find(filter).sort({ date: -1 }).limit(200).toArray();
     res.json(emails);
   } catch (e) {
     console.error('[EMAIL-INBOX] Error:', e.message);
@@ -3793,7 +3798,7 @@ app.use((error, req, res, next) => {
 
   if (error instanceof multer.MulterError) {
     if (error.code === 'LIMIT_FILE_SIZE') {
-      return res.status(413).json({ error: 'El archivo supera el tamaño máximo permitido de 20 MB.' });
+      return res.status(413).json({ error: `El archivo supera el tamaño máximo permitido de ${Math.round(MAX_UPLOAD_BYTES / 1024 / 1024)} MB.` });
     }
     // Otros errores de multer (campos inesperados, archivos no esperados, etc.)
     const multerMessages = {
