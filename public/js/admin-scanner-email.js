@@ -99,15 +99,14 @@ function renderGmailStatusBanner(status) {
       <code style="display:block;background:var(--border-color);padding:8px;border-radius:4px;margin-top:8px;font-size:12px;">
         GMAIL_CLIENT_ID=&lt;tu_client_id&gt;<br>
         GMAIL_CLIENT_SECRET=&lt;tu_client_secret&gt;<br>
-        GMAIL_REDIRECT_URI=${sanitize(redirectUri)}<br>
-        GMAIL_REFRESH_TOKEN=&lt;obtenido_desde /api/gmail/authorize&gt;
+        GMAIL_REDIRECT_URI=${sanitize(redirectUri)}
       </code>`;
   } else {
     banner.innerHTML = `
       <strong style="color:var(--warning);">⚠ Gmail pendiente de autorización</strong><br>
       Las credenciales OAuth están configuradas pero falta el <em>refresh token</em>.<br>
       <button onclick="startGmailAuthorization()" style="color:var(--primary);font-weight:600;text-decoration:underline;border:none;background:none;cursor:pointer;">Autorizar Gmail</button>
-      para completar la autorización. Luego copie el <code>GMAIL_REFRESH_TOKEN</code> desde la consola del servidor al archivo <code>.env</code>.`;
+      para completar la autorización. El <em>refresh token</em> quedará guardado automáticamente en el sistema; no debe copiarlo a mano.`;
   }
 
   container.insertAdjacentElement('beforebegin', banner);
