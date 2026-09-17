@@ -143,7 +143,7 @@
     </div>
   </div>
 
-  <script src="utils.js?v=7"></script>
+  <script src="utils.js?v=8"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       // Verificar mensaje de éxito del redireccionamiento de registro
@@ -153,20 +153,18 @@
         document.getElementById('login-success-msg').style.display = 'block';
       }
 
-      // Si ya está autenticado, redirigir según el rol
-      const token = localStorage.getItem('th_token');
-      let user = null;
-      try { user = JSON.parse(localStorage.getItem('th_user') || 'null'); } catch (e) { user = null; }
-      if (token && user) {
-        if (user.role === 'admin') {
-          window.location.href = '/admin.html';
-        } else {
-          window.location.href = '/funcionario.html';
-        }
-        return;
-      }
-
-      maybeShowStorageConsentBanner();
+      // Si ya hay sesión activa (cookie httpOnly), redirigir según el rol
+      fetch('/api/auth/me', { credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+        .then(res => (res.ok ? res.json() : null))
+        .then(data => {
+          if (data && data.user) {
+            localStorage.setItem('th_user', JSON.stringify(data.user));
+            window.location.href = data.user.role === 'admin' ? '/admin.html' : '/funcionario.html';
+            return;
+          }
+          maybeShowStorageConsentBanner();
+        })
+        .catch(() => maybeShowStorageConsentBanner());
 
       let pendingChallenge = null;
 
@@ -179,7 +177,6 @@
       };
 
       const finishLogin = (data) => {
-        localStorage.setItem('th_token', data.token);
         localStorage.setItem('th_user', JSON.stringify(data.user));
         if (data.user.role === 'admin') {
           window.location.href = '/admin.html';
@@ -212,7 +209,8 @@
         try {
           const res = await fetch('/api/auth/2fa/verify', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
             body: JSON.stringify({ challenge: pendingChallenge, code })
           });
           const data = await res.json();
@@ -271,7 +269,8 @@
         try {
           const res = await fetch('/api/auth/login', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
             body: JSON.stringify({ username, password })
           });
           const data = await res.json();

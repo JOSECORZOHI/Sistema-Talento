@@ -2,9 +2,7 @@
 // Verificación de autenticación (sanitize, apiFetch, checkAuth en utils.js)
 (function checkAuthAdmin() {
   if (!checkAuth('admin')) return;
-  fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + getToken() } })
-    .then(res => { if (!res.ok) logout(); })
-    .catch(() => {});
+  apiFetch('/api/auth/me').catch(() => {});
 })();
 
 // --- CAMBIO FORZADO DE CONTRASEÑA ---

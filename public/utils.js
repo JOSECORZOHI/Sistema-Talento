@@ -171,34 +171,41 @@ function storageWritesAllowed() {
 }
 
 // --- AUTENTICACIÓN ---
+// La sesión viaja en una cookie httpOnly (th_token) que JavaScript no puede leer.
+// 'th_token' en localStorage queda solo para limpieza de instalaciones antiguas.
 function getToken() { try { return localStorage.getItem('th_token'); } catch { return null; } }
 function getUser() { try { return JSON.parse(localStorage.getItem('th_user')); } catch { return null; } }
 
-function logout() {
+async function logout() {
+  try {
+    await fetch('/api/auth/logout', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      keepalive: true
+    });
+  } catch {}
   localStorage.removeItem('th_token');
   localStorage.removeItem('th_user');
   window.location.href = '/';
 }
 
 function checkAuth(requiredRole) {
-  const token = getToken();
   const user = getUser();
-  if (!token || (requiredRole && (!user || user.role !== requiredRole))) {
+  if (!user || (requiredRole && user.role !== requiredRole)) {
     window.location.href = '/';
     return false;
   }
   return true;
 }
 
-// --- FETCH CON TOKEN ---
+// --- FETCH CON COOKIE httpOnly + CSRF ---
 async function apiFetch(url, options = {}) {
-  const token = getToken();
-  const headers = { ...(options.headers || {}) };
-  if (token) headers['Authorization'] = 'Bearer ' + token;
+  const headers = { 'X-Requested-With': 'XMLHttpRequest', ...(options.headers || {}) };
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
   try {
-    const res = await fetch(url, { ...options, headers, signal: controller.signal });
+    const res = await fetch(url, { ...options, headers, credentials: 'same-origin', signal: controller.signal });
     if (res.status === 401) {
       logout();
       return res;
@@ -586,7 +593,7 @@ async function openPdfViewer(iframeId, filename, folder) {
   const ext = (filename || '').split('.').pop().toLowerCase();
   const viewableTypes = ['pdf','jpg','jpeg','png','gif','bmp','tiff','tif','txt'];
   const canViewInline = viewableTypes.includes(ext);
-  // URL sin token: la autenticación viaja por cabecera Authorization (apiFetch).
+  // URL sin token: la autenticación viaja en la cookie httpOnly (apiFetch).
   let url = `/api/document-file/${encodeURIComponent(filename)}`;
   const params = new URLSearchParams();
   if (folder) params.set('folder', folder);
@@ -743,7 +750,7 @@ function setupDragDrop(dropAreaId, fileInputId, previewId) {
   }
 
   function isLoggedIn() {
-    return !!getToken();
+    return !!getUser();
   }
 
   ['mousemove', 'keydown', 'scroll', 'touchstart', 'click'].forEach(event => {

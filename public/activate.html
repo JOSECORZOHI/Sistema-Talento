@@ -109,7 +109,7 @@
     </div>
   </div>
 
-  <script src="utils.js?v=7"></script>
+  <script src="utils.js?v=8"></script>
   <script>
     document.addEventListener('DOMContentLoaded', async () => {
       const params = new URLSearchParams(window.location.search);
@@ -162,7 +162,8 @@
         try {
           const res = await fetch(`/api/auth/activate/${token}`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
             body: JSON.stringify({ password })
           });
           const data = await res.json();

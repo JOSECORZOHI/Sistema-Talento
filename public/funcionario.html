@@ -822,10 +822,10 @@
       var cfm = document.getElementById('fcp-confirm').value;
       if (nw !== cfm) { errDiv.textContent = 'Las contraseñas nuevas no coinciden.'; errDiv.style.display = 'block'; return; }
       if (nw === cur) { errDiv.textContent = 'La nueva contraseña debe ser diferente a la actual.'; errDiv.style.display = 'block'; return; }
-      var token = localStorage.getItem('th_token');
       fetch('/api/auth/change-password', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
         body: JSON.stringify({ currentPassword: cur, newPassword: nw })
       }).then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
         .then(function(res) {
@@ -838,9 +838,7 @@
           msg.innerHTML = '<div style="background:var(--surface);border:1px solid var(--border-color);border-radius:12px;padding:32px 36px;text-align:center;box-shadow:0 12px 40px var(--shadow-hover);max-width:380px;width:90%;"><svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="#27ae60" stroke-width="2" style="margin-bottom:12px;"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><h3 style="margin:0 0 8px;color:var(--text-primary);">Contraseña actualizada</h3><p style="margin:0;color:var(--text-muted);font-size:14px;">Debe iniciar sesión nuevamente.</p></div>';
           document.body.appendChild(msg);
           setTimeout(function() {
-            localStorage.removeItem('th_token');
-            localStorage.removeItem('th_user');
-            window.location.href = '/';
+            logout();
           }, 2000);
         }).catch(function() { errDiv.textContent = 'Error de conexión.'; errDiv.style.display = 'block'; });
     });
@@ -878,7 +876,7 @@
   </div>
 
   <script src="js/svg-icons.js?v=1"></script>
-  <script src="utils.js?v=7"></script>
+  <script src="utils.js?v=8"></script>
   <script src="funcionario.js?v=15"></script>
 </body>
 </html>

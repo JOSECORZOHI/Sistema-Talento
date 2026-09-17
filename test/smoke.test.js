@@ -69,11 +69,14 @@ test('smoke: / devuelve el documento HTML del index', { skip: !base }, async () 
 // `require.main === module` evita app.listen/connect al importar, y se vacía
 // MONGODB_URI). Verifica que el servidor arranca y sirve rutas que no dependen
 // de la BD. No requiere red externa ni base de datos.
-test('smoke in-process: la app arranca y responde (index, validación y 404 API)', async () => {
+test('smoke in-process: la app arranca y responde (index, CSRF, cookie y 404 API)', async () => {
   process.env.JWT_SECRET = process.env.JWT_SECRET || 'smoke-test-secret';
   process.env.NODE_ENV = 'test';
   process.env.OCR_WARMUP = '0';
-  process.env.MONGODB_URI = ''; // evita que el arranque intente conectar a Mongo
+  // Aísla la prueba de la BD real (la app usa DATABASE_URL; MONGODB_URI queda por
+  // compatibilidad). Así ninguna petición abre conexión a Atlas.
+  process.env.DATABASE_URL = '';
+  process.env.MONGODB_URI = '';
 
   const { app } = require('../server');
   const { closeDb } = require('../db');
@@ -87,15 +90,33 @@ test('smoke in-process: la app arranca y responde (index, validación y 404 API)
     const html = await index.text();
     assert.ok(html.includes('<!DOCTYPE'));
 
-    // /api/auth/login y su validación de campos no requieren BD.
-    const loginBad = await fetch(baseUrl + '/api/auth/login', {
+    // Sin el encabezado CSRF, una petición mutante se rechaza.
+    const noCsrf = await fetch(baseUrl + '/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      body: '{}'
+    });
+    assert.equal(noCsrf.status, 403);
+
+    // Con el encabezado CSRF, la validación de campos no requiere BD.
+    const loginBad = await fetch(baseUrl + '/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
       body: '{}'
     });
     assert.equal(loginBad.status, 400);
     const loginBody = await loginBad.json();
     assert.ok(loginBody && loginBody.error);
+
+    // El cierre de sesión no depende de la BD y limpia la cookie httpOnly.
+    const logout = await fetch(baseUrl + '/api/auth/logout', {
+      method: 'POST',
+      headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    });
+    assert.equal(logout.status, 200);
+    const setCookie = logout.headers.get('set-cookie') || '';
+    assert.match(setCookie, /th_token=/);
+    assert.match(setCookie, /HttpOnly/i);
 
     // Ruta API desconocida (bypass de BD) → 404 JSON y nunca 500.
     const missing = await fetch(baseUrl + '/api/auth/login');

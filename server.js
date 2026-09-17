@@ -285,7 +285,7 @@ app.use(helmet({
 app.use(cors({
   origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()).filter(Boolean) : false,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   credentials: true,
   maxAge: 86400
 }));
@@ -312,6 +312,63 @@ app.use((req, res, next) => {
 });
 app.use(mongoSanitize({ replaceWith: '_' }));
 app.use(hpp());
+
+// --- AUTENTICACIÓN POR COOKIE httpOnly --------------------------------------
+// El JWT de sesión viaja en una cookie httpOnly (no accesible por JavaScript),
+// lo que evita su robo vía XSS desde localStorage. Se conserva la aceptación del
+// encabezado Authorization: Bearer por retrocompatibilidad (clientes/scripts).
+const AUTH_COOKIE = 'th_token';
+const AUTH_COOKIE_MAX_AGE_MS = 8 * 60 * 60 * 1000; // 8h (igual que la expiración del JWT)
+const AUTH_COOKIE_SECURE = process.env.NODE_ENV === 'production';
+
+function authCookieOptions() {
+  return { httpOnly: true, sameSite: 'lax', secure: AUTH_COOKIE_SECURE, path: '/' };
+}
+
+function parseCookies(req) {
+  const header = req.headers && req.headers.cookie;
+  const out = {};
+  if (!header) return out;
+  for (const part of header.split(';')) {
+    const idx = part.indexOf('=');
+    if (idx < 0) continue;
+    const key = part.slice(0, idx).trim();
+    const value = part.slice(idx + 1).trim();
+    if (!key) continue;
+    try { out[key] = decodeURIComponent(value); } catch { out[key] = value; }
+  }
+  return out;
+}
+
+function getAuthToken(req) {
+  const fromCookie = parseCookies(req)[AUTH_COOKIE];
+  if (fromCookie) return fromCookie;
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) return authHeader.slice(7);
+  return null;
+}
+
+function setAuthCookie(res, token) {
+  res.cookie(AUTH_COOKIE, token, { ...authCookieOptions(), maxAge: AUTH_COOKIE_MAX_AGE_MS });
+}
+
+function clearAuthCookie(res) {
+  res.clearCookie(AUTH_COOKIE, authCookieOptions());
+}
+
+// --- PROTECCIÓN CSRF ---------------------------------------------------------
+// Las cookies se envían solas; para las peticiones que cambian estado se exige un
+// encabezado personalizado que un formulario cross-site no puede añadir. Las
+// peticiones con Bearer quedan exentas porque no dependen de cookies.
+function csrfProtection(req, res, next) {
+  const method = req.method.toUpperCase();
+  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return next();
+  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) return next();
+  const requestedWith = String(req.get('x-requested-with') || '').toLowerCase();
+  if (requestedWith === 'xmlhttprequest') return next();
+  return res.status(403).json({ error: 'Solicitud no permitida (protección CSRF).' });
+}
+app.use(csrfProtection);
 
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -408,6 +465,7 @@ let isReconnecting = false;
 // Si la BD se cayó, intenta reconectar automáticamente (espera hasta 12s).
 app.use('/api', async (req, res, next) => {
   if (req.path === '/auth/login') return next();
+  if (req.path === '/auth/logout') return next();
   if (req.path === '/gmail/oauth2callback') return next();
   try {
     col('users');
@@ -768,7 +826,8 @@ async function authenticateUser(user, collectionName, role, username, password, 
       const responseUser = { email: user.email, name: user.name, role, department: user.department };
       if (role === 'funcionario') responseUser.employeeId = user.id;
       if (user.mustChangePassword) responseUser.mustChangePassword = true;
-      return res.json({ token, user: responseUser });
+      setAuthCookie(res, token);
+      return res.json({ user: responseUser });
     }
     const result = await recordLoginAttempt(username, false, ip);
     if (result.locked) {
@@ -1540,12 +1599,11 @@ function getAttachmentParts(part, attachmentParts = []) {
 
 // --- MIDDLEWARE DE AUTENTICACIÓN ---
 async function authMiddleware(req, res, next) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  const token = getAuthToken(req);
+  if (!token) {
     return res.status(401).json({ error: 'No autenticado. Inicie sesión.' });
   }
   try {
-    const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
     if (decoded.v === undefined) {
       return res.status(401).json({ error: 'Sesión no válida. Inicie sesión nuevamente.' });
@@ -1631,6 +1689,13 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.get('/api/auth/me', authMiddleware, (req, res) => {
   res.json({ user: req.user });
+});
+
+// --- CIERRE DE SESIÓN ---
+// Limpia la cookie httpOnly de sesión. No requiere autenticación (idempotente).
+app.post('/api/auth/logout', (req, res) => {
+  clearAuthCookie(res);
+  res.json({ message: 'Sesión cerrada.' });
 });
 
 // --- CAMBIO DE CONTRASEÑA ---
@@ -1771,7 +1836,8 @@ app.post('/api/auth/2fa/verify', async (req, res) => {
     const responseUser = { email: user.email, name: user.name, role: ch.role, department: user.department };
     if (ch.role === 'funcionario') responseUser.employeeId = user.id;
     if (user.mustChangePassword) responseUser.mustChangePassword = true;
-    return res.json({ token, user: responseUser });
+    setAuthCookie(res, token);
+    return res.json({ user: responseUser });
   } catch (error) {
     console.error('[2FA] Error en verify:', error.message);
     return res.status(503).json({ error: 'Error temporal de base de datos. Intente de nuevo en unos segundos.' });
@@ -4163,4 +4229,4 @@ async function runDocumentRetention() {
   }
 }
 
-module.exports = { app };
+module.exports = { app, parseCookies, getAuthToken, csrfProtection, authMiddleware };
