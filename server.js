@@ -142,9 +142,9 @@ function getAppBaseUrl(req) {
  * @param {string} [opts.text] - Cuerpo en texto plano.
  * @returns {Promise<boolean>} true si el envío fue exitoso.
  */
-async function sendViaGmailApi({ to, subject, html, text }) {
+async function sendViaGmailApi({ to, subject, html, text, refreshToken }) {
   try {
-    const gmail = getGmailClient();
+    const gmail = getGmailClient(refreshToken);
     const mimeMessage = [
       `From: ${SMTP_FROM}`,
       `To: ${to}`,
@@ -209,8 +209,9 @@ async function sendEmail({ to, subject, html, text }) {
     }
   }
 
-  if (process.env.GMAIL_REFRESH_TOKEN) {
-    const sent = await sendViaGmailApi({ to, subject, html, text });
+  const gmailRefreshToken = await getAdminGmailRefreshToken();
+  if (gmailRefreshToken) {
+    const sent = await sendViaGmailApi({ to, subject, html, text, refreshToken: gmailRefreshToken });
     if (sent) return true;
   }
 
@@ -1516,6 +1517,17 @@ function createGmailAuthClient() {
   return new google.auth.OAuth2(GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REDIRECT_URI);
 }
 
+// Resuelve el refresh token de la cuenta institucional (admin). Se prefiere el
+// valor guardado en BD (lo escribe el callback OAuth) y se cae a la variable de
+// entorno como respaldo. Así el token no tiene que exponerse en el navegador.
+async function getAdminGmailRefreshToken() {
+  try {
+    const cfg = await col('config').findOne({ key: 'gmailAdmin' });
+    if (cfg && cfg.refreshToken) return cfg.refreshToken;
+  } catch (e) { console.warn('[GMAIL] No se pudo leer el token admin de BD:', e.message); }
+  return process.env.GMAIL_REFRESH_TOKEN || null;
+}
+
 function getGmailClient(refreshToken) {
   const token = refreshToken || process.env.GMAIL_REFRESH_TOKEN;
   if (!token) {
@@ -1535,7 +1547,7 @@ function getGmailClient(refreshToken) {
 // otro inboxOwner es el employeeId del funcionario (su propio refresh token).
 async function getGmailClientForInboxOwner(inboxOwner) {
   if (inboxOwner === 'admin' || !inboxOwner) {
-    return { gmail: getGmailClient(), label: 'admin' };
+    return { gmail: getGmailClient(await getAdminGmailRefreshToken()), label: 'admin' };
   }
   const employee = await col('employees').findOne({ id: inboxOwner });
   if (!employee || !employee.gmailRefreshToken) {
@@ -3393,7 +3405,7 @@ app.get('/api/gmail/debug', authMiddleware, requirePermission('email.manage'), a
     return res.status(404).json({ error: 'No encontrado.' });
   }
   try {
-    const gmail = getGmailClient();
+    const gmail = getGmailClient(await getAdminGmailRefreshToken());
     const result = {};
 
     // Paso 1: Listar mensajes SIN filtro de adjuntos
@@ -3441,10 +3453,11 @@ app.get('/api/gmail/debug', authMiddleware, requirePermission('email.manage'), a
   }
 });
 
-app.get('/api/gmail/status', authMiddleware, requirePermission('email.manage'), (req, res) => {
-  const { GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REDIRECT_URI, GMAIL_REFRESH_TOKEN } = process.env;
+app.get('/api/gmail/status', authMiddleware, requirePermission('email.manage'), async (req, res) => {
+  const { GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REDIRECT_URI } = process.env;
   const configured = !!(GMAIL_CLIENT_ID && GMAIL_CLIENT_SECRET && GMAIL_REDIRECT_URI);
-  res.json({ configured, authenticated: configured && !!GMAIL_REFRESH_TOKEN });
+  const authenticated = configured && !!(await getAdminGmailRefreshToken());
+  res.json({ configured, authenticated });
 });
 
 // Estado OAuth en memoria (anti-CSRF): se genera al iniciar, se consume en el callback
@@ -3487,31 +3500,19 @@ app.get('/api/gmail/oauth2callback', async (req, res) => {
     const { tokens } = await auth.getToken(req.query.code);
     const ip = getClientIp(req);
     await addAuditLog('Autorización Gmail', 'Se completó la autorización OAuth con Google para la sincronización de correos.', 'Sistema', ip);
-    // El refresh token solo se imprime en consola en desarrollo. Para permitir que
-    // el administrador lo capture en producción sin acceso al servidor, se devuelve
-    // (una sola vez, en la respuesta de esta autorización) al navegador.
-    const refreshTokenToShow = tokens.refresh_token ? tokens.refresh_token : null;
-    if (process.env.NODE_ENV === 'development') {
-      console.log('[GMAIL] Autorización completada. Agregue al .env:');
-      console.log('GMAIL_REFRESH_TOKEN=' + (refreshTokenToShow || ''));
-    }
-    if (refreshTokenToShow) {
-      // Mostrar el token una sola vez para que el admin lo copie a Railway sin
-      // acceso a la consola del servidor.
-      return res.send(`
-<!doctype html><html><head><meta charset="utf-8"><title>Autorización completada</title>
-<style>body{font-family:system-ui,sans-serif;background:#f3f6fb;display:flex;justify-content:center;padding:60px 16px;margin:0}
-.card{background:#fff;border-radius:12px;padding:28px;max-width:560px;width:100%;box-shadow:0 6px 24px rgba(0,0,0,.08)}
-h2{margin:0 0 8px}code{display:block;background:#f1f3f5;border:1px solid #e0e2e6;border-radius:6px;padding:12px;font-size:12px;word-break:break-all;margin:14px 0;color:#333}
-.btn{background:#2563eb;color:#fff;border:0;padding:10px 18px;border-radius:6px;font-size:14px;cursor:pointer}
-.hint{color:#666;font-size:13px}.ok{color:#16a34a;font-weight:600}</style></head><body>
-<div class="card"><h2>Autorización completada</h2>
-<p class="ok">Gmail vinculado correctamente con talentohumanova23@gmail.com</p>
-<p class="hint">Copia este <b>refresh token</b> y pégalo en Railway como la variable <code>GMAIL_REFRESH_TOKEN</code> (menú Variables), y pulsa Redelploy:</p>
-<code id="tok">${refreshTokenToShow}</code>
-<button class="btn" onclick="navigator.clipboard.writeText(document.getElementById('tok').textContent);this.textContent='¡Copiado!';this.style.opacity=.7">Copiar token</button>
-<p class="hint" style="margin-top:14px">Este token solo se muestra una vez en este momento.</p>
-</div></body></html>`);
+    // El refresh token se guarda en BD y NUNCA se envía al navegador. La app lo lee
+    // con getAdminGmailRefreshToken(); GMAIL_REFRESH_TOKEN queda como respaldo.
+    if (tokens.refresh_token) {
+      await col('config').updateOne(
+        { key: 'gmailAdmin' },
+        { $set: { refreshToken: tokens.refresh_token, linkedAt: new Date().toISOString() } },
+        { upsert: true }
+      );
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[GMAIL] Refresh token guardado en BD (colección config).');
+      }
+    } else {
+      console.warn('[GMAIL] Google no devolvió refresh_token (¿autorización previa sin prompt=consent?).');
     }
     res.json({ success: true, message: 'Autorización completada. Gmail ya quedó autorizado.' });
   } catch (error) {
@@ -3780,7 +3781,7 @@ async function performGmailSync(gmail, opts = {}) {
 app.post('/api/email-inbox/sync', authMiddleware, requirePermission('email.manage'), async (req, res) => {
   let gmail;
   try {
-    gmail = getGmailClient();
+    gmail = getGmailClient(await getAdminGmailRefreshToken());
   } catch (error) {
     const status = error.code === 'GMAIL_NOT_CONFIGURED' ? 503 : 502;
     return res.status(status).json({
@@ -4078,8 +4079,9 @@ app.get('/api/system/status', authMiddleware, requirePermission('audit.read'), a
     dbConnected = false;
   }
 
-  const { GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REDIRECT_URI, GMAIL_REFRESH_TOKEN } = process.env;
+  const { GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REDIRECT_URI } = process.env;
   const gmailConfigured = !!(GMAIL_CLIENT_ID && GMAIL_CLIENT_SECRET && GMAIL_REDIRECT_URI);
+  const gmailAuthenticated = gmailConfigured && !!(await getAdminGmailRefreshToken());
 
   let securityLast24h = null;
   try {
@@ -4098,7 +4100,7 @@ app.get('/api/system/status', authMiddleware, requirePermission('audit.read'), a
     version: pkg.version || null,
     memoryMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
     database: { connected: dbConnected, latencyMs: dbLatencyMs, counts, indexes },
-    gmail: { configured: gmailConfigured, authenticated: gmailConfigured && !!GMAIL_REFRESH_TOKEN },
+    gmail: { configured: gmailConfigured, authenticated: gmailAuthenticated },
     scanner: { localFolder: fs.existsSync(SCANNER_DIR) },
     security: { last24hEvents: securityLast24h },
     documents: { unregistered },

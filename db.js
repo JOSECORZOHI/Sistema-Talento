@@ -23,7 +23,8 @@ const COLLECTIONS = {
   passwordResetTokens: 'passwordResetTokens',
   loginAttempts: 'loginAttempts',
   securityLogs: 'securityLogs',
-  twoFactorChallenges: 'twoFactorChallenges'
+  twoFactorChallenges: 'twoFactorChallenges',
+  config: 'config'
 };
 
 const MONGO_OPTIONS = {
@@ -181,7 +182,8 @@ async function ensureIndexes() {
     [COLLECTIONS.securityLogs, { timestamp: -1 }, {}],
     [COLLECTIONS.documents, { issueDate: -1 }, {}],
     [COLLECTIONS.emailsInbox, { id: 1 }, { unique: true, sparse: true }],
-    [COLLECTIONS.emailsInbox, { date: -1 }, {}]
+    [COLLECTIONS.emailsInbox, { date: -1 }, {}],
+    [COLLECTIONS.config, { key: 1 }, { unique: true }]
   ];
   for (const [coll, keys, opts] of attempts) {
     try {
