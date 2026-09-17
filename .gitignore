@@ -25,3 +25,7 @@ _tmp_*
 *.bak
 *.tmp
 gen-pregunta*
+
+# Páginas de prueba locales que inyectan sesión (nunca subir)
+public/__preseed.html
+public/__probe_admin.html

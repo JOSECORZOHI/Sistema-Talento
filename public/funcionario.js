@@ -1,5 +1,5 @@
 // ============================================================
-//  Portal del Funcionario — funcionario.js (basado en JWT)
+//  Portal del Funcionario — funcionario.js (sesión por cookie httpOnly)
 //  sanitize, apiFetch, apiFetchWithRetry, showToast, showLoader,
 //  hideLoader, openModal, closeModal, getInitials, populateSelect,
 //  evaluatePasswordStrength, initTheme, setupThemeToggle,
@@ -18,7 +18,7 @@ let portalState = {
 // ============================================================
 // VERIFICACIÓN DE AUTENTICACIÓN
 // ============================================================
-// getToken, getUser, checkAuth, apiFetch, apiFetchWithRetry se definen en utils.js
+// getUser, checkAuth, apiFetch, apiFetchWithRetry se definen en utils.js
 function checkAuthFuncionario() { return checkAuth('funcionario'); }
 
 // ============================================================

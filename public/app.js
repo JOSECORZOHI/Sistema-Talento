@@ -423,15 +423,19 @@ async function fetchEmployees() {
 // fetchDocuments y fetchAuditLogs eliminados (cargados vía loadAllData/dashboard)
 
 async function fetchUnregisteredFiles() {
-  const response = await apiFetch('/api/documents/unregistered');
-  if (!response.ok) return;
-  appState.unregisteredFiles = await response.json();
-  
-  badgeUnregistered.textContent = appState.unregisteredFiles.length;
-  badgeUnregistered.style.display = appState.unregisteredFiles.length > 0 ? 'inline-block' : 'none';
-  statUnregisteredDocs.textContent = appState.unregisteredFiles.length;
+  try {
+    const response = await apiFetch('/api/documents/unregistered');
+    if (!response.ok) return;
+    appState.unregisteredFiles = await response.json();
 
-  renderUnregisteredFiles();
+    badgeUnregistered.textContent = appState.unregisteredFiles.length;
+    badgeUnregistered.style.display = appState.unregisteredFiles.length > 0 ? 'inline-block' : 'none';
+    statUnregisteredDocs.textContent = appState.unregisteredFiles.length;
+
+    renderUnregisteredFiles();
+  } catch (e) {
+    console.warn('No se pudieron cargar los archivos sin registrar:', e && e.message ? e.message : e);
+  }
 }
 
 // 4. FUNCIONES DE RENDERIZADO

@@ -183,8 +183,8 @@ window.openPdfModal = async function(filename, folder = 'documents', docId) {
   document.getElementById('btn-toggle-visibility').style.display = 'none';
 
   async function setIframeSrc(url) {
-    // Carga el archivo vía fetch (token por cabecera Authorization) y renderiza
-    // desde un Blob URL: el JWT nunca aparece en la URL del iframe ni en logs.
+    // Carga el archivo vía fetch (la sesión viaja en cookie httpOnly) y renderiza
+    // desde un Blob URL: la credencial nunca aparece en la URL del iframe ni en logs.
     const iframeEl = iframe;
     if (iframeEl._blobUrl) { URL.revokeObjectURL(iframeEl._blobUrl); iframeEl._blobUrl = null; }
     try {

@@ -467,6 +467,9 @@ app.use('/api', async (req, res, next) => {
   if (req.path === '/auth/login') return next();
   if (req.path === '/auth/logout') return next();
   if (req.path === '/gmail/oauth2callback') return next();
+  // Health check: debe responder rápido y reflejar el estado real de la BD sin
+  // esperar los 12s de reconexión (lo consume Railway y el monitoreo externo).
+  if (req.path === '/health') return next();
   try {
     col('users');
     return next();
@@ -1752,12 +1755,24 @@ app.post('/api/auth/2fa/setup', authMiddleware, (req, res) => {
 // Activa 2FA: valida un primer código con el secreto generado.
 app.post('/api/auth/2fa/enable', authMiddleware, async (req, res) => {
   try {
-    const { secret, code } = req.body || {};
+    const { secret, code, currentCode } = req.body || {};
     if (!isValidTotpSecret(secret)) return res.status(400).json({ error: 'Secreto de 2FA inválido. Genera uno nuevo.' });
     if (!isValidTotpCode(code)) return res.status(400).json({ error: 'Ingrese el código de 6 dígitos de su aplicación de autenticación.' });
     if (!verifyTOTP(secret, code)) return res.status(400).json({ error: 'El código de verificación no coincide.' });
     const ip = getClientIp(req);
     const lookup = getLookupForRole(req.user.role, req.user);
+    const account = await col(getCollectionForRole(req.user.role)).findOne(lookup);
+    // Si ya hay 2FA activo, exigir un código vigente del secreto actual antes de
+    // reemplazarlo: evita que una sesión robada registre un autenticador nuevo.
+    if (account && account.totpEnabled && account.totpSecret) {
+      if (!isValidTotpCode(currentCode)) {
+        return res.status(400).json({ error: 'Ya tiene 2FA activo. Ingrese un código vigente de su autenticador actual para reconfigurarlo.' });
+      }
+      if (!verifyTOTP(account.totpSecret, currentCode)) {
+        await addSecurityLog('2FA Reconfiguración Fallida', `Código actual incorrecto al intentar reconfigurar 2FA en ${req.user.email}.`, ip, req.user.email);
+        return res.status(401).json({ error: 'El código de su 2FA actual es incorrecto. No se modificó la configuración.' });
+      }
+    }
     await col(getCollectionForRole(req.user.role)).updateOne(
       lookup,
       { $set: { totpEnabled: true, totpSecret: String(secret).toUpperCase() } }
@@ -4093,13 +4108,15 @@ app.get('/api/system/status', authMiddleware, requirePermission('audit.read'), a
 });
 
 // --- HEALTH CHECK ---
+// Devuelve 503 cuando la BD no responde para que Railway y el monitoreo externo
+// detecten la degradación. Si la caída es transitoria, el proceso se reconecta solo.
 app.get('/api/health', async (req, res) => {
   try {
     const healthy = await isHealthy();
     if (healthy) return res.json({ status: 'ok', db: 'connected' });
-    res.status(200).json({ status: 'degraded', db: 'disconnected' });
+    return res.status(503).json({ status: 'degraded', db: 'disconnected' });
   } catch {
-    res.status(200).json({ status: 'error', db: 'unknown' });
+    return res.status(503).json({ status: 'error', db: 'unknown' });
   }
 });
 

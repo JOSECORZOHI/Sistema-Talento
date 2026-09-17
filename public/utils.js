@@ -1,4 +1,4 @@
-/* exported sanitize, escOnclick, getToken, getUser, logout, checkAuth, apiFetch, apiFetchWithRetry, showToast, removeToast, showLoader, hideLoader, openModal, closeModal, attachModalBackdropClose, getInitials, formatIssueDate, formatDate, coerceLocalDate, scannerTrayEmptyHtml, scannerTrayMeta, populateDropdown, populateSelect, guardSubmit, initTheme, updateThemeUI, setupThemeToggle, evaluatePasswordStrength, bindPasswordStrengthMeter, openPdfViewer, closePdfViewer, setupDragDrop, getStorageConsent, grantStorageConsent, declineStorageConsent, maybeShowStorageConsentBanner, storageWritesAllowed, bindPasswordToggles */
+/* exported sanitize, escOnclick, getUser, logout, checkAuth, apiFetch, apiFetchWithRetry, showToast, removeToast, showLoader, hideLoader, openModal, closeModal, attachModalBackdropClose, getInitials, formatIssueDate, formatDate, coerceLocalDate, scannerTrayEmptyHtml, scannerTrayMeta, populateDropdown, populateSelect, guardSubmit, initTheme, updateThemeUI, setupThemeToggle, evaluatePasswordStrength, bindPasswordStrengthMeter, openPdfViewer, closePdfViewer, setupDragDrop, getStorageConsent, grantStorageConsent, declineStorageConsent, maybeShowStorageConsentBanner, storageWritesAllowed, bindPasswordToggles */
 // ============================================================
 //  Funciones compartidas — utils.js
 //  Usado por admin.html (app.js) y funcionario.html (funcionario.js)
@@ -173,7 +173,6 @@ function storageWritesAllowed() {
 // --- AUTENTICACIÓN ---
 // La sesión viaja en una cookie httpOnly (th_token) que JavaScript no puede leer.
 // 'th_token' en localStorage queda solo para limpieza de instalaciones antiguas.
-function getToken() { try { return localStorage.getItem('th_token'); } catch { return null; } }
 function getUser() { try { return JSON.parse(localStorage.getItem('th_user')); } catch { return null; } }
 
 async function logout() {
