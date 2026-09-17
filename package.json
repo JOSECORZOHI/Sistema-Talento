@@ -11,7 +11,10 @@
     "lint": "eslint server.js db.js documentAnalyzer.js lib/",
     "lint:frontend": "eslint public",
     "test": "node --test \"test/**/*.test.js\"",
-    "backup": "powershell -ExecutionPolicy Bypass -File scripts/backup.ps1"
+    "backup": "powershell -ExecutionPolicy Bypass -File scripts/backup.ps1",
+    "backup:verify": "node scripts/verify-backup.js",
+    "backup:schedule": "powershell -ExecutionPolicy Bypass -File scripts/install-backup-task.ps1",
+    "admin:reset": "node scripts/reset-admin.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

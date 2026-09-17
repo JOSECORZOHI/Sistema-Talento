@@ -1,6 +1,7 @@
 param(
   [string]$OutputDir = "$PSScriptRoot\..\backups",
-  [string]$DatabaseUrl = ""
+  [string]$DatabaseUrl = "",
+  [switch]$Verify
 )
 
 <#
@@ -38,6 +39,16 @@ New-Item -ItemType Directory -Path $target -Force | Out-Null
 Write-Host "[BACKUP] BD: $DbName"
 Write-Host "[BACKUP] Destino: $target"
 
+# Manifiesto de conteos ANTES del volcado: verify-backup.js lo usa para comprobar
+# que la restauración no perdió documentos.
+$countsFile = Join-Path $target 'counts.json'
+if (Get-Command node -ErrorAction SilentlyContinue) {
+  & node (Join-Path $PSScriptRoot 'db-counts.js') --out $countsFile
+  if ($LASTEXITCODE -ne 0) { Write-Warning '[BACKUP] No se pudo generar counts.json.' }
+} else {
+  Write-Warning '[BACKUP] node no está en el PATH; se omite counts.json.'
+}
+
 # Localizar mongodump: primero en el PATH, luego en las rutas típicas de instalación
 $mongodump = Get-Command mongodump -ErrorAction SilentlyContinue
 if (-not $mongodump) {
@@ -69,4 +80,16 @@ if ($LASTEXITCODE -eq 0) {
 # Rotación: conservar solo los 10 backups más recientes
 $old = Get-ChildItem -LiteralPath $OutputDir -Filter '*.gz' | Sort-Object LastWriteTime -Descending | Select-Object -Skip 10
 foreach ($f in $old) { Remove-Item -LiteralPath $f.FullName -Force }
+
+# Prueba de restauración opcional: restaura en una BD temporal y compara conteos.
+if ($Verify) {
+  if ((Test-Path -LiteralPath $archive) -and (Get-Command node -ErrorAction SilentlyContinue)) {
+    Write-Host '[BACKUP] Ejecutando prueba de restauración...'
+    & node (Join-Path $PSScriptRoot 'verify-backup.js') --backup $archive
+    if ($LASTEXITCODE -ne 0) { Write-Warning '[BACKUP] La verificación de restauración FALLÓ (revise los avisos).' }
+    else { Write-Host '[BACKUP] Verificación de restauración OK.' }
+  } else {
+    Write-Warning '[BACKUP] No se pudo verificar (falta el .gz o node).'
+  }
+}
 Write-Host "[BACKUP] Listo."
