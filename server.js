@@ -1231,15 +1231,15 @@ async function withRegisterLock(filename, fn) {
 }
 
 async function getScannerFiles(ownerEmployeeId) {
-  // Un archivo en disco no tiene metadata de dueño. Para no filtrar la bandeja de
-  // otro funcionario, el fallback de disco solo se expone cuando NO se filtra por
-  // dueño (es decir, al administrador); para un funcionario se devuelve solo GridFS.
-  const filteredByOwner = ownerEmployeeId !== undefined && ownerEmployeeId !== null && ownerEmployeeId !== '';
+  // GridFS sí guarda el dueño (ownerEmployeeId) y se filtra por él. Los archivos
+  // en disco (salida de EPSON Scan 2 y archivos legados) no tienen metadata de
+  // dueño, por lo que se exponen a todo usuario con acceso al escáner. Limitación
+  // aceptada: la bandeja de disco es una carpeta compartida del equipo del escáner.
   try {
     const files = await listFilesBySource('scanner', false, ownerEmployeeId);
     const result = files.map(f => ({ filename: f.filename, fileSize: f.length || 0, createdAt: f.uploadDate || new Date() }));
     try {
-      if (!filteredByOwner && fs.existsSync(SCANNER_DIR)) {
+      if (fs.existsSync(SCANNER_DIR)) {
         const diskFiles = fs.readdirSync(SCANNER_DIR).filter(f => isAllowedFile(f) && !result.some(r => r.filename === f));
         for (const fn of diskFiles) {
           const st = fs.statSync(path.join(SCANNER_DIR, fn));
@@ -1249,7 +1249,6 @@ async function getScannerFiles(ownerEmployeeId) {
     } catch (e) { console.warn('Error obteniendo archivos GridFS del escáner:', e.message); }
     return result;
   } catch (e) { console.warn('Error en getScannerFiles:', e.message);
-    if (filteredByOwner) return [];
     try {
       if (fs.existsSync(SCANNER_DIR)) {
         return fs.readdirSync(SCANNER_DIR).filter(f => isAllowedFile(f)).map(fn => {
