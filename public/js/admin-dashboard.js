@@ -35,7 +35,7 @@ function renderDashboardChart(data, totalCount) {
     row.innerHTML = `
       <div class="chart-bar-info">
         <span class="chart-bar-label">${sanitize(item.name)}</span>
-        <span class="chart-bar-value">${item.count} (${percent}%)</span>
+        <span class="chart-bar-value">${sanitize(String(item.count))} (${sanitize(String(percent))}%)</span>
       </div>
       <div class="chart-bar-track">
         <div class="chart-bar-fill" style="width: ${percent}%"></div>
@@ -178,7 +178,7 @@ function renderSystemStatus(status) {
       <div style="background:var(--background);border:1px solid var(--border-color);border-radius:8px;padding:10px;">
         <div style="color:var(--text-muted);font-size:11px;">Base de datos</div>
         <div style="font-weight:700;color:${dbColor};font-size:13px;">● ${dbText}</div>
-        <div style="color:var(--text-muted);">${status.database.latencyMs != null ? status.database.latencyMs + ' ms' : '—'} · ${status.database.connected ? status.database.counts.documents + ' docs' : ''}</div>
+        <div style="color:var(--text-muted);">${status.database.latencyMs != null ? sanitize(String(status.database.latencyMs)) + ' ms' : '—'} · ${status.database.connected ? sanitize(String(status.database.counts.documents)) + ' docs' : ''}</div>
       </div>
       <div style="background:var(--background);border:1px solid var(--border-color);border-radius:8px;padding:10px;">
         <div style="color:var(--text-muted);font-size:11px;">Gmail</div>
@@ -192,13 +192,13 @@ function renderSystemStatus(status) {
       </div>
       <div style="background:var(--background);border:1px solid var(--border-color);border-radius:8px;padding:10px;">
         <div style="color:var(--text-muted);font-size:11px;">Seguridad (24 h)</div>
-        <div style="font-weight:700;color:${secColor};font-size:13px;">${status.security.last24hEvents != null ? status.security.last24hEvents + ' eventos' : '—'}</div>
+        <div style="font-weight:700;color:${secColor};font-size:13px;">${status.security.last24hEvents != null ? sanitize(String(status.security.last24hEvents)) + ' eventos' : '—'}</div>
         <div style="color:var(--text-muted);">Uptime: ${uptimeMin} · RAM ${mem}</div>
       </div>
       <div style="background:var(--background);border:1px solid var(--border-color);border-radius:8px;padding:10px;">
         <div style="color:var(--text-muted);font-size:11px;">Bandeja escáner / Archivos</div>
-        <div style="font-weight:700;font-size:13px;">${status.scanner.localFolder ? '✓ Local' : '— No-local'} · ${status.documents.unregistered} por registrar</div>
-        <div style="color:var(--text-muted);">Node ${sanitize(status.node || '—')} · v${sanitize(status.version || '—')} · ${status.responseTimeMs} ms</div>
+        <div style="font-weight:700;font-size:13px;">${status.scanner.localFolder ? '✓ Local' : '— No-local'} · ${sanitize(String(status.documents.unregistered))} por registrar</div>
+        <div style="color:var(--text-muted);">Node ${sanitize(status.node || '—')} · v${sanitize(status.version || '—')} · ${sanitize(String(status.responseTimeMs))} ms</div>
       </div>
     </div>
     <button class="btn btn-text btn-sm" id="status-refresh-btn" style="margin-top:10px;font-size:12px;">↻ Refrescar estado</button>
