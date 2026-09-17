@@ -63,3 +63,51 @@ test('smoke: / devuelve el documento HTML del index', { skip: !base }, async () 
   const html = await res.text();
   assert.ok(html.includes('<!DOCTYPE'));
 });
+
+// --- Smoke AUTOMÁTICO del arranque real ---------------------------------------
+// Levanta la app Express en un puerto efímero SIN conectar MongoDB (el guard
+// `require.main === module` evita app.listen/connect al importar, y se vacía
+// MONGODB_URI). Verifica que el servidor arranca y sirve rutas que no dependen
+// de la BD. No requiere red externa ni base de datos.
+test('smoke in-process: la app arranca y responde (index, validación y 404 API)', async () => {
+  process.env.JWT_SECRET = process.env.JWT_SECRET || 'smoke-test-secret';
+  process.env.NODE_ENV = 'test';
+  process.env.OCR_WARMUP = '0';
+  process.env.MONGODB_URI = ''; // evita que el arranque intente conectar a Mongo
+
+  const { app } = require('../server');
+  const { closeDb } = require('../db');
+  const srv = app.listen(0);
+  await new Promise((resolve) => srv.once('listening', resolve));
+  const baseUrl = `http://127.0.0.1:${srv.address().port}`;
+  try {
+    // El index se sirve sin BD (no está bajo /api).
+    const index = await fetch(baseUrl + '/');
+    assert.equal(index.status, 200);
+    const html = await index.text();
+    assert.ok(html.includes('<!DOCTYPE'));
+
+    // /api/auth/login y su validación de campos no requieren BD.
+    const loginBad = await fetch(baseUrl + '/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}'
+    });
+    assert.equal(loginBad.status, 400);
+    const loginBody = await loginBad.json();
+    assert.ok(loginBody && loginBody.error);
+
+    // Ruta API desconocida (bypass de BD) → 404 JSON y nunca 500.
+    const missing = await fetch(baseUrl + '/api/auth/login');
+    assert.equal(missing.status, 404);
+    const missingBody = await missing.json();
+    assert.ok(missingBody && missingBody.error);
+  } finally {
+    await new Promise((resolve) => {
+      srv.close(resolve);
+      // Cierra conexiones keep-alive para que close() no espere indefinidamente.
+      if (typeof srv.closeAllConnections === 'function') srv.closeAllConnections();
+    });
+    await closeDb().catch(() => {});
+  }
+});

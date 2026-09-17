@@ -1169,11 +1169,15 @@ async function withRegisterLock(filename, fn) {
 }
 
 async function getScannerFiles(ownerEmployeeId) {
+  // Un archivo en disco no tiene metadata de dueño. Para no filtrar la bandeja de
+  // otro funcionario, el fallback de disco solo se expone cuando NO se filtra por
+  // dueño (es decir, al administrador); para un funcionario se devuelve solo GridFS.
+  const filteredByOwner = ownerEmployeeId !== undefined && ownerEmployeeId !== null && ownerEmployeeId !== '';
   try {
     const files = await listFilesBySource('scanner', false, ownerEmployeeId);
     const result = files.map(f => ({ filename: f.filename, fileSize: f.length || 0, createdAt: f.uploadDate || new Date() }));
     try {
-      if (fs.existsSync(SCANNER_DIR)) {
+      if (!filteredByOwner && fs.existsSync(SCANNER_DIR)) {
         const diskFiles = fs.readdirSync(SCANNER_DIR).filter(f => isAllowedFile(f) && !result.some(r => r.filename === f));
         for (const fn of diskFiles) {
           const st = fs.statSync(path.join(SCANNER_DIR, fn));
@@ -1183,6 +1187,7 @@ async function getScannerFiles(ownerEmployeeId) {
     } catch (e) { console.warn('Error obteniendo archivos GridFS del escáner:', e.message); }
     return result;
   } catch (e) { console.warn('Error en getScannerFiles:', e.message);
+    if (filteredByOwner) return [];
     try {
       if (fs.existsSync(SCANNER_DIR)) {
         return fs.readdirSync(SCANNER_DIR).filter(f => isAllowedFile(f)).map(fn => {
@@ -4086,40 +4091,46 @@ async function checkConnection() {
 
 // --- Apagado graceful ---
 let server;
-let checkConnectionInterval = setInterval(checkConnection, 10000);
+let checkConnectionInterval = null;
 function shutdown() {
   console.log('[SERVER] Shutting down gracefully...');
-  clearInterval(checkConnectionInterval);
+  if (checkConnectionInterval) clearInterval(checkConnectionInterval);
   if (server) server.close(() => {
     closeDb().catch(() => {}).finally(() => process.exit(0));
   });
 }
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
 
 // --- INICIO ---
-// Arrancar servidor inmediatamente sin esperar MongoDB
-server = app.listen(PORT, () => {
-  console.log(`Servidor de Talento Humano ejecutándose en: http://localhost:${PORT}`);
-});
+// Solo se arranca al ejecutar el archivo directamente (node server.js). Al
+// importarlo desde las pruebas, se expone `app` sin abrir puerto ni conectar Mongo.
+if (require.main === module) {
+  checkConnectionInterval = setInterval(checkConnection, 10000);
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 
-// Conectar MongoDB en segundo plano
-connect()
-  .then(() => {
-    console.log('Base de datos remota conectada con colecciones separadas.');
-    runDocumentRetention();
-    setInterval(runDocumentRetention, 24 * 60 * 60 * 1000); // diario
-  })
-  .catch(error => {
-    console.error('No se pudo conectar a la base de datos remota:', error.message);
+  // Arrancar servidor inmediatamente sin esperar MongoDB
+  server = app.listen(PORT, () => {
+    console.log(`Servidor de Talento Humano ejecutándose en: http://localhost:${PORT}`);
   });
 
-// Pre-cargar el modelo OCR (Tesseract 'spa') en segundo plano: no bloquea el arranque
-// ni perjudica si falla (se reintenta en el primer análisis real).
-if (process.env.OCR_WARMUP !== '0') {
-  warmupOcr().then(ok => {
-    console.log('[OCR] Modelo español precargado' + (ok ? ' (listo)' : ' (falló; se reintentará en el primer análisis)'));
-  });
+  // Conectar MongoDB en segundo plano
+  connect()
+    .then(() => {
+      console.log('Base de datos remota conectada con colecciones separadas.');
+      runDocumentRetention();
+      setInterval(runDocumentRetention, 24 * 60 * 60 * 1000); // diario
+    })
+    .catch(error => {
+      console.error('No se pudo conectar a la base de datos remota:', error.message);
+    });
+
+  // Pre-cargar el modelo OCR (Tesseract 'spa') en segundo plano: no bloquea el arranque
+  // ni perjudica si falla (se reintenta en el primer análisis real).
+  if (process.env.OCR_WARMUP !== '0') {
+    warmupOcr().then(ok => {
+      console.log('[OCR] Modelo español precargado' + (ok ? ' (listo)' : ' (falló; se reintentará en el primer análisis)'));
+    });
+  }
 }
 
 // --- RETENCIÓN DOCUMENTAL (Ley 594/2000 y política de retención) ---
@@ -4151,3 +4162,5 @@ async function runDocumentRetention() {
     console.warn('[RETENCIÓN] Error al ejecutar retención:', err.message);
   }
 }
+
+module.exports = { app };

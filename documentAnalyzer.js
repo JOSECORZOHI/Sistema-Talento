@@ -273,4 +273,16 @@ async function analyzeFile(buffer, filename, options = {}) {
   return { suggestions, ocrUsed: extracted.ocrUsed, textLength: text.length };
 }
 
-module.exports = { analyzeFile, extractText, warmupOcr };
+module.exports = {
+  analyzeFile,
+  extractText,
+  warmupOcr,
+  // Funciones internas expuestas para pruebas unitarias (lógica pura, sin OCR/red).
+  parseTextContent,
+  classifyType,
+  classifyCategory,
+  extractIssueDate,
+  extractEmployee,
+  TYPE_RULES,
+  CATEGORY_RULES
+};
