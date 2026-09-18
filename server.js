@@ -26,6 +26,7 @@ const {
 const { renderResetPasswordEmail, renderCredentialsEmail } = require('./lib/emailTemplates');
 const { assertEncryptionKey } = require('./lib/crypto');
 const { generateSecret, verifyTOTP, buildOtpauthURL } = require('./lib/totp');
+const { z, validateBody } = require('./lib/validate');
 
 // Manejo de errores no controlados.
 // unhandledRejection: se loguea sin salir (permite que la reconexión a Mongo se recupere).
@@ -33,9 +34,11 @@ const { generateSecret, verifyTOTP, buildOtpauthURL } = require('./lib/totp');
 // se cierra HTTP y se sale para que Railway reinicie el proceso limpio.
 process.on('unhandledRejection', (err) => {
   console.error('[PROCESS] Unhandled rejection:', err && err.stack ? err.stack : err);
+  recordError('process:unhandledRejection', err);
 });
 process.on('uncaughtException', (err) => {
   console.error('[PROCESS] Uncaught exception — reiniciando proceso:', err && err.stack ? err.stack : err);
+  recordError('process:uncaughtException', err);
   try { if (typeof server !== 'undefined' && server) server.close(() => {}); } catch {}
   const exitTimer = setTimeout(() => process.exit(1), 1500);
   if (exitTimer.unref) exitTimer.unref();
@@ -1664,7 +1667,26 @@ async function authMiddleware(req, res, next) {
 }
 
 // --- INICIO DE SESIÓN UNIFICADO ---
-app.post('/api/auth/login', async (req, res) => {
+// Esquemas zod de validación por capas (defensa en profundidad). Los mensajes
+// replican los de las comprobaciones manuales para no cambiar la experiencia.
+const loginSchema = z.object({
+  username: z.string({ required_error: 'Ingrese usuario y contraseña.' }).min(1, 'Ingrese usuario y contraseña.').max(256),
+  password: z.string({ required_error: 'Ingrese usuario y contraseña.' }).min(1, 'Ingrese usuario y contraseña.').max(256)
+});
+const changePasswordSchema = z.object({
+  currentPassword: z.string({ required_error: 'Ingrese la contraseña actual y la nueva contraseña.' }).min(1, 'Ingrese la contraseña actual y la nueva contraseña.').max(256),
+  newPassword: z.string({ required_error: 'Ingrese la contraseña actual y la nueva contraseña.' }).min(1, 'Ingrese la contraseña actual y la nueva contraseña.').max(256)
+});
+const twoFactorEnableSchema = z.object({
+  secret: z.string().nullable().optional(),
+  code: z.string().nullable().optional(),
+  currentCode: z.string().nullable().optional()
+});
+const twoFactorCodeSchema = z.object({
+  code: z.string().nullable().optional()
+});
+
+app.post('/api/auth/login', validateBody(loginSchema), async (req, res) => {
   try {
     const { username, password } = req.body;
     const ip = getClientIp(req);
@@ -1713,7 +1735,7 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 // --- CAMBIO DE CONTRASEÑA ---
-app.post('/api/auth/change-password', authMiddleware, async (req, res) => {
+app.post('/api/auth/change-password', authMiddleware, validateBody(changePasswordSchema), async (req, res) => {
   const { currentPassword, newPassword } = req.body;
   const ip = getClientIp(req);
   if (!currentPassword || !newPassword) {
@@ -1764,7 +1786,7 @@ app.post('/api/auth/2fa/setup', authMiddleware, (req, res) => {
 });
 
 // Activa 2FA: valida un primer código con el secreto generado.
-app.post('/api/auth/2fa/enable', authMiddleware, async (req, res) => {
+app.post('/api/auth/2fa/enable', authMiddleware, validateBody(twoFactorEnableSchema), async (req, res) => {
   try {
     const { secret, code, currentCode } = req.body || {};
     if (!isValidTotpSecret(secret)) return res.status(400).json({ error: 'Secreto de 2FA inválido. Genera uno nuevo.' });
@@ -1798,7 +1820,7 @@ app.post('/api/auth/2fa/enable', authMiddleware, async (req, res) => {
 });
 
 // Desactiva 2FA: exige un código vigente del secreto ya almacenado.
-app.post('/api/auth/2fa/disable', authMiddleware, async (req, res) => {
+app.post('/api/auth/2fa/disable', authMiddleware, validateBody(twoFactorCodeSchema), async (req, res) => {
   try {
     const { code } = req.body || {};
     if (!isValidTotpCode(code)) return res.status(400).json({ error: 'Ingrese el código de 6 dígitos de su aplicación de autenticación.' });
@@ -1824,7 +1846,7 @@ app.post('/api/auth/2fa/disable', authMiddleware, async (req, res) => {
 });
 
 // Verifica el código durante el inicio de sesión (intercambia el challenge por sesión).
-app.post('/api/auth/2fa/verify', async (req, res) => {
+app.post('/api/auth/2fa/verify', validateBody(twoFactorEnableSchema), async (req, res) => {
   try {
     const { challenge, code } = req.body || {};
     const ip = getClientIp(req);
@@ -3460,20 +3482,37 @@ app.get('/api/gmail/status', authMiddleware, requirePermission('email.manage'), 
   res.json({ configured, authenticated });
 });
 
-// Estado OAuth en memoria (anti-CSRF): se genera al iniciar, se consume en el callback
-const gmailOAuthStates = new Map();
+// Estado OAuth (anti-CSRF): se genera al iniciar la autorización y se consume en el
+// callback. Se guarda en MongoDB con TTL de 15 min: una copia en memoria se perdía
+// ante reinicios del proceso o con más de una instancia.
+const OAUTH_STATE_TTL_MS = 15 * 60 * 1000;
+
+async function storeOauthState(state, extra = {}) {
+  await col('oauthStates').insertOne({
+    state,
+    createdAt: new Date(),
+    expiresAt: new Date(Date.now() + OAUTH_STATE_TTL_MS),
+    ...extra
+  });
+}
+
+// Valida y consume un estado de un solo uso. Devuelve el documento guardado o null.
+async function consumeOauthState(state) {
+  if (!state) return null;
+  const doc = await col('oauthStates').findOne({ state });
+  if (!doc) return null;
+  await col('oauthStates').deleteOne({ _id: doc._id });
+  if (Date.now() > new Date(doc.expiresAt).getTime()) return null;
+  return doc;
+}
 
 // Devuelve la URL de autorización como JSON; el frontend la abre en pestaña nueva.
 // La URL del callback (/api/gmail/oauth2callback) debe seguir pública: Google redirige allí.
-app.get('/api/gmail/authorize', authMiddleware, requirePermission('email.manage'), (req, res) => {
+app.get('/api/gmail/authorize', authMiddleware, requirePermission('email.manage'), async (req, res) => {
   try {
     const auth = createGmailAuthClient();
     const state = crypto.randomBytes(24).toString('hex');
-    gmailOAuthStates.set(state, Date.now());
-    // Limpiar estados viejos (> 15 min)
-    for (const [s, t] of gmailOAuthStates) {
-      if (Date.now() - t > 15 * 60 * 1000) gmailOAuthStates.delete(s);
-    }
+    await storeOauthState(state);
     const url = auth.generateAuthUrl({
       access_type: 'offline', prompt: 'consent', state,
       scope: ['https://www.googleapis.com/auth/gmail.readonly', 'https://www.googleapis.com/auth/gmail.send']
@@ -3488,13 +3527,10 @@ app.get('/api/gmail/authorize', authMiddleware, requirePermission('email.manage'
 app.get('/api/gmail/oauth2callback', async (req, res) => {
   try {
     if (!req.query.code) return res.status(400).json({ error: 'Google no devolvió un código de autorización.' });
-    const state = req.query.state;
-    const stateTime = state ? gmailOAuthStates.get(state) : undefined;
-    if (!state || !stateTime || Date.now() - stateTime > 15 * 60 * 1000) {
-      if (state) gmailOAuthStates.delete(state);
+    const stateDoc = await consumeOauthState(req.query.state);
+    if (!stateDoc) {
       return res.status(403).json({ error: 'Autorización inválida o expirada. Reinicie el proceso de autorización.' });
     }
-    gmailOAuthStates.delete(state);
 
     const auth = createGmailAuthClient();
     const { tokens } = await auth.getToken(req.query.code);
@@ -3809,8 +3845,8 @@ app.get('/api/email-inbox/sync/status', authMiddleware, requirePermission('email
 // ============================================================
 // GMAIL POR FUNCIONARIO — cada funcionario vincula SU cuenta y ve sus correos
 // ============================================================
-// Estados OAuth separados (anti-CSRF) para el flujo del funcionario.
-const funcionarioGmailStates = new Map();
+// Estados OAuth (anti-CSRF) para el flujo del funcionario: se guardan en BD
+// (colección oauthStates) igual que los del administrador, con TTL de 15 min.
 const FUNCIONARIO_GMAIL_CALLBACK = '/api/funcionario/gmail/callback';
 
 /**
@@ -3856,11 +3892,7 @@ app.get('/api/funcionario/gmail/authorize', authMiddleware, async (req, res) => 
   try {
     const auth = createFuncionarioGmailAuthClient();
     const state = crypto.randomBytes(24).toString('hex');
-    funcionarioGmailStates.set(state, { employeeId: req.user.employeeId, at: Date.now() });
-    // Limpiar estados viejos (> 15 min)
-    for (const [s, v] of funcionarioGmailStates) {
-      if (Date.now() - v.at > 15 * 60 * 1000) funcionarioGmailStates.delete(s);
-    }
+    await storeOauthState(state, { employeeId: req.user.employeeId });
     // Solo lectura: el envío saliente va por SMTP; mantener el scope mínimo
     // (menor privilegio) reduce superficie de auditoría de la app OAuth.
     const url = auth.generateAuthUrl({
@@ -3878,13 +3910,10 @@ app.get('/api/funcionario/gmail/authorize', authMiddleware, async (req, res) => 
 app.get('/api/funcionario/gmail/callback', async (req, res) => {
   try {
     if (!req.query.code) return res.status(400).json({ error: 'Google no devolvió un código de autorización.' });
-    const state = req.query.state;
-    const stateValue = state ? funcionarioGmailStates.get(state) : undefined;
-    if (!state || !stateValue || Date.now() - stateValue.at > 15 * 60 * 1000) {
-      if (state) funcionarioGmailStates.delete(state);
+    const stateValue = await consumeOauthState(req.query.state);
+    if (!stateValue) {
       return res.status(403).json({ error: 'Autorización inválida o expirada. Reinicie el proceso de autorización.' });
     }
-    funcionarioGmailStates.delete(state);
     const employeeId = stateValue.employeeId;
 
     const auth = createFuncionarioGmailAuthClient();
@@ -3999,6 +4028,25 @@ app.post('/api/documents/register-email-attachment', authMiddleware, requirePerm
 });
 
 // --- MANEJADOR DE ERRORES ---
+// Registra errores no controlados en la colección errorLogs (TTL 30 días) para
+// poder monitorearlos desde /api/system/status sin depender solo de la consola.
+async function recordError(source, err) {
+  try {
+    if (!err) return;
+    await col('errorLogs').insertOne({
+      timestamp: new Date(),
+      source: String(source || 'desconocido').slice(0, 80),
+      message: (err && err.message) ? String(err.message).slice(0, 2000) : 'Error sin mensaje',
+      stack: (err && err.stack) ? String(err.stack).slice(0, 8000) : null,
+      path: (err && err._reqPath) ? String(err._reqPath).slice(0, 500) : null,
+      method: (err && err._reqMethod) ? String(err._reqMethod).slice(0, 10) : null,
+      status: (err && err._status) || 500
+    });
+  } catch (e) {
+    console.warn('[ERRLOG] No se pudo registrar el error:', e.message);
+  }
+}
+
 app.use((error, req, res, next) => {
   if (res.headersSent) return next(error);
 
@@ -4030,10 +4078,18 @@ app.use((error, req, res, next) => {
   const isTransient = error.name === 'MongoNetworkError' || error.label === 'PoolClearedError' || error.label === 'PoolRequestRetry' || (error.message || '').includes('ERR_SSL_TLSV1') || (error.message || '').includes('PoolCleared');
   if (isTransient) {
     console.warn('[MONGO] Error TLS/transitorio:', error.message);
+    error._reqPath = req.originalUrl || req.path;
+    error._reqMethod = req.method;
+    error._status = 503;
+    recordError('http:transitorio', error);
     return res.status(503).json({ error: 'Error temporal de base de datos. Intente de nuevo en unos segundos.' });
   }
 
   console.error('Error no controlado:', error.stack || error.message || error);
+  error._reqPath = req.originalUrl || req.path;
+  error._reqMethod = req.method;
+  error._status = 500;
+  recordError('http:500', error);
   res.status(500).json({ error: 'Error interno del servidor.' });
 });
 
@@ -4089,6 +4145,18 @@ app.get('/api/system/status', authMiddleware, requirePermission('audit.read'), a
     securityLast24h = await col('securityLogs').countDocuments({ timestamp: { $gte: since } });
   } catch {}
 
+  let errorsLast24h = null;
+  let recentErrors = [];
+  try {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    errorsLast24h = await col('errorLogs').countDocuments({ timestamp: { $gte: since } });
+    recentErrors = await col('errorLogs').find({})
+      .sort({ timestamp: -1 })
+      .limit(5)
+      .project({ message: 1, source: 1, timestamp: 1, status: 1, path: 1 })
+      .toArray();
+  } catch {}
+
   let unregistered = 0;
   try { unregistered = (await getUnregisteredFiles()).length; } catch {}
 
@@ -4103,6 +4171,7 @@ app.get('/api/system/status', authMiddleware, requirePermission('audit.read'), a
     gmail: { configured: gmailConfigured, authenticated: gmailAuthenticated },
     scanner: { localFolder: fs.existsSync(SCANNER_DIR) },
     security: { last24hEvents: securityLast24h },
+    errors: { last24h: errorsLast24h, recent: recentErrors },
     documents: { unregistered },
     responseTimeMs: Date.now() - startedAt
   });

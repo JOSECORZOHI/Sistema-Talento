@@ -24,7 +24,9 @@ const COLLECTIONS = {
   loginAttempts: 'loginAttempts',
   securityLogs: 'securityLogs',
   twoFactorChallenges: 'twoFactorChallenges',
-  config: 'config'
+  config: 'config',
+  oauthStates: 'oauthStates',
+  errorLogs: 'errorLogs'
 };
 
 const MONGO_OPTIONS = {
@@ -183,7 +185,11 @@ async function ensureIndexes() {
     [COLLECTIONS.documents, { issueDate: -1 }, {}],
     [COLLECTIONS.emailsInbox, { id: 1 }, { unique: true, sparse: true }],
     [COLLECTIONS.emailsInbox, { date: -1 }, {}],
-    [COLLECTIONS.config, { key: 1 }, { unique: true }]
+    [COLLECTIONS.config, { key: 1 }, { unique: true }],
+    // Estados OAuth de Gmail: TTL 15 min (ya no viven en memoria del proceso).
+    [COLLECTIONS.oauthStates, { expiresAt: 1 }, { expireAfterSeconds: 0 }],
+    // Registro de errores no controlados: retención 30 días.
+    [COLLECTIONS.errorLogs, { timestamp: 1 }, { expireAfterSeconds: 30 * 24 * 60 * 60 }]
   ];
   for (const [coll, keys, opts] of attempts) {
     try {
