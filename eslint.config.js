@@ -17,7 +17,7 @@ const frontendShared = [
   'scannerTrayEmptyHtml', 'scannerTrayMeta', 'ICONS',
   'populateDropdown', 'populateSelect', 'guardSubmit', 'initTheme', 'updateThemeUI',
   'setupThemeToggle', 'evaluatePasswordStrength', 'bindPasswordStrengthMeter',
-  'renderPdfFallback', 'openPdfViewer', 'closePdfViewer', 'setupDragDrop',
+  'renderPdfFallback', 'openPdfViewer', 'closePdfViewer', 'setupDragDrop', 'pollSyncStatus',
   'portalState', 'checkAuthFuncionario', 'showPortalApp', 'loadPortalData',
   'renderPortalDocs', 'renderPortalScannerFiles', 'renderPortalEmailInbox',
   'handlePortalUpload', 'submittingScannerReg', 'handleRegisterScanner',

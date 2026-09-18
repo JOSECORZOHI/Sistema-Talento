@@ -1,4 +1,4 @@
-/* exported sanitize, escOnclick, getUser, logout, checkAuth, apiFetch, apiFetchWithRetry, showToast, removeToast, showLoader, hideLoader, openModal, closeModal, attachModalBackdropClose, getInitials, formatIssueDate, formatDate, coerceLocalDate, scannerTrayEmptyHtml, scannerTrayMeta, populateDropdown, populateSelect, guardSubmit, initTheme, updateThemeUI, setupThemeToggle, evaluatePasswordStrength, bindPasswordStrengthMeter, openPdfViewer, closePdfViewer, setupDragDrop, getStorageConsent, grantStorageConsent, declineStorageConsent, maybeShowStorageConsentBanner, storageWritesAllowed, bindPasswordToggles */
+/* exported sanitize, escOnclick, getUser, logout, checkAuth, apiFetch, apiFetchWithRetry, showToast, removeToast, showLoader, hideLoader, openModal, closeModal, attachModalBackdropClose, getInitials, formatIssueDate, formatDate, coerceLocalDate, scannerTrayEmptyHtml, scannerTrayMeta, populateDropdown, populateSelect, guardSubmit, initTheme, updateThemeUI, setupThemeToggle, evaluatePasswordStrength, bindPasswordStrengthMeter, openPdfViewer, closePdfViewer, setupDragDrop, getStorageConsent, grantStorageConsent, declineStorageConsent, maybeShowStorageConsentBanner, storageWritesAllowed, bindPasswordToggles, pollSyncStatus */
 // ============================================================
 //  Funciones compartidas — utils.js
 //  Usado por admin.html (app.js) y funcionario.html (funcionario.js)
@@ -287,9 +287,6 @@ function showLoader() {
       boxShadow: '0 0 14px var(--primary-soft)',
       animation: 'spin-loader 0.8s linear infinite'
     });
-    if (!document.getElementById('loader-animation-styles')) {
-      /* Los keyframes spin-loader viven en style.css (CSP style-src sin unsafe-inline) */
-    }
     document.body.appendChild(loader);
   }
   loader.style.display = 'flex';
@@ -652,6 +649,56 @@ function closePdfViewer(iframeId, modalEl) {
     if (typeof modalEl === 'string') modalEl = document.getElementById(modalEl);
     if (modalEl) modalEl.classList.remove('show');
   }
+}
+
+// --- Sincronización de Gmail (admin y funcionario comparten el mismo patrón) ---
+// Sondea /api/<...>/sync/status hasta que la sincronización termina, actualizando
+// el texto del botón con el avance y notificando el resultado vía onDone.
+function pollSyncStatus({ url, btn, buttonLabel, onDone, errorLabel }) {
+  let attempts = 0;
+  let consecutiveErrors = 0;
+  const MAX_ATTEMPTS = 400; // ~20 min a 3 s por intento
+  const MAX_ERRORS = 10;
+  const stop = () => {
+    clearInterval(poll);
+    if (btn) { btn.disabled = false; btn.textContent = buttonLabel; }
+  };
+  const poll = setInterval(async () => {
+    attempts++;
+    if (attempts > MAX_ATTEMPTS) {
+      stop();
+      showToast('La sincronización tardó más de lo esperado. Intente de nuevo.', 'error');
+      return;
+    }
+    try {
+      const res = await apiFetch(url);
+      consecutiveErrors = 0;
+      const st = await res.json();
+      if (st.running) {
+        const done = (st.processed || 0);
+        if (btn) btn.textContent = done ? `Sincronizando... (${done} correo(s))` : 'Sincronizando...';
+        return;
+      }
+      stop();
+      if (st.error) {
+        showToast(st.error.message || errorLabel, 'error');
+        return;
+      }
+      const done = st.processed || 0;
+      if (done > 0) {
+        showToast(`${done} correo(s) sincronizado(s), ${st.downloaded || 0} adjunto(s) disponible(s).`, 'success');
+      } else {
+        showToast('No hay correos nuevos para sincronizar.', 'success');
+      }
+      if (onDone) await onDone();
+    } catch (e) {
+      // Transitorio: se toleran fallos de red puntuales, pero no infinitos.
+      if (++consecutiveErrors >= MAX_ERRORS) {
+        stop();
+        showToast('No se pudo consultar el estado de la sincronización.', 'error');
+      }
+    }
+  }, 3000);
 }
 
 // --- DRAG & DROP ---

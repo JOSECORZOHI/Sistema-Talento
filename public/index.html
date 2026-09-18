@@ -34,7 +34,7 @@
   <a class="skip-link" href="#main-content">Saltar al contenido principal</a>
 
 
-  <div class="login-page">
+  <div class="login-page" id="main-content" tabindex="-1">
     <!-- Panel izquierdo: Marca Alcaldía -->
     <div class="login-brand-panel">
       <div class="login-brand-content">
@@ -146,13 +146,6 @@
   <script src="utils.js?v=8"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
-      // Verificar mensaje de éxito del redireccionamiento de registro
-      const params = new URLSearchParams(window.location.search);
-      if (params.get('registered') === '1') {
-        document.getElementById('login-success-msg').textContent = 'Registro exitoso. Ahora puede iniciar sesión.';
-        document.getElementById('login-success-msg').style.display = 'block';
-      }
-
       // Si ya hay sesión activa (cookie httpOnly), redirigir según el rol
       fetch('/api/auth/me', { credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
         .then(res => (res.ok ? res.json() : null))

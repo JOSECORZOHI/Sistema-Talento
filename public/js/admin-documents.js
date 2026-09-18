@@ -171,74 +171,12 @@ function renderUnregisteredFiles() {
 // MODAL DE VISUALIZACIÓN PDF
 window.openPdfModal = async function(filename, folder = 'documents', docId) {
   let doc = null;
-  const iframe = document.getElementById('pdf-iframe');
-  const ext = (filename || '').split('.').pop().toLowerCase();
-  const viewableTypes = ['pdf','jpg','jpeg','png','gif','bmp','tiff','tif','txt'];
-  const canViewInline = viewableTypes.includes(ext);
-  
+
   // Restablecer estado de botones deshabilitados
   document.getElementById('btn-update-pdf-status').disabled = false;
   document.getElementById('btn-archive-pdf-direct').disabled = false;
 
   document.getElementById('btn-toggle-visibility').style.display = 'none';
-
-  async function setIframeSrc(url) {
-    // Carga el archivo vía fetch (la sesión viaja en cookie httpOnly) y renderiza
-    // desde un Blob URL: la credencial nunca aparece en la URL del iframe ni en logs.
-    const iframeEl = iframe;
-    if (iframeEl._blobUrl) { URL.revokeObjectURL(iframeEl._blobUrl); iframeEl._blobUrl = null; }
-    try {
-      const res = await apiFetch(url);
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      iframeEl._blobUrl = blobUrl;
-      if (canViewInline) {
-        iframeEl.style.display = 'block';
-        iframeEl.src = blobUrl;
-      } else {
-        iframeEl.style.display = 'none';
-        const viewerFrame = iframeEl.parentElement;
-        let downloadMsg = viewerFrame.querySelector('.download-fallback-msg');
-        if (!downloadMsg) {
-          downloadMsg = document.createElement('div');
-          downloadMsg.className = 'download-fallback-msg';
-          downloadMsg.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:16px;text-align:center;color:var(--text-secondary);padding:40px;';
-          viewerFrame.appendChild(downloadMsg);
-        }
-        downloadMsg.style.display = 'flex';
-        downloadMsg.innerHTML = `
-          <svg viewBox="0 0 24 24" width="64" height="64" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
-          </svg>
-          <h3 style="margin:0;color:var(--text-primary);"></h3>
-          <p style="margin:0;font-size:13px;">Este tipo de archivo no se puede previsualizar en el navegador.</p>
-          <a href="" download="" class="btn btn-primary" style="text-decoration:none;padding:10px 24px;">
-            Descargar archivo
-          </a>
-        `;
-        downloadMsg.querySelector('h3').textContent = filename;
-        downloadMsg.querySelector('a').href = blobUrl;
-        downloadMsg.querySelector('a').download = filename;
-      }
-    } catch (e) {
-      console.error('No se pudo cargar el archivo:', e);
-      if (iframeEl._blobUrl) { URL.revokeObjectURL(iframeEl._blobUrl); iframeEl._blobUrl = null; }
-      iframeEl.style.display = 'block';
-      iframeEl.srcdoc = `
-        <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;color:var(--text-secondary);font-size:14px;text-align:center;padding:24px;">
-          <h3 style="margin:0;">No se pudo cargar el archivo</h3>
-          <p style="margin:0;">Compruebe su conexión y vuelva a intentarlo.</p>
-        </div>`;
-    }
-  }
-
-  function hideDownloadFallback() {
-    const viewerFrame = iframe.parentElement;
-    const downloadMsg = viewerFrame.querySelector('.download-fallback-msg');
-    if (downloadMsg) downloadMsg.style.display = 'none';
-    iframe.style.display = 'block';
-  }
 
   if (folder === 'scanner') {
     // Mostrar vista previa de metadatos del archivo escaneado
@@ -255,8 +193,7 @@ window.openPdfModal = async function(filename, folder = 'documents', docId) {
     document.getElementById('btn-update-pdf-status').disabled = true;
     document.getElementById('btn-archive-pdf-direct').disabled = true;
     
-    hideDownloadFallback();
-    await setIframeSrc(`/api/document-file/${encodeURIComponent(filename)}?folder=scanner`);
+    await openPdfViewer('pdf-iframe', filename, 'scanner');
   } else if (folder === 'email') {
     // Mostrar vista previa de metadatos del adjunto de correo
     document.getElementById('pdf-modal-title').textContent = filename;
@@ -272,8 +209,7 @@ window.openPdfModal = async function(filename, folder = 'documents', docId) {
     document.getElementById('btn-update-pdf-status').disabled = true;
     document.getElementById('btn-archive-pdf-direct').disabled = true;
     
-    hideDownloadFallback();
-    await setIframeSrc(`/api/document-file/${encodeURIComponent(filename)}?folder=gmail`);
+    await openPdfViewer('pdf-iframe', filename, 'gmail');
   } else {
     // Por defecto: documentos registrados
     doc = docId
@@ -299,7 +235,7 @@ window.openPdfModal = async function(filename, folder = 'documents', docId) {
     
     document.getElementById('pdf-status-changer').value = doc.status;
     
-    document.getElementById('btn-update-pdf-status').onclick = () => updateDocumentStatus(doc.id, document.getElementById('pdf-status-changer').value);
+    document.getElementById('btn-update-pdf-status').onclick = (ev) => updateDocumentStatus(doc.id, document.getElementById('pdf-status-changer').value, ev);
     document.getElementById('btn-archive-pdf-direct').onclick = () => {
       if (confirm(`¿Está seguro de que desea archivar el documento '${doc.filename}'?`)) {
         archiveDocument(doc.id);
@@ -313,10 +249,9 @@ window.openPdfModal = async function(filename, folder = 'documents', docId) {
     btnVis.textContent = doc.visibleToEmployee
       ? '🙈 Ocultar al funcionario'
       : '👁 Permitir que funcionario vea este doc';
-    btnVis.onclick = () => toggleDocVisibility(doc.id);
+    btnVis.onclick = (ev) => toggleDocVisibility(doc.id, ev);
 
-    hideDownloadFallback();
-    await setIframeSrc(`/api/document-file/${encodeURIComponent(filename)}`);
+    await openPdfViewer('pdf-iframe', filename);
   }
 
   // Disparador de descarga común
@@ -465,8 +400,8 @@ window.openRegisterEmailModal = function(filename, emailId) {
 // openModal y closeModal se definen en utils.js
 
 // Actualizar estado del documento (actualización inline desde barra lateral del visor PDF)
-async function updateDocumentStatus(docId, newStatus) {
-  const btn = event && event.currentTarget;
+async function updateDocumentStatus(docId, newStatus, ev) {
+  const btn = ev && ev.currentTarget;
   if (btn && btn.dataset.busy === '1') return;
   if (btn) btn.dataset.busy = '1';
   try {
@@ -493,8 +428,8 @@ async function updateDocumentStatus(docId, newStatus) {
 }
 
 // Alternar visibilidad del documento para portal del funcionario
-async function toggleDocVisibility(docId) {
-  const btn = event && event.currentTarget;
+async function toggleDocVisibility(docId, ev) {
+  const btn = ev && ev.currentTarget;
   if (btn && btn.dataset.busy === '1') return;
   if (btn) btn.dataset.busy = '1';
   try {

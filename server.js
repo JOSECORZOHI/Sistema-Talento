@@ -2386,53 +2386,6 @@ app.put('/api/employees/profile', authMiddleware, async (req, res) => {
   }
 });
 
-// --- ADMIN: GESTIONAR ESTADO DE USUARIO ---
-app.patch('/api/users/:email/status', authMiddleware, requirePermission('employees.suspend'), async (req, res) => {
-  const ip = getClientIp(req);
-  const { email } = req.params;
-  const { status } = req.body;
-  const validStatuses = ['pendiente', 'activa', 'suspendida', 'inactiva'];
-  if (!validStatuses.includes(status)) {
-    return res.status(400).json({ error: `Estado no válido. Use: ${validStatuses.join(', ')}` });
-  }
-
-  const normalizedEmail = normalizeEmail(email);
-  // No permitir suspender/desactivar al propio administrador ni dejar al sistema
-  // sin administradores activos (evita quedar encerrado fuera del sistema).
-  if (status !== 'activa') {
-    const targetUser = await col('users').findOne({ email: normalizedEmail });
-    const isSelf = targetUser && req.user.email && req.user.email === normalizedEmail;
-    if (isSelf) return res.status(403).json({ error: 'No puede suspenderse a sí mismo.' });
-    if (targetUser && targetUser.role === 'admin') {
-      // Solo cuentan administradores realmente activos (status 'activa')
-      const activeAdmins = await col('users').countDocuments({ role: 'admin', status: 'activa', active: true });
-      if (activeAdmins <= 1) {
-        return res.status(403).json({ error: 'No puede desactivar al último administrador activo.' });
-      }
-    }
-  }
-
-  // Invalidar sesiones existentes al cambiar estado (el usuario debe re-iniciar sesión)
-  const bump = { $inc: { jwtVersion: 1 } };
-  let updated = await col('users').updateOne({ email: normalizedEmail }, { $set: { status, active: status === 'activa' }, ...bump });
-  if (updated.matchedCount === 0) {
-    updated = await col('employees').updateOne({ email: normalizedEmail }, { $set: { status, active: status === 'activa' }, ...bump });
-  }
-  if (updated.matchedCount === 0) return res.status(404).json({ error: 'Usuario no encontrado.' });
-
-  await addAuditLog('Cambiar Estado de Usuario', `El estado de ${normalizedEmail} fue cambiado a '${status}'.`, req.user.name, ip);
-  res.json({ message: `Estado actualizado a '${status}'.`, status });
-});
-
-// --- CONFIGURACIÓN ---
-app.get('/api/config', authMiddleware, requirePermission('config.manage'), async (req, res) => {
-  const [documentTypes, categories] = await Promise.all([
-    col('documentTypes').find().toArray(),
-    col('categories').find().toArray()
-  ]);
-  res.json({ documentTypes, categories });
-});
-
 // --- DASHBOARD CONSOLIDADO (1 sola llamada) ---
 app.get('/api/dashboard', authMiddleware, requirePermission('employees.read'), async (req, res) => {
   try {
@@ -2508,15 +2461,6 @@ app.get('/api/dashboard', authMiddleware, requirePermission('employees.read'), a
 });
 
 // --- DOCUMENTOS ---
-app.get('/api/documents', authMiddleware, requirePermission('documents.read'), async (req, res) => {
-  if (wantsPagination(req)) {
-    const pagination = parsePagination(req, { defaultLimit: 100, maxLimit: 500 });
-    res.json(await paginateQuery(col('documents'), {}, { registeredAt: -1 }, pagination));
-    return;
-  }
-  res.json(await col('documents').find().sort({ registeredAt: -1 }).limit(1000).toArray());
-});
-
 app.get('/api/documents/unregistered', authMiddleware, requirePermission('documents.read'), async (req, res) => {
   try {
     res.json(await getUnregisteredFiles());
@@ -2645,15 +2589,6 @@ app.delete('/api/documents/:id', authMiddleware, requirePermission('documents.de
 });
 
 // --- SOLICITUDES DE ELIMINACIÓN ---
-app.get('/api/deletion-requests', authMiddleware, requirePermission('employees.read'), async (req, res) => {
-  try {
-    const requests = await col('deletionRequests').find().sort({ createdAt: -1 }).limit(200).toArray();
-    res.json(requests);
-  } catch {
-    res.status(500).json({ error: 'Error al obtener solicitudes de eliminación.' });
-  }
-});
-
 app.post('/api/deletion-requests', authMiddleware, requirePermission('deletion.create'), async (req, res) => {
   try {
     const { documentId, reason } = req.body;
@@ -3000,27 +2935,6 @@ app.get('/api/document-file/:filename', fileAuthMiddleware, async (req, res) => 
   } else {
     res.status(404).json({ error: 'Archivo no encontrado en el servidor.' });
   }
-});
-
-// --- REGISTROS DE AUDITORÍA ---
-app.get('/api/audit-logs', authMiddleware, requirePermission('audit.read'), async (req, res) => {
-  if (wantsPagination(req)) {
-    const pagination = parsePagination(req, { defaultLimit: 50, maxLimit: 500 });
-    res.json(await paginateQuery(col('auditLogs'), {}, { timestamp: -1 }, pagination));
-    return;
-  }
-  const limit = Math.max(1, Math.min(parseInt(req.query.limit) || 500, 1000));
-  res.json(await col('auditLogs').find().sort({ timestamp: -1 }).limit(limit).toArray());
-});
-
-app.get('/api/security-logs', authMiddleware, requirePermission('audit.read'), async (req, res) => {
-  if (wantsPagination(req)) {
-    const pagination = parsePagination(req, { defaultLimit: 50, maxLimit: 500 });
-    res.json(await paginateQuery(col('securityLogs'), {}, { timestamp: -1 }, pagination));
-    return;
-  }
-  const limit = Math.max(1, Math.min(parseInt(req.query.limit) || 100, 500));
-  res.json(await col('securityLogs').find().sort({ timestamp: -1 }).limit(limit).toArray());
 });
 
 // --- ESCÁNER ---
