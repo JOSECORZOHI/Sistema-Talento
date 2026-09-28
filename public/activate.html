@@ -129,6 +129,7 @@
         const res = await fetch(`/api/auth/activate/${token}`);
         const data = await res.json();
         if (!res.ok || !data.valid) {
+          // SEGURIDAD: no quitar sanitize(), data.error viene del servidor.
           loading.innerHTML = `<p style="color:#e74c3c;text-align:center;padding:20px;">${sanitize(data.error || 'Token inválido.')}</p>`;
           return;
         }

@@ -29,3 +29,14 @@ gen-pregunta*
 # Páginas de prueba locales que inyectan sesión (nunca subir)
 public/__preseed.html
 public/__probe_admin.html
+
+# Tooling y guías de uso interno (solo local, nunca subir)
+.opencode/
+opencode.json
+AGENTS.md
+docs/manual-de-uso.md
+docs/manual-de-uso.doc
+docs/manual-tecnico.md
+docs/manual-tecnico.doc
+docs/pendientes.md
+docs/planificacion/

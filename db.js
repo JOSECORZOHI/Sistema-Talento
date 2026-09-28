@@ -304,8 +304,14 @@ async function connect() {
         }
 
         if (tempPasswords.size > 0) {
+          // SEGURIDAD: la temporal completa solo se muestra fuera de producción.
+          // En producción los logs del deploy son persistentes: se enmascara y el
+          // operador debe usar scripts/reset-admin.js para generarla.
+          const mostrarCompleta = process.env.NODE_ENV !== 'production';
           for (const [email, temp] of tempPasswords) {
-            console.warn(`[SEED] Contraseña temporal para ${email}: ${temp}`);
+            console.warn(mostrarCompleta
+              ? `[SEED] Contraseña temporal para ${email}: ${temp}`
+              : `[SEED] Contraseña temporal generada para ${email} (oculta en producción; use scripts/reset-admin.js).`);
           }
           try {
             await db.collection(COLLECTIONS.securityLogs).insertOne({
