@@ -1,0 +1,13 @@
+# Normaliza finales de línea a LF para evitar ruido CRLF en el diff.
+* text=auto eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.md text eol=lf
+*.ps1 text eol=crlf
+*.png binary
+*.jpg binary
+*.ico binary
+*.doc binary
+*.docx binary

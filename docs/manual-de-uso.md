@@ -4,9 +4,6 @@
 
 Acceso en producción: `https://sistema-talento-production.up.railway.app`
 
-> La versión imprimible (PDF) de este manual está disponible en el propio sistema:
-> **/manual-uso.html**.
-
 ---
 
 ## 1. Acerca del sistema
@@ -24,7 +21,7 @@ Dos portales:
 | Portal del Funcionario `/funcionario.html` | Funcionario | Consultar su expediente, subir documentos, escanear y revisar su correo. |
 
 Requisitos: navegador Chrome, Edge o Firefox (escritorio). La contraseña es de
-mínimo 8 caracteres con mayúscula, minúscula y número.
+mínimo 12 caracteres con mayúscula, minúscula, número y símbolo.
 
 ---
 
@@ -61,7 +58,7 @@ actividad reciente y eliminaciones pendientes.
 - **Búsqueda** por nombre del funcionario, cédula o nombre de archivo.
 - **Filtros** por tipo de documento, categoría y estado.
 - Al abrir un resultado (visor PDF): **ver**, **descargar**, **cambiar estado**
-  (Pendiente / En trámite / Archivado), **archivar**, u **ocultar/mostrar** al funcionario.
+  (Pendiente / Aprobado / Activo / Archivado / Rechazado), **archivar**, u **ocultar/mostrar** al funcionario.
 
 ### 3.3 Registrar y Subir
 
@@ -119,8 +116,8 @@ Los archivos quedan en **Escáneres detectados**.
 
 ### 4.4 Correo
 
-1. **Vincular cuenta**: autorice el acceso a su correo institucional (Google).
-2. **Sincronizar**: importa correos y adjuntos (solo lectura).
+1. **Vincular cuenta**: autorice el acceso a su correo institucional (Google). El permiso incluye lectura de correos y envío, ya que el sistema también remite notificaciones (activación, restablecimiento) desde la cuenta vinculada.
+2. **Sincronizar**: importa correos y adjuntos.
 3. Los adjuntos quedan como documentos sin registrar para su incorporación.
 
 ### 4.5 Solicitud de eliminación
@@ -146,7 +143,7 @@ que el administrador lo apruebe o rechace.
 ## 6. Respaldo y continuidad
 
 - Backup automático diario (02:00) con **prueba de restauración**.
-- Restauración y procedimientos en `docs/runbooks`.
+- Restauración y rotación de claves en `docs/` (`rotacion-doc-enc-key.md`).
 
 ---
 

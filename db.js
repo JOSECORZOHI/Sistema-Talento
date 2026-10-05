@@ -188,6 +188,8 @@ async function ensureIndexes() {
     [COLLECTIONS.config, { key: 1 }, { unique: true }],
     // Estados OAuth de Gmail: TTL 15 min (ya no viven en memoria del proceso).
     [COLLECTIONS.oauthStates, { expiresAt: 1 }, { expireAfterSeconds: 0 }],
+    // Retos 2FA de un solo uso: TTL sobre expiresAt (5 min, ver TWO_FACTOR_CHALLENGE_TTL_MS).
+    [COLLECTIONS.twoFactorChallenges, { expiresAt: 1 }, { expireAfterSeconds: 0 }],
     // Registro de errores no controlados: retención 30 días.
     [COLLECTIONS.errorLogs, { timestamp: 1 }, { expireAfterSeconds: 30 * 24 * 60 * 60 }]
   ];
@@ -615,6 +617,23 @@ const VALIDATORS = {
       subject: { bsonType: 'string' },
       read: { bsonType: 'bool' },
       date: { bsonType: 'string' }
+    }
+  },
+  twoFactorChallenges: {
+    bsonType: 'object', additionalProperties: true,
+    required: ['tokenHash', 'email', 'expiresAt'],
+    properties: {
+      tokenHash: { bsonType: 'string' },
+      email: { bsonType: 'string' },
+      expiresAt: { bsonType: 'date' }
+    }
+  },
+  oauthStates: {
+    bsonType: 'object', additionalProperties: true,
+    required: ['state', 'expiresAt'],
+    properties: {
+      state: { bsonType: 'string' },
+      expiresAt: { bsonType: 'date' }
     }
   }
 };

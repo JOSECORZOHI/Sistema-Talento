@@ -45,7 +45,6 @@ module.exports = [
       'node_modules/**',
       'storage/**',
       'bandeja_escaner/**',
-      'scripts/**',
       'backups/**'
     ]
   },
