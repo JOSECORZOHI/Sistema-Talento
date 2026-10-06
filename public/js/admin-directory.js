@@ -7,6 +7,11 @@ function renderEmployeesTable() {
   const tbody = document.getElementById('funcionarios-table-body');
   const countEl = document.getElementById('funcionarios-count');
   if (!tbody) return;
+  delegateActions(tbody, {
+    'emp-dossier': (d) => { window.location.hash = '#expedientes'; setTimeout(() => selectEmployeeForFolder(d.id), 100); },
+    'emp-toggle': (d) => toggleEmployeeStatus(d.id),
+    'emp-delete': (d) => deleteEmployee(d.id, d.name)
+  });
 
   const searchVal = (document.getElementById('emp-search-input')?.value || '').toLowerCase().trim();
   const statusFilter = document.getElementById('emp-filter-status')?.value || 'todos';
@@ -48,9 +53,9 @@ function renderEmployeesTable() {
       <td style="font-size:12px;color:var(--text-muted);">${sanitize(emp.email)}</td>
       <td>${statusBadge}</td>
       <td class="text-right" style="white-space:nowrap;">
-        <button class="btn btn-text btn-sm" onclick="window.location.hash='#expedientes';setTimeout(()=>selectEmployeeForFolder('${escOnclick(emp.id)}'),100)" title="Ver expediente">Expediente</button>
-        ${status !== 'pendiente' ? `<button class="btn btn-text btn-sm" style="color:${isActive ? 'var(--danger)' : 'var(--success)'};" onclick="toggleEmployeeStatus('${escOnclick(emp.id)}')">${isActive ? 'Desactivar' : 'Activar'}</button>` : ''}
-        <button class="btn btn-danger-text btn-sm" onclick="deleteEmployee('${escOnclick(emp.id)}','${escOnclick(emp.name)}')" title="Eliminar funcionario">Eliminar</button>
+        <button class="btn btn-text btn-sm" data-action="emp-dossier" data-id="${sanitize(emp.id)}" title="Ver expediente">Expediente</button>
+        ${status !== 'pendiente' ? `<button class="btn btn-text btn-sm" style="color:${isActive ? 'var(--danger)' : 'var(--success)'};" data-action="emp-toggle" data-id="${sanitize(emp.id)}">${isActive ? 'Desactivar' : 'Activar'}</button>` : ''}
+        <button class="btn btn-danger-text btn-sm" data-action="emp-delete" data-id="${sanitize(emp.id)}" data-name="${sanitize(emp.name)}" title="Eliminar funcionario">Eliminar</button>
       </td>
     `;
     tbody.appendChild(tr);
@@ -244,6 +249,10 @@ function renderEmployeeDossier() {
   // Renderizar tarjetas de documentos en cuadrícula
   const grid = document.getElementById('folder-documents-grid');
   grid.innerHTML = '';
+  delegateActions(grid, {
+    'doc-view': (d) => openPdfModal(d.fn, 'documents', d.id),
+    'doc-edit': (d) => openEditDocModal(d.id)
+  });
 
   if (displayedDocs.length === 0) {
     grid.innerHTML = '<div class="no-data-placeholder" style="grid-column: 1/-1;">No hay documentos en esta categoría.</div>';
@@ -258,7 +267,7 @@ function renderEmployeeDossier() {
     const dateFormatted = formatIssueDate(doc.issueDate);
 
     card.innerHTML = `
-      <div class="folder-doc-meta" onclick="openPdfModal('${escOnclick(doc.filename)}', 'documents', '${escOnclick(doc.id)}')" style="cursor: pointer;">
+      <div class="folder-doc-meta" data-action="doc-view" data-fn="${sanitize(doc.filename)}" data-id="${sanitize(doc.id)}" style="cursor: pointer;">
         <svg class="file-icon-pdf" viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="2" style="margin-bottom: 8px;">
           <path stroke-linecap="round" stroke-linejoin="round" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
         </svg>
@@ -270,13 +279,13 @@ function renderEmployeeDossier() {
         <span class="badge-status ${(doc.status || '').toLowerCase()}" style="padding: 2px 6px; font-size: 9px;">${sanitize(doc.status)}</span>
         ${doc.visibleToEmployee ? '<span title="Visible al funcionario" style="font-size:12px;cursor:default;">👁</span>' : ''}
         <div style="display: flex; gap: 4px;">
-          <button class="btn btn-secondary btn-icon-only" style="width: 28px; height: 28px;" onclick="openPdfModal('${escOnclick(doc.filename)}', 'documents', '${escOnclick(doc.id)}')" title="Abrir y verificar">
+          <button class="btn btn-secondary btn-icon-only" style="width: 28px; height: 28px;" data-action="doc-view" data-fn="${sanitize(doc.filename)}" data-id="${sanitize(doc.id)}" title="Abrir y verificar">
             <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
               <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
             </svg>
           </button>
-          <button class="btn btn-secondary btn-icon-only" style="width: 28px; height: 28px;" onclick="openEditDocModal('${escOnclick(doc.id)}')" title="Editar metadatos">
+          <button class="btn btn-secondary btn-icon-only" style="width: 28px; height: 28px;" data-action="doc-edit" data-id="${sanitize(doc.id)}" title="Editar metadatos">
             <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2">
               <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
             </svg>

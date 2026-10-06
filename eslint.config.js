@@ -11,7 +11,7 @@ const frontendShared = [
   'modalViewPdf', 'modalEditDoc', 'modalAddEmp', 'setupNavigation', 'loadAllData',
   'fetchStats', 'fetchEmployees', 'fetchUnregisteredFiles', 'submittingUpload',
   'setupEventListeners', 'refreshActiveSectionViews', 'reloadAll', 'sanitize',
-  'escOnclick', 'getToken', 'getUser', 'logout', 'checkAuth', 'apiFetch',
+  'delegateActions', 'getToken', 'getUser', 'logout', 'checkAuth', 'apiFetch',
   'apiFetchWithRetry', 'showToast', 'removeToast', 'showLoader', 'hideLoader',
   'openModal', 'closeModal', 'getInitials', 'formatIssueDate', 'formatDate',
   'scannerTrayEmptyHtml', 'scannerTrayMeta', 'ICONS',

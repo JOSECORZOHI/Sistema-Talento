@@ -299,6 +299,10 @@ function renderPortalDocs() {
   const count = document.getElementById('portal-docs-count');
   const docs = portalState.documents || [];
   if (count) count.textContent = `${docs.length} documento${docs.length !== 1 ? 's' : ''}`;
+  delegateActions(grid, {
+    'pdf-view': (d) => openPortalPdf(d.fn),
+    'del-request': (d) => openDeleteRequest(d.id, d.fn)
+  });
 
   const totalEl = document.getElementById('stat-total');
   const activosEl = document.getElementById('stat-activos');
@@ -329,8 +333,8 @@ function renderPortalDocs() {
     const catName = catMap[doc.categoryId] || doc.categoryId;
     const sizeKB = doc.fileSize ? Math.round(doc.fileSize / 1024) : '—';
     const fechaEmision = doc.issueDate ? new Date(doc.issueDate + 'T00:00:00').toLocaleDateString('es-CO') : '—';
-    const safeFn = escOnclick(doc.filename);
-    const safeId = escOnclick(doc.id);
+    const safeFn = sanitize(doc.filename);
+    const safeId = sanitize(doc.id);
     html += `<div class="portal-doc-card">
       <div class="portal-doc-card-body">
       <div class="doc-icon">
@@ -343,8 +347,8 @@ function renderPortalDocs() {
       <div class="doc-footer">
         <span class="badge-status ${['pendiente','activo','aprobado','rechazado','archivado'].includes((doc.status || '').toLowerCase()) ? (doc.status || '').toLowerCase() : ''}">${sanitize(doc.status)}</span>
         <div style="display:flex;gap:6px;align-items:center;">
-          <button class="btn-ver-doc" onclick="openPortalPdf('${safeFn}')">Ver</button>
-          <button class="btn-delete-doc" onclick="openDeleteRequest('${safeId}', '${safeFn}')" title="Solicitar eliminación">
+          <button class="btn-ver-doc" data-action="pdf-view" data-fn="${safeFn}">Ver</button>
+          <button class="btn-delete-doc" data-action="del-request" data-id="${safeId}" data-fn="${safeFn}" title="Solicitar eliminación">
             <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
           </button>
         </div>
@@ -361,6 +365,10 @@ function renderPortalScannerFiles() {
   const trayCount = document.getElementById('portal-scanner-tray-count');
   const files = portalState.scannerFiles;
   if (trayCount) trayCount.textContent = `${files.length} archivo${files.length !== 1 ? 's' : ''}`;
+  delegateActions(list, {
+    'pdf-view-scanner': (d) => openPortalPdf(d.fn, 'scanner'),
+    'scan-register': (d) => openRegisterScanner(d.fn)
+  });
 
   if (files.length === 0) {
     list.innerHTML = scannerTrayEmptyHtml(ICONS.scanEmpty, 'Cuando un documento sea escaneado, aparecerá aquí para que pueda registrarlo en su expediente.');
@@ -380,8 +388,8 @@ function renderPortalScannerFiles() {
         <span>${meta.sizeKB} KB · ${meta.dateLabel}</span>
       </div>
       <div class="portal-item-actions">
-        <button class="btn-ver-doc" onclick="event.stopPropagation();openPortalPdf('${meta.safeFn}', 'scanner')">Ver</button>
-        <button class="btn-register-item" onclick="openRegisterScanner('${meta.safeFn}')">Registrar</button>
+        <button class="btn-ver-doc" data-action="pdf-view-scanner" data-stop="1" data-fn="${meta.safeFn}">Ver</button>
+        <button class="btn-register-item" data-action="scan-register" data-fn="${meta.safeFn}">Registrar</button>
       </div></div>`;
   }
   list.innerHTML = html;
@@ -486,6 +494,10 @@ function renderPortalEmailInbox() {
   const count = document.getElementById('portal-email-count');
   const emails = portalState.emails || [];
   if (count) count.textContent = `${emails.length} correo${emails.length !== 1 ? 's' : ''}`;
+  delegateActions(list, {
+    'email-view': (d) => openPortalPdf(d.fn, 'gmail'),
+    'email-register': (d) => openRegisterEmail(d.email, d.fn)
+  });
 
   if (emails.length === 0) {
     list.innerHTML = `
@@ -509,8 +521,8 @@ function renderPortalEmailInbox() {
     for (let j = 0; j < unregisteredAttachments.length; j++) {
       const att = unregisteredAttachments[j];
       const sizeKB = att.sizeBytes ? Math.round(att.sizeBytes / 1024) : '—';
-      const safeEmailId = escOnclick(email.id);
-      const safeAttFn = escOnclick(att.filename);
+      const safeEmailId = sanitize(email.id);
+      const safeAttFn = sanitize(att.filename);
       attachHtml += `<div class="portal-item-card" style="margin-top:6px;padding:10px 14px;background:var(--background);">
         <div class="portal-item-icon" style="background:var(--secondary-soft);">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="var(--secondary)" stroke-width="2">
@@ -522,8 +534,8 @@ function renderPortalEmailInbox() {
           <span>${sizeKB} KB</span>
         </div>
         <div class="portal-item-actions">
-          <button class="btn-register-item" onclick="openPortalPdf('${safeAttFn}', 'gmail')" title="Ver archivo" style="background:var(--primary-soft);color:var(--primary);">Ver</button>
-          <button class="btn-register-item" onclick="openRegisterEmail('${safeEmailId}', '${safeAttFn}')">Registrar</button>
+          <button class="btn-register-item" data-action="email-view" data-fn="${safeAttFn}" title="Ver archivo" style="background:var(--primary-soft);color:var(--primary);">Ver</button>
+          <button class="btn-register-item" data-action="email-register" data-email="${safeEmailId}" data-fn="${safeAttFn}">Registrar</button>
         </div></div>`;
     }
     if (!hasAttachments) {

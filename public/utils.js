@@ -1,4 +1,4 @@
-/* exported sanitize, escOnclick, getUser, logout, checkAuth, apiFetch, apiFetchWithRetry, showToast, removeToast, showLoader, hideLoader, openModal, closeModal, attachModalBackdropClose, getInitials, formatIssueDate, formatDate, coerceLocalDate, scannerTrayEmptyHtml, scannerTrayMeta, populateDropdown, populateSelect, guardSubmit, initTheme, updateThemeUI, setupThemeToggle, evaluatePasswordStrength, bindPasswordStrengthMeter, openPdfViewer, closePdfViewer, setupDragDrop, getStorageConsent, grantStorageConsent, declineStorageConsent, maybeShowStorageConsentBanner, storageWritesAllowed, bindPasswordToggles, pollSyncStatus */
+/* exported sanitize, delegateActions, getUser, logout, checkAuth, apiFetch, apiFetchWithRetry, showToast, removeToast, showLoader, hideLoader, openModal, closeModal, attachModalBackdropClose, getInitials, formatIssueDate, formatDate, coerceLocalDate, scannerTrayEmptyHtml, scannerTrayMeta, populateDropdown, populateSelect, guardSubmit, initTheme, updateThemeUI, setupThemeToggle, evaluatePasswordStrength, bindPasswordStrengthMeter, openPdfViewer, closePdfViewer, setupDragDrop, getStorageConsent, grantStorageConsent, declineStorageConsent, maybeShowStorageConsentBanner, storageWritesAllowed, bindPasswordToggles, pollSyncStatus */
 // ============================================================
 //  Funciones compartidas — utils.js
 //  Usado por admin.html (app.js) y funcionario.html (funcionario.js)
@@ -85,8 +85,10 @@ if (typeof window !== 'undefined') {
 
 // --- SEGURIDAD ---
 // Equivalente client-side de escapeHtml() en lib/helpers.js (server-side).
+// NOTA DE PARIDAD: ambas deben escapar exactamente & < > " ' en ese orden.
+// Si cambia una, cambiar la otra y correr `npm test` + revisión visual.
 function sanitize(str) {
-  if (!str) return '';
+  if (str == null) return '';
   return String(str)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -95,17 +97,25 @@ function sanitize(str) {
     .replace(/'/g, '&#39;');
 }
 
-function escOnclick(str) {
-  return String(str)
-    .replace(/\\/g, '\\\\')
-    .replace(/['"\r\n\t\u2028\u2029]/g, (ch) => {
-      if (ch === "'") return '\\x27';
-      if (ch === '"') return '\\x22';
-      return '';
-    })
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+// --- DELEGACIÓN DE EVENTOS ---
+// Los botones generados dinámicamente usan `data-action` + `data-*` en lugar
+// de `onclick="..."` en línea. Esto permite endurecer la CSP (sin
+// 'unsafe-inline' en script-src-attr): los valores viajan escapados con
+// sanitize() en atributos y `dataset` los devuelve decodificados.
+// Uso: delegateActions(container, { 'mi-accion': (d, el, e) => {...} });
+// `data-stop="1"` detiene la propagación (equivale al antiguo
+// `event.stopPropagation()` en línea). Idempotente por contenedor.
+function delegateActions(container, actions) {
+  if (!container || container.__actionsBound) return;
+  container.__actionsBound = true;
+  container.addEventListener('click', (e) => {
+    const el = e.target.closest('[data-action]');
+    if (!el || !container.contains(el)) return;
+    const fn = actions[el.dataset.action];
+    if (typeof fn !== 'function') return;
+    if (el.dataset.stop === '1') e.stopPropagation();
+    fn(el.dataset, el, e);
+  });
 }
 
 // --- CONSENTIMIENTO DE ALMACENAMIENTO (Lucha 1581 / GDPR) ---
@@ -449,7 +459,9 @@ function scannerTrayEmptyHtml(iconSvg, note) {
 
 function scannerTrayMeta(f) {
   return {
-    safeFn: escOnclick(f.filename),
+    // Nombre escapado para atributos HTML (data-fn). `dataset` lo devuelve
+    // decodificado al leerlo en el manejador delegado.
+    safeFn: sanitize(f.filename),
     sizeKB: f.fileSize ? Math.round(f.fileSize / 1024) : '—',
     dateLabel: formatDate(f.createdAt)
   };

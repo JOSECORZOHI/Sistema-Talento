@@ -36,6 +36,10 @@ function renderScannerFiles() {
   if (trayCount) trayCount.textContent = `${appState.scannerFiles.length} archivo${appState.scannerFiles.length !== 1 ? 's' : ''}`;
 
   if (!list) return;
+  delegateActions(list, {
+    'scan-view': (d) => openPdfModal(d.fn, 'scanner'),
+    'scan-register': (d) => openRegisterScannerModal(d.fn)
+  });
 
   if (appState.scannerFiles.length === 0) {
     list.innerHTML = scannerTrayEmptyHtml(null, 'Cuando un documento sea escaneado, aparecerá aquí para que pueda registrarlo en un expediente.');
@@ -53,8 +57,8 @@ function renderScannerFiles() {
         <span style="font-size:11px;color:var(--text-muted);">${meta.sizeKB} KB &bull; ${meta.dateLabel}</span>
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0;">
-        <button class="btn btn-secondary" style="padding:5px 10px;font-size:11px;" onclick="event.stopPropagation();openPdfModal('${meta.safeFn}', 'scanner')" title="Vista previa">👁 Ver</button>
-        <button class="btn btn-primary" style="padding:5px 12px;font-size:11px;" onclick="openRegisterScannerModal('${meta.safeFn}')">Registrar</button>
+        <button class="btn btn-secondary" style="padding:5px 10px;font-size:11px;" data-action="scan-view" data-stop="1" data-fn="${sanitize(f.filename)}" title="Vista previa">👁 Ver</button>
+        <button class="btn btn-primary" style="padding:5px 12px;font-size:11px;" data-action="scan-register" data-fn="${sanitize(f.filename)}">Registrar</button>
       </div></div>`;
   }
   list.innerHTML = html;
@@ -105,11 +109,12 @@ function renderGmailStatusBanner(status) {
     banner.innerHTML = `
       <strong style="color:var(--warning);">⚠ Gmail pendiente de autorización</strong><br>
       Las credenciales OAuth están configuradas pero falta el <em>refresh token</em>.<br>
-      <button onclick="startGmailAuthorization()" style="color:var(--primary);font-weight:600;text-decoration:underline;border:none;background:none;cursor:pointer;">Autorizar Gmail</button>
+      <button data-action="gmail-auth" style="color:var(--primary);font-weight:600;text-decoration:underline;border:none;background:none;cursor:pointer;">Autorizar Gmail</button>
       para completar la autorización. El <em>refresh token</em> quedará guardado automáticamente en el sistema; no debe copiarlo a mano.`;
   }
 
   container.insertAdjacentElement('beforebegin', banner);
+  delegateActions(banner, { 'gmail-auth': () => startGmailAuthorization() });
 }
 
 async function startGmailAuthorization() {
@@ -210,6 +215,10 @@ function renderEmailDetail(emailId) {
 
   const grid = document.getElementById('email-attachments-grid');
   grid.innerHTML = '';
+  delegateActions(grid, {
+    'email-register': (d) => openRegisterEmailModal(d.fn, d.email),
+    'email-view': (d) => openPdfModal(d.fn, 'email')
+  });
 
   const docAttachments = (email.attachments || []);
 
@@ -238,9 +247,9 @@ function renderEmailDetail(emailId) {
         ${isRegistered
           ? '<span class="badge-status aprobado" style="font-size:10px;padding:2px 8px;">Registrado ✓</span>'
           : `<button class="btn btn-primary" style="padding:5px 12px;font-size:11px;white-space:nowrap;"
-                     onclick="openRegisterEmailModal('${escOnclick(att.filename)}', '${escOnclick(email.id)}')">Registrar</button>
-             <button class="btn btn-secondary btn-icon-only" style="width:28px;height:28px;"
-                     onclick="openPdfModal('${escOnclick(att.filename)}', 'email')" title="Vista previa">
+                     data-action="email-register" data-fn="${sanitize(att.filename)}" data-email="${sanitize(email.id)}">Registrar</button>
+              <button class="btn btn-secondary btn-icon-only" style="width:28px;height:28px;"
+                     data-action="email-view" data-fn="${sanitize(att.filename)}" title="Vista previa">
                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
                  <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/>

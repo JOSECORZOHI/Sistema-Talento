@@ -73,6 +73,10 @@ function renderDeletionRequests() {
   const countEl = document.getElementById('deletion-requests-count');
   const badge = document.getElementById('deletion-requests-badge');
   if (!tbody) return;
+  delegateActions(tbody, {
+    'del-approve': (d) => approveDeletionRequest(d.id),
+    'del-reject': (d) => rejectDeletionRequest(d.id)
+  });
 
   const requests = appState.deletionRequests || [];
   const pending = requests.filter(r => r.status === 'Pendiente');
@@ -109,8 +113,8 @@ function renderDeletionRequests() {
         <span style="font-size:11px;font-weight:700;color:${statusColor};padding:3px 10px;border-radius:6px;background:${statusColor}18;">${sanitize(req.status)}</span>
         ${isPending ? `
           <div style="display:flex;gap:4px;margin-top:6px;">
-            <button class="btn btn-primary" style="padding:5px 12px;font-size:11px;" onclick="approveDeletionRequest('${escOnclick(req.id)}')">Aprobar</button>
-            <button class="btn btn-secondary" style="padding:5px 12px;font-size:11px;color:var(--danger);border-color:var(--danger);" onclick="rejectDeletionRequest('${escOnclick(req.id)}')">Rechazar</button>
+            <button class="btn btn-primary" style="padding:5px 12px;font-size:11px;" data-action="del-approve" data-id="${sanitize(req.id)}">Aprobar</button>
+            <button class="btn btn-secondary" style="padding:5px 12px;font-size:11px;color:var(--danger);border-color:var(--danger);" data-action="del-reject" data-id="${sanitize(req.id)}">Rechazar</button>
           </div>
         ` : `<div style="font-size:10px;color:var(--text-muted);margin-top:4px;">Por: ${sanitize(req.processedBy || '—')} ${req.processedAt ? 'el ' + new Date(req.processedAt).toLocaleString('es-CO') : ''}</div>`}
       </td>`;

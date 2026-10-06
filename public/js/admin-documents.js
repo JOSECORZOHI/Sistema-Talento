@@ -8,6 +8,11 @@ function renderDocumentsTable() {
   const tbody = document.getElementById('documents-table-body');
   const resultsCount = document.getElementById('results-count');
   if (!tbody) return;
+  delegateActions(tbody, {
+    'doc-view': (d) => openPdfModal(d.fn, 'documents', d.id),
+    'doc-edit': (d) => openEditDocModal(d.id),
+    'doc-archive': (d) => archiveDocument(d.id)
+  });
 
   const searchQuery = document.getElementById('search-input').value.toLowerCase();
   const typeFilter = document.getElementById('filter-type').value;
@@ -102,18 +107,18 @@ function renderDocumentsTable() {
       </td>
       <td class="text-right">
         <div class="action-buttons-cell">
-          <button class="btn btn-secondary btn-icon-only" onclick="openPdfModal('${escOnclick(doc.filename)}', 'documents', '${escOnclick(doc.id)}')" title="Ver Documento">
+          <button class="btn btn-secondary btn-icon-only" data-action="doc-view" data-fn="${sanitize(doc.filename)}" data-id="${sanitize(doc.id)}" title="Ver Documento">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
               <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               <path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
             </svg>
           </button>
-          <button class="btn btn-secondary btn-icon-only" onclick="openEditDocModal('${escOnclick(doc.id)}')" title="Editar Metadatos">
+          <button class="btn btn-secondary btn-icon-only" data-action="doc-edit" data-id="${sanitize(doc.id)}" title="Editar Metadatos">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
               <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
             </svg>
           </button>
-          <button class="btn btn-danger-text btn-icon-only" onclick="archiveDocument('${escOnclick(doc.id)}')" title="Archivar / Borrar">
+          <button class="btn btn-danger-text btn-icon-only" data-action="doc-archive" data-id="${sanitize(doc.id)}" title="Archivar / Borrar">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
               <path stroke-linecap="round" stroke-linejoin="round" d="M5 8h14M10 9v8m4-8v8m1 8H9a2 2 0 01-2-2V8h10v10a2 2 0 01-2 2zM9 5h6a1 1 0 011 1v2H8V6a1 1 0 011-1z" />
             </svg>
@@ -129,6 +134,9 @@ function renderDocumentsTable() {
 function renderUnregisteredFiles() {
   const container = document.getElementById('unregistered-files-list');
   if (!container) return;
+  delegateActions(container, {
+    'local-register': (d) => openRegisterLocalModal(d.fn)
+  });
 
   if (appState.unregisteredFiles.length === 0) {
     container.innerHTML = `
@@ -158,7 +166,7 @@ function renderUnregisteredFiles() {
           <span>${sizeKB} KB &bull; PDF local</span>
         </div>
       </div>
-      <button class="btn btn-secondary btn-icon-only" onclick="openRegisterLocalModal('${escOnclick(file.filename)}')" title="Registrar metadatos">
+      <button class="btn btn-secondary btn-icon-only" data-action="local-register" data-fn="${sanitize(file.filename)}" title="Registrar metadatos">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
           <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>

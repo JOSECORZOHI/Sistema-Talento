@@ -261,10 +261,9 @@ app.use(helmet({
     directives: {
       defaultSrc: ["'self'"],
       scriptSrc: CSP_SCRIPT_SRC,
-      // 'unsafe-inline' requerido para atributos onclick= generados dinámicamente
-      // por el frontend (admin-documents.js, funcionario.js, admin-scanner-email.js, etc.).
+      // Sin 'unsafe-inline' en script-src-attr: el frontend usa delegación
+      // de eventos (data-action en utils.js) en lugar de onclick= en línea.
       // Los <script> en línea siguen protegidos por el nonce en script-src.
-      scriptSrcAttr: ["'unsafe-inline'"],
       styleSrc: ["'self'", cspNonceFromRes, 'https://fonts.googleapis.com'],
       // Los atributos style="..." requieren 'unsafe-inline' (style-src-attr);
       // los bloques <style> quedan protegidos por nonce en style-src.
@@ -1211,15 +1210,18 @@ function validateFileContent(filename, buffer) {
     ['.jpg', [0xff, 0xd8, 0xff]], ['.jpeg', [0xff, 0xd8, 0xff]],
     ['.gif', [0x47, 0x49, 0x46, 0x38]],
     ['.bmp', [0x42, 0x4d]],
+    // TIFF little-endian (II*\0). La variante big-endian (MM\0*) se acepta
+    // abajo: ambas firmas son válidas según el spec TIFF.
     ['.tif', [0x49, 0x49, 0x2a, 0x00]], ['.tiff', [0x49, 0x49, 0x2a, 0x00]],
     ['.docx', zip], ['.xlsx', zip], ['.pptx', zip], ['.odt', zip], ['.ods', zip],
     ['.doc', ole], ['.xls', ole], ['.ppt', ole]
   ];
   const match = expectations.find(e => e[0] === ext);
   if (!match) return null; // .txt/.csv/.rtf: sin firma binaria, no se valida
-  return startsWith(match[1])
-    ? null
-    : `El archivo '${filename}' no coincide con su extensión (${ext}). Verifique que sea un archivo válido.`;
+  if (startsWith(match[1])) return null;
+  // TIFF big-endian (MM\0*): algunos escáneres lo generan; es válido.
+  if ((ext === '.tif' || ext === '.tiff') && startsWith([0x4d, 0x4d, 0x00, 0x2a])) return null;
+  return `El archivo '${filename}' no coincide con su extensión (${ext}). Verifique que sea un archivo válido.`;
 }
 
 // Mutex por archivo: evita que dos peticiones simultáneas registren el mismo archivo
@@ -1238,17 +1240,40 @@ async function withRegisterLock(filename, fn) {
 }
 
 async function getScannerFiles(ownerEmployeeId) {
-  // GridFS sí guarda el dueño (ownerEmployeeId) y se filtra por él. Los archivos
-  // en disco (salida de EPSON Scan 2 y archivos legados) no tienen metadata de
-  // dueño, por lo que se exponen a todo usuario con acceso al escáner. Limitación
-  // aceptada: la bandeja de disco es una carpeta compartida del equipo del escáner.
+  // GridFS guarda el dueño (ownerEmployeeId) y se filtra por él. Los archivos
+  // en disco (salida del programa de escaneo) no tienen dueño: cuando quien
+  // consulta es un funcionario, se importan a GridFS etiquetados con su ID
+  // (adopción al primer avistamiento) y se borran del disco. Así cada
+  // funcionario solo ve su propia bandeja. El admin no adopta: ve el disco
+  // compartido tal cual (bandeja global).
+  // Se omiten temporales de escaneos en curso (`_temp_`, `_sane_`).
+  const isTempScannerFile = (fn) => fn.startsWith('_temp_') || fn.startsWith('_sane_');
   try {
     const files = await listFilesBySource('scanner', false, ownerEmployeeId);
     const result = files.map(f => ({ filename: f.filename, fileSize: f.length || 0, createdAt: f.uploadDate || new Date() }));
     try {
       if (fs.existsSync(SCANNER_DIR)) {
-        const diskFiles = fs.readdirSync(SCANNER_DIR).filter(f => isAllowedFile(f) && !result.some(r => r.filename === f));
+        const diskFiles = fs.readdirSync(SCANNER_DIR).filter(f => isAllowedFile(f) && !isTempScannerFile(f) && !result.some(r => r.filename === f));
         for (const fn of diskFiles) {
+          if (ownerEmployeeId) {
+            const adopted = await withRegisterLock(fn, async () => {
+              const full = path.join(SCANNER_DIR, fn);
+              if (!fs.existsSync(full)) return null;
+              // Revalidar por si otro avistamiento lo adoptó mientras se esperaba el lock.
+              const already = await listFilesBySource('scanner', false).catch(() => []);
+              if (already.some(f => f.filename === fn)) return null;
+              const st = fs.statSync(full);
+              if (st.size > MAX_REGISTER_BYTES) return null;
+              const buf = fs.readFileSync(full);
+              if (validateFileContent(fn, buf)) return null;
+              await storeFileBuffer(fn, buf, { source: 'scanner', registered: false, sensitive: true, ownerEmployeeId: String(ownerEmployeeId) });
+              try { fs.unlinkSync(full); } catch {}
+              console.log(`[SCANNER] Archivo de disco '${fn}' adoptado por ${ownerEmployeeId}.`);
+              return { filename: fn, fileSize: buf.length, createdAt: new Date() };
+            }).catch(() => null);
+            if (adopted && !result.some(r => r.filename === fn)) result.push(adopted);
+            continue;
+          }
           const st = fs.statSync(path.join(SCANNER_DIR, fn));
           if (!result.some(r => r.filename === fn)) result.push({ filename: fn, fileSize: st.size, createdAt: st.mtime });
         }
@@ -4093,7 +4118,8 @@ app.get('/api/funcionario/gmail/callback', async (req, res) => {
 h2{margin:0 0 8px}.ok{color:#16a34a;font-weight:600}.hint{color:#666;font-size:13px}</style></head><body>
 <div class="card"><h2>Gmail vinculado</h2><p class="ok">Tu cuenta de Gmail quedó conectada.</p>
 <p class="hint">Vuelve al portal del funcionario y presiona <b>Sincronizar</b> para traer los correos con documentos.</p>
-<button class="btn" onclick="window.close()" style="margin-top:14px;background:#2563eb;color:#fff;border:0;padding:10px 18px;border-radius:6px;cursor:pointer">Cerrar</button>
+<button class="btn" id="btn-close" style="margin-top:14px;background:#2563eb;color:#fff;border:0;padding:10px 18px;border-radius:6px;cursor:pointer">Cerrar</button>
+<script nonce="${res.locals.cspNonce}">document.getElementById('btn-close').addEventListener('click',function(){window.close();});</script>
 </div></body></html>`);
   } catch (error) {
     console.error('Error al autorizar Gmail del funcionario:', error);
