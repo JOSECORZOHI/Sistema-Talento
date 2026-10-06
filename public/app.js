@@ -140,7 +140,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Botón para abrir EPSON Scan 2 (multifunción sin WIA: escanear a la bandeja)
+  // Botón para abrir el programa de escaneo (multifunción sin driver directo: escanear a la bandeja)
   const btnEpsonScan = document.getElementById('btn-portal-epson-scan');
   if (btnEpsonScan) {
     btnEpsonScan.addEventListener('click', async () => {
@@ -149,12 +149,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const res = await apiFetch('/api/scanner/launch-epson-scan', { method: 'POST' });
         const data = await res.json();
         if (!res.ok) {
-          showToast(data.error || 'Error al abrir EPSON Scan 2.', 'error');
+          showToast(data.error || 'Error al abrir el programa de escaneo.', 'error');
         } else {
-          showToast(data.message || 'EPSON Scan 2 abierto.', 'success');
+          showToast(data.message || 'Programa de escaneo abierto.', 'success');
         }
       } catch (e) {
-        showToast('Error de red al abrir EPSON Scan 2.', 'error');
+        showToast('Error de red al abrir el programa de escaneo.', 'error');
       } finally {
         btnEpsonScan.disabled = false;
       }
@@ -212,6 +212,8 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('form-upload-document').reset();
       const preview = document.getElementById('file-name-preview');
       if (preview) preview.textContent = 'Ningún archivo seleccionado';
+      const analyzeStatus = document.getElementById('upload-analyze-status');
+      if (analyzeStatus) analyzeStatus.style.display = 'none';
     });
   }
 
@@ -514,6 +516,54 @@ guardSubmit(document.getElementById('form-edit-document'), async (e) => {
   }
 });
 
+// Pre-análisis de subida manual: envía el archivo aún no registrado a
+// POST /api/documents/analyze-upload y sugiere tipo/categoría/fecha sin guardar.
+// Solo prellena los campos vacíos; el admin confirma antes de digitalizar.
+async function triggerUploadAnalysis() {
+  const fileInput = document.getElementById('upload-file');
+  const statusEl = document.getElementById('upload-analyze-status');
+  if (!fileInput || !fileInput.files || fileInput.files.length === 0) return;
+  const fillIfEmpty = (id, val) => {
+    const el = document.getElementById(id);
+    if (el && val && !el.value) el.value = val;
+  };
+  if (statusEl) {
+    statusEl.textContent = 'Analizando documento (puede tardar unos segundos)...';
+    statusEl.className = 'analyze-status busy';
+    statusEl.style.display = 'block';
+  }
+  try {
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    const response = await apiFetch('/api/documents/analyze-upload', { method: 'POST', body: formData });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data || !data.suggestions) {
+      if (statusEl) {
+        statusEl.textContent = (data && data.error) ? data.error : 'No se pudo analizar este documento.';
+        statusEl.className = 'analyze-status error';
+      }
+      return;
+    }
+    const s = data.suggestions;
+    fillIfEmpty('upload-type', s.documentTypeId);
+    fillIfEmpty('upload-category', s.categoryId);
+    fillIfEmpty('upload-issue-date', s.issueDate);
+    const descEl = document.getElementById('upload-description');
+    if (descEl && s.description && descEl.value.trim().length < 5) descEl.value = s.description;
+    if (statusEl) {
+      const parts = [s.documentTypeId, s.categoryId].filter(Boolean);
+      if (s.issueDate) parts.push('fecha ' + s.issueDate);
+      statusEl.textContent = 'Análisis completado' + (data.ocrUsed ? ' con OCR' : '') + (parts.length ? ': ' + parts.join(' · ') + '. Revise y confirme.' : '. Revise y confirme.');
+      statusEl.className = 'analyze-status done';
+    }
+  } catch (error) {
+    if (statusEl) {
+      statusEl.textContent = 'No se pudo analizar el documento.';
+      statusEl.className = 'analyze-status error';
+    }
+  }
+}
+
 // Formulario de subir documento
 let submittingUpload = false;
 document.getElementById('form-upload-document').addEventListener('submit', async (e) => {
@@ -554,6 +604,8 @@ document.getElementById('form-upload-document').addEventListener('submit', async
     showToast('Documento digitalizado y guardado con éxito.', 'success');
     e.target.reset();
     document.getElementById('file-name-preview').textContent = 'Ningún archivo seleccionado';
+    const uploadAnalyzeStatus = document.getElementById('upload-analyze-status');
+    if (uploadAnalyzeStatus) uploadAnalyzeStatus.style.display = 'none';
     await reloadAll();
   } catch (error) {
     console.error(error);
@@ -623,6 +675,9 @@ function setupEventListeners() {
 
   // Vista previa de estilo de arrastre de archivo (setupDragDrop en utils.js)
   setupDragDrop('file-drop-area', 'upload-file', 'file-name-preview');
+
+  // Pre-análisis de subida manual: sugiere tipo/categoría al elegir el archivo.
+  document.getElementById('upload-file')?.addEventListener('change', triggerUploadAnalysis);
 
   // Filtro de lista de empleados (Expedientes)
   document.getElementById('employee-search').addEventListener('input', renderEmployeeDirectory);

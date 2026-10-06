@@ -19,7 +19,6 @@ server_error.txt
 server_stdout.txt
 th_log*.txt
 sistema
-test-scanner.ps1
 _tmp_*
 *.orig
 *.bak

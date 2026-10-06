@@ -477,3 +477,14 @@ body.dark-theme .pending-notice {
   .portal-docs-grid { gap: 14px; }
   #portal-scanner-dot, #portal-scanner-dot-text { position: static; }
 }
+
+/* ---------- 17. ESTADO DE ANÁLISIS AUTOMÁTICO ---------- */
+.analyze-status {
+  font-size: 12px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  margin: 8px 0 0;
+}

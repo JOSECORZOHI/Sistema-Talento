@@ -53,9 +53,8 @@ const USAGE = [
   const requestedEmail = (arg('--email') || '').trim().toLowerCase();
   const providedPassword = arg('--password');
 
-  let db;
   try {
-    db = await dbmod.connect();
+    await dbmod.connect();
   } catch (e) {
     console.error('[RECOVERY] No se pudo conectar a la base de datos:', e.message);
     process.exit(1);

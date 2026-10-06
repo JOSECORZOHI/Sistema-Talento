@@ -75,6 +75,9 @@ document.addEventListener('DOMContentLoaded', () => {
   // Formulario de subida
   document.getElementById('form-portal-upload').addEventListener('submit', handlePortalUpload);
 
+  // Pre-análisis de subida manual: sugiere tipo/categoría al elegir el archivo.
+  document.getElementById('portal-upload-file')?.addEventListener('change', triggerPortalUploadAnalysis);
+
   // Área de arrastre (setupDragDrop en utils.js)
   setupDragDrop('portal-drop-area', 'portal-upload-file', 'portal-file-preview');
 
@@ -119,7 +122,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Botón para abrir EPSON Scan 2 (multifunción sin WIA: escanear a la bandeja)
+  // Botón para abrir el programa de escaneo (multifunción sin driver directo: escanear a la bandeja)
   const btnEpsonScan = document.getElementById('btn-portal-epson-scan');
   if (btnEpsonScan) {
     btnEpsonScan.addEventListener('click', async () => {
@@ -128,13 +131,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const res = await apiFetch('/api/scanner/launch-epson-scan', { method: 'POST' });
         const data = await res.json();
         if (res.ok) {
-          showToast(data.message || 'EPSON Scan 2 abierto.', 'success');
+          showToast(data.message || 'Programa de escaneo abierto.', 'success');
           await loadPortalData();
         } else {
-          showToast(data.error || 'Error al abrir EPSON Scan 2.', 'error');
+          showToast(data.error || 'Error al abrir el programa de escaneo.', 'error');
         }
       } catch (e) {
-        showToast('Error de red al abrir EPSON Scan 2.', 'error');
+        showToast('Error de red al abrir el programa de escaneo.', 'error');
       } finally {
         btnEpsonScan.disabled = false;
       }
@@ -579,6 +582,8 @@ async function handlePortalUpload(e) {
     showToast('Documento registrado exitosamente.', 'success');
     e.target.reset();
     document.getElementById('portal-file-preview').textContent = 'Ningún archivo seleccionado';
+    const portalAnalyzeStatus = document.getElementById('portal-upload-analyze-status');
+    if (portalAnalyzeStatus) portalAnalyzeStatus.style.display = 'none';
     portalShowTab('mis-docs');
     await loadPortalData();
   } catch (err) {
@@ -587,6 +592,87 @@ async function handlePortalUpload(e) {
     btn.disabled = false;
     btn.textContent = 'Enviar Documento';
     hideLoader();
+  }
+}
+
+// ============================================================
+// ANÁLISIS AUTOMÁTICO (texto → tipo/categoría/fecha/descripción)
+// Reutiliza POST /api/documents/analyze como el panel admin: solo
+// prellena los campos vacíos, el funcionario confirma antes de guardar.
+// ============================================================
+async function triggerPortalAnalysis(filename, folder, prefix) {
+  const statusEl = document.getElementById(prefix + '-analyze-status');
+  const fillIfEmpty = (id, val) => {
+    const el = document.getElementById(id);
+    if (el && val && !el.value) el.value = val;
+  };
+  if (statusEl) {
+    statusEl.textContent = 'Analizando documento (puede tardar unos segundos)...';
+    statusEl.style.display = 'block';
+  }
+  try {
+    const res = await apiFetch('/api/documents/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename, folder })
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data || !data.suggestions) {
+      if (statusEl) statusEl.textContent = (data && data.error) ? data.error : 'No se pudo analizar este documento.';
+      return;
+    }
+    const s = data.suggestions;
+    fillIfEmpty(prefix + '-reg-type', s.documentTypeId);
+    fillIfEmpty(prefix + '-reg-category', s.categoryId);
+    fillIfEmpty(prefix + '-reg-date', s.issueDate);
+    const descEl = document.getElementById(prefix + '-reg-desc');
+    if (descEl && s.description && descEl.value.trim().length < 5) descEl.value = s.description;
+    if (statusEl) {
+      const parts = [s.documentTypeId, s.categoryId].filter(Boolean);
+      if (s.issueDate) parts.push('fecha ' + s.issueDate);
+      statusEl.textContent = 'Análisis completado' + (data.ocrUsed ? ' con OCR' : '') + (parts.length ? ': ' + parts.join(' · ') + '. Revise y confirme.' : '. Revise y confirme.');
+    }
+  } catch (err) {
+    if (statusEl) statusEl.textContent = 'No se pudo analizar el documento.';
+  }
+}
+
+// Pre-análisis de subida manual: envía el archivo aún no registrado a
+// POST /api/documents/analyze-upload y sugiere los metadatos sin guardar nada.
+async function triggerPortalUploadAnalysis() {
+  const fileInput = document.getElementById('portal-upload-file');
+  const statusEl = document.getElementById('portal-upload-analyze-status');
+  if (!fileInput || !fileInput.files || fileInput.files.length === 0) return;
+  const fillIfEmpty = (id, val) => {
+    const el = document.getElementById(id);
+    if (el && val && !el.value) el.value = val;
+  };
+  if (statusEl) {
+    statusEl.textContent = 'Analizando documento (puede tardar unos segundos)...';
+    statusEl.style.display = 'block';
+  }
+  try {
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    const res = await apiFetch('/api/documents/analyze-upload', { method: 'POST', body: formData });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data || !data.suggestions) {
+      if (statusEl) statusEl.textContent = (data && data.error) ? data.error : 'No se pudo analizar este documento.';
+      return;
+    }
+    const s = data.suggestions;
+    fillIfEmpty('portal-upload-type', s.documentTypeId);
+    fillIfEmpty('portal-upload-category', s.categoryId);
+    fillIfEmpty('portal-upload-date', s.issueDate);
+    const descEl = document.getElementById('portal-upload-desc');
+    if (descEl && s.description && descEl.value.trim().length < 5) descEl.value = s.description;
+    if (statusEl) {
+      const parts = [s.documentTypeId, s.categoryId].filter(Boolean);
+      if (s.issueDate) parts.push('fecha ' + s.issueDate);
+      statusEl.textContent = 'Análisis completado' + (data.ocrUsed ? ' con OCR' : '') + (parts.length ? ': ' + parts.join(' · ') + '. Revise y confirme.' : '. Revise y confirme.');
+    }
+  } catch (err) {
+    if (statusEl) statusEl.textContent = 'No se pudo analizar el documento.';
   }
 }
 
@@ -601,6 +687,8 @@ window.openRegisterScanner = function(filename) {
   document.getElementById('scanner-reg-date').value = new Date().toISOString().split('T')[0];
   document.getElementById('scanner-reg-desc').value = '';
   openModal('modal-register-scanner');
+  // Análisis automático: sugiere tipo, categoría, fecha y descripción.
+  triggerPortalAnalysis(filename, 'scanner', 'scanner');
 };
 
 let submittingScannerReg = false;
@@ -647,6 +735,8 @@ window.openRegisterEmail = function(emailId, filename) {
   document.getElementById('email-reg-date').value = new Date().toISOString().split('T')[0];
   document.getElementById('email-reg-desc').value = '';
   openModal('modal-register-email');
+  // Análisis automático: sugiere tipo, categoría, fecha y descripción.
+  triggerPortalAnalysis(filename, 'gmail', 'email');
 };
 
 let submittingEmailReg = false;
@@ -812,7 +902,10 @@ async function refreshPortalScannerStatus() {
     }
 
     const btnEpsonScan = document.getElementById('btn-portal-epson-scan');
-    if (btnEpsonScan) btnEpsonScan.style.display = epsonScanAvailable ? 'inline-flex' : 'none';
+    if (btnEpsonScan) {
+      btnEpsonScan.style.display = epsonScanAvailable ? 'inline-flex' : 'none';
+      if (epsonScanAvailable && data.scanProgramLabel) btnEpsonScan.textContent = data.scanProgramLabel;
+    }
 
     if (deviceList) {
       if (!isConnected) {

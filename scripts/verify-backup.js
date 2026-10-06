@@ -2,14 +2,14 @@
 
 // Prueba de restauración de un backup.
 //
-// Toma un backup generado por scripts/backup.ps1 (carpeta o .gz), lo restaura en
+// Toma un backup generado por scripts/backup.js (carpeta o .tar.gz), lo restaura en
 // una base de datos TEMPORAL ("<db>_restore_test_<timestamp>") con mongorestore y
 // compara el número de documentos de cada colección contra el manifiesto
 // counts.json que el backup dejó guardado. Al terminar elimina la base temporal.
 //
 // Uso:
-//   node scripts/verify-backup.js                       -> usa el backup .gz más reciente
-//   node scripts/verify-backup.js --backup backups/20260917_120000.gz
+//   node scripts/verify-backup.js                       -> usa el backup .tar.gz más reciente
+//   node scripts/verify-backup.js --backup backups/20260917_120000.tar.gz
 //   node scripts/verify-backup.js --backup backups/20260917_120000 --keep-scratch
 //
 // Códigos de salida: 0 = verificación OK, 1 = fallo, 2 = error de uso/entorno.

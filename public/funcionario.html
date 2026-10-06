@@ -574,6 +574,7 @@
               <label for="portal-upload-desc">Descripción (Opcional)</label>
               <textarea id="portal-upload-desc" rows="3" placeholder="Ej: Certificado de EPS vigente..."></textarea>
             </div>
+            <p class="analyze-status" id="portal-upload-analyze-status" style="display:none"></p>
             <button type="submit" class="btn-submit-upload" id="btn-portal-submit-upload">Enviar Documento</button>
           </form>
         </div>
@@ -593,7 +594,7 @@
           <input type="text" id="input-scan-filename" aria-label="Nombre del documento a escanear" placeholder="Nombre del documento" style="padding:6px 10px;font-size:12px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);width:auto;flex:1 1 180px;min-width:150px;" />
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <button class="btn btn-primary" id="btn-portal-scan" style="padding:8px 18px;font-size:13px;">Escanear Documento</button>
-            <button class="btn btn-secondary" id="btn-portal-epson-scan" style="font-size:12px;padding:8px 14px;display:none;" title="Abrir EPSON Scan 2: escanee y guarde el PDF en la bandeja de escáner para registrarlo">EPSON Scan 2</button>
+            <button class="btn btn-secondary" id="btn-portal-epson-scan" style="font-size:12px;padding:8px 14px;display:none;" title="Abrir el programa de escaneo: escanee y guarde el PDF en la bandeja de escáner para registrarlo">Programa de escaneo</button>
             <button class="btn btn-secondary" id="btn-portal-refresh-scanners" style="font-size:12px;padding:8px 14px;">🔄 Actualizar lista</button>
           </div>
         </div>
@@ -699,6 +700,7 @@
             <label for="scanner-reg-desc">Descripción (Opcional)</label>
             <textarea id="scanner-reg-desc" rows="2" placeholder="Ej: Documento escaneado..."></textarea>
           </div>
+          <p class="analyze-status" id="scanner-analyze-status" style="display:none"></p>
           <button type="submit" class="btn-submit-upload">Registrar Documento</button>
         </form>
       </div>
@@ -737,6 +739,7 @@
             <label for="email-reg-desc">Descripción (Opcional)</label>
             <textarea id="email-reg-desc" rows="2" placeholder="Ej: Adjunto de correo..."></textarea>
           </div>
+          <p class="analyze-status" id="email-analyze-status" style="display:none"></p>
           <button type="submit" class="btn-submit-upload">Registrar Adjunto</button>
         </form>
       </div>

@@ -12,7 +12,7 @@ segura en producción.
 
 1. Acceder al proyecto: `railway link`.
 2. Confirmar el estado de producción antes de empezar:
-   ```powershell
+   ```bash
    railway run curl -s https://sistema-talento-production.up.railway.app/api/health
    ```
    Debe responder `200`.
@@ -20,11 +20,11 @@ segura en producción.
 ## 2. Respaldo de seguridad
 
 1. Backup completo de la base y de GridFS con verificación incluida:
-   ```powershell
+   ```bash
    npm run backup
    ```
 2. Comprobar que el `counts.json` del backup coincide con los conteos actuales:
-   ```powershell
+   ```bash
    npm run backup:verify
    ```
 3. Anotar la fecha/hora y la colección de documentos. No sobrescribir este
@@ -37,12 +37,12 @@ temporal y, al terminar, renombra los archivos. Así una interrupción a mitad
 no deja documentos a medio descifrar bajo el nombre final.
 
 1. Generar la clave nueva:
-   ```powershell
+   ```bash
    node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
    ```
 2. Ejecutar la reencripción con la clave nueva:
-   ```powershell
-   setx DOC_ENC_KEY "<clave_nueva_hex>"   # solo terminal local; la final va en Railway
+   ```bash
+   export DOC_ENC_KEY="<clave_nueva_hex>"   # solo terminal local; la final va en Railway
    npm run reencrypt
    ```
 3. Si el proceso falla a mitad, se puede reintentar: los archivos temporales se
@@ -55,7 +55,7 @@ no deja documentos a medio descifrar bajo el nombre final.
    nueva.
 2. Reiniciar el despliegue (Deploy → Restart o `railway up --restart`).
 3. Verificar:
-   ```powershell
+   ```bash
    railway run curl -s https://sistema-talento-production.up.railway.app/api/health
    railway deployment list
    ```
@@ -75,7 +75,7 @@ no deja documentos a medio descifrar bajo el nombre final.
 1. Restaurar `DOC_ENC_KEY` anterior en Railway y reiniciar.
 2. Si la reencripción dejó archivos a medio renombrar y los documentos no se
   leen, restaurar desde el backup tomado en el paso 2:
-   ```powershell
+   ```bash
    npm run backup:verify   # verificar la integridad del respaldo elegido
    mongorestore --nsFrom "th_restore_*.*" --nsTo "<db>.*" <carpeta_del_dump>
    ```

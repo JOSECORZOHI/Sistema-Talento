@@ -9,7 +9,9 @@ const hpp = require('hpp');
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
-const { exec, spawn } = require('child_process');
+const { exec, execFile, spawn } = require('child_process');
+const net = require('net');
+const http = require('http');
 const os = require('os');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -75,7 +77,7 @@ const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const MAX_REGISTER_BYTES = 50 * 1024 * 1024;
 // La persistencia de archivos del sistema vive en GridFS (colección 'documentos'
 // de MongoDB). La única carpeta local intencional es la del escáner, que opera en
-// una máquina Windows con la multifunción conectada (WIA/COM). Las antiguas
+// una máquina Linux con el escáner conectado (SANE). Las antiguas
 // bandejas locales 'storage/documentos' y 'storage/gmail_adjuntos' se eliminaron:
 // eran de solo lectura, no aportaban valor en producción (filesystem efímero en
 // Railway) y nada las alimentaba por la web; todo el contenido va a GridFS.
@@ -956,7 +958,7 @@ const ROLES = {
   admin: {
     permissions: [
       'employees.create', 'employees.read', 'employees.update', 'employees.delete', 'employees.suspend', 'employees.reactivate',
-      'documents.create', 'documents.read', 'documents.update', 'documents.delete',
+      'documents.create', 'documents.read', 'documents.update', 'documents.delete', 'documents.analyze',
       'audit.read', 'config.manage',
       'scanner.manage', 'scanner.read', 'scanner.refresh', 'scanner.scan',
       'email.manage',
@@ -967,6 +969,7 @@ const ROLES = {
     permissions: [
       'scanner.read', 'scanner.refresh', 'scanner.scan',
       'email.read', 'email.sync',
+      'documents.analyze',
       'deletion.create'
     ]
   }
@@ -2702,12 +2705,30 @@ app.patch('/api/deletion-requests/:id/reject', authMiddleware, requirePermission
 });
 
 // --- ANÁLISIS DE DOCUMENTO (OCR + sugerencias) ---
-app.post('/api/documents/analyze', authMiddleware, requirePermission('documents.create'), async (req, res) => {
+app.post('/api/documents/analyze', authMiddleware, requireAnyPermission('documents.create', 'documents.analyze'), async (req, res) => {
   const { filename, folder } = req.body || {};
   if (!filename) return res.status(400).json({ error: 'Se requiere el nombre del archivo.' });
   const targetFilename = String(filename);
   if (!isAllowedFile(targetFilename)) {
     return res.status(400).json({ error: 'Formato de archivo no soportado para análisis.' });
+  }
+
+  // Aislamiento para funcionarios: solo pueden analizar archivos de su propia
+  // bandeja (escáner o correo sugerido). El admin no tiene restricción.
+  if (req.user.role === 'funcionario') {
+    const empId = req.user.employeeId;
+    if (folder === 'scanner') {
+      if (!(await isFileInScannerTray(targetFilename, empId))) {
+        return res.status(403).json({ error: 'No tiene permisos para analizar este archivo.' });
+      }
+    } else if (folder === 'gmail' || folder === 'email') {
+      const ownEmail = await col('emailsInbox').findOne({ 'attachments.filename': targetFilename });
+      if (!ownEmail || (ownEmail.suggestedEmployeeId !== empId && ownEmail.inboxOwner !== empId)) {
+        return res.status(403).json({ error: 'No tiene permisos para analizar este adjunto.' });
+      }
+    } else {
+      return res.status(403).json({ error: 'Solo puede analizar archivos de su escáner o correo.' });
+    }
   }
 
   // Reutiliza la constante global MAX_UPLOAD_BYTES (25MB) para que multer,
@@ -2763,6 +2784,32 @@ app.post('/api/documents/analyze', authMiddleware, requirePermission('documents.
     res.json(result);
   } catch (e) {
     console.error('[ANALYZE] Error al analizar el documento:', e.message);
+    res.status(422).json({ error: 'No se pudo analizar el documento.' });
+  }
+});
+
+// Pre-análisis de subida manual: recibe el archivo aún no registrado (multipart
+// en memoria), valida su contenido y devuelve las sugerencias de clasificación
+// sin persistir nada. Sirve al formulario de subida del admin y del portal.
+app.post('/api/documents/analyze-upload', authMiddleware, requireAnyPermission('documents.create', 'documents.analyze'), uploadLimiter, upload.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No se proporcionó ningún archivo o el formato no es válido.' });
+  const contentErr = validateFileContent(req.file.originalname, req.file.buffer);
+  if (contentErr) return res.status(400).json({ error: contentErr });
+
+  let employees = [];
+  try {
+    employees = await col('employees').find({}, { projection: { id: 1, name: 1, lastName: 1, identification: 1 } }).limit(2000).toArray();
+  } catch (e) {
+    console.warn('[ANALYZE-UPLOAD] No se pudieron cargar los empleados para sugerir:', e.message);
+  }
+
+  try {
+    const result = await analyzeFile(req.file.buffer, req.file.originalname, { employees });
+    if (!result) return res.status(422).json({ error: 'No se pudo extraer información del documento.' });
+    console.log(`[ANALYZE-UPLOAD] '${req.file.originalname}' por ${req.user.email}: type=${result.suggestions.documentTypeId} cat=${result.suggestions.categoryId} ocr=${result.ocrUsed}`);
+    res.json(result);
+  } catch (e) {
+    console.error('[ANALYZE-UPLOAD] Error al analizar el documento:', e.message);
     res.status(422).json({ error: 'No se pudo analizar el documento.' });
   }
 });
@@ -2943,6 +2990,10 @@ app.get('/api/scanner-files', authMiddleware, requirePermission('scanner.read'),
 });
 
 // --- ESTADO DEL ESCÁNER (Detección USB + Red + Monitoreo de bandeja) ---
+// Plataforma: en Windows se usa PowerShell (WIA/PnP); en Linux se usa SANE
+// (`scanimage`, paquete sane-utils), CUPS (`lpstat`) y sondeo TCP en Node.
+const IS_WINDOWS = process.platform === 'win32';
+
 function runPs(cmd, timeoutMs = 20000) {
   return new Promise((resolve) => {
     const full = `$ProgressPreference='SilentlyContinue';${cmd}`;
@@ -2957,7 +3008,54 @@ function runPs(cmd, timeoutMs = 20000) {
   });
 }
 
+// Ejecuta un binario con argumentos, sin shell: el primer argumento es el
+// programa y el resto su lista argv, sin interpolación. Resuelve stdout o ''.
+function runBin(program, args = [], timeoutMs = 20000) {
+  return new Promise((resolve) => {
+    execFile(program, args, { timeout: timeoutMs, encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 },
+      (error, stdout) => {
+        if (error && !stdout) {
+          if (error.code !== 'ENOENT') console.warn(`Error ejecutando ${program}:`, error.message);
+          return resolve('');
+        }
+        resolve((stdout || '').trim());
+      });
+  });
+}
+
+let scanimageWarned = false;
+function requireScanimage() {
+  return runBin('sh', ['-c', 'command -v scanimage']).then(p => {
+    if (!p && !scanimageWarned) {
+      scanimageWarned = true;
+      console.warn('[SCANNER] scanimage no encontrado. Instale sane-utils (`sudo apt install sane-utils`) para detectar y usar el escáner en Linux.');
+    }
+    return !!p;
+  });
+}
+
 async function detectUsbScanners() {
+  // Linux: SANE enumera USB y red (`scanimage -L`).
+  if (!IS_WINDOWS) {
+    if (!(await requireScanimage())) return [];
+    const raw = await runBin('scanimage', ['-L']);
+    if (!raw) return [];
+    const out = [];
+    // Formato: device `backend:nombre' is a FABRICANTE MODELO tipo
+    for (const line of raw.split('\n')) {
+      const m = line.match(/^device\s+`([^']+)'\s+is\s+a\s+(.+)$/);
+      if (!m) continue;
+      out.push({
+        name: m[2].trim(),
+        type: /net/i.test(m[1]) ? 'Red' : 'USB',
+        status: 'Conectado',
+        manufacturer: '',
+        device: m[1].trim(),
+        icon: '🔌'
+      });
+    }
+    return out;
+  }
   const raw = await runPs(`
     $scanners = @()
 
@@ -3027,35 +3125,47 @@ function getLocalSubnet() {
 
 async function detectNetworkScanners() {
   const subnet = getLocalSubnet();
-  const raw = await runPs(`
-    $subnet = '${subnet}';
-    $results = @();
-    for ($i = 1; $i -le 20; $i++) {
-      $ip = "$subnet.$i";
-      try {
-        $tcp = New-Object System.Net.Sockets.TcpClient;
-        $async = $tcp.BeginConnect($ip, 9100, $null, $null);
-        $wait = $async.AsyncWaitHandle.WaitOne(400, $false);
-        if ($wait -and $tcp.Connected) { $results += "$ip:9100:OPEN" }
-        $tcp.Close();
-      } catch {}
-    }
-    $results -join [System.Environment]::NewLine
-  `);
+
+  // Sondeo TCP puerto 9100 en Node (multiplataforma). Primeros 20 hosts,
+  // 400 ms por intento, concurrencia acotada.
+  const probe = (ip) => new Promise((resolve) => {
+    const socket = new net.Socket();
+    let done = false;
+    const finish = (open) => {
+      if (done) return;
+      done = true;
+      try { socket.destroy(); } catch {}
+      resolve(open ? { ip, port: 9100 } : null);
+    };
+    socket.setTimeout(400);
+    socket.once('connect', () => finish(true));
+    socket.once('timeout', () => finish(false));
+    socket.once('error', () => finish(false));
+    try { socket.connect(9100, ip); } catch { finish(false); }
+  });
 
   const openHosts = [];
-  if (raw) {
-    raw.split('\n').forEach(line => {
-      const match = line.trim().match(/^([\d.]+):(\d+):OPEN$/);
-      if (match) openHosts.push({ ip: match[1], port: parseInt(match[2]) });
-    });
+  for (let base = 1; base <= 20; base += 10) {
+    const batch = [];
+    for (let i = base; i < base + 10 && i <= 20; i++) batch.push(probe(`${subnet}.${i}`));
+    for (const host of await Promise.all(batch)) {
+      if (host) openHosts.push(host);
+    }
   }
 
+  // Nombre del equipo vía cabecera HTTP Server (1 s de espera).
+  const fetchName = (host) => new Promise((resolve) => {
+    const req = http.get({ host: host.ip, port: host.port, path: '/', timeout: 1000 }, (res) => {
+      const name = res.headers && res.headers.server;
+      res.resume();
+      resolve(name || `Escáner de Red (${host.ip})`);
+    });
+    req.once('timeout', () => { try { req.destroy(); } catch {} resolve(`Escáner de Red (${host.ip})`); });
+    req.once('error', () => resolve(`Escáner de Red (${host.ip})`));
+  });
+
   const scanners = [];
-  const names = await Promise.all(openHosts.map(async (host) => {
-    const nameRaw = await runPs(`try { $r = Invoke-WebRequest -Uri "http://${host.ip}:9100" -TimeoutSec 1 -UseBasicParsing -ErrorAction SilentlyContinue; $r.Headers['Server'] } catch {}`);
-    return nameRaw || `Escáner de Red (${host.ip})`;
-  }));
+  const names = await Promise.all(openHosts.map(fetchName));
   openHosts.forEach((host, i) => {
     scanners.push({
       name: names[i],
@@ -3070,6 +3180,29 @@ async function detectNetworkScanners() {
 }
 
 async function detectPrintersWithScanners() {
+  // Linux: impresoras CUPS (`lpstat -v`). Solo se listan las que parecen
+  // multifuncionales (nombre con scan/mfp/multi/fax).
+  if (!IS_WINDOWS) {
+    const raw = await runBin('lpstat', ['-v']);
+    if (!raw) return [];
+    const out = [];
+    for (const line of raw.split('\n')) {
+      const m = line.match(/^device for ([^:]+):\s*(\S+)/);
+      if (!m) continue;
+      const name = m[1];
+      const uri = m[2].toLowerCase();
+      if (!/scan|mfp|multi|fax|all.in.one/i.test(name)) continue;
+      out.push({
+        name,
+        type: uri.startsWith('usb:') || uri.startsWith('hp:') ? 'USB' : 'Red',
+        status: 'Conectado',
+        port: m[2],
+        driver: '',
+        icon: '🖨️'
+      });
+    }
+    return out;
+  }
   const raw = await runPs(`
     $scanners = @()
     try {
@@ -3127,25 +3260,41 @@ const SCANNER_CACHE_MS = 20000;
 let scannerRefreshRunning = false;
 let scanInProgress = false;
 
-// Ubica el launcher de EPSON Scan 2 (impresoras multifunción sin driver WIA de escáner).
+// Ubica el programa de escaneo asistido (multifunción sin driver directo).
+// Windows: EPSON Scan 2. Linux: utilidades SANE/gráficas en el PATH.
 // Se cachea porque la búsqueda es determinista y el costo es de una sola vez.
-let epsonScanLauncher = null;
-let epsonScanLauncherChecked = false;
-function findEpsonScanLauncher() {
-  if (epsonScanLauncherChecked) return epsonScanLauncher;
-  epsonScanLauncherChecked = true;
-  const candidates = [
-    path.join(process.env.ProgramFiles || 'C:\\Program Files', 'EPSON', 'Epson Scan 2', 'Core', 'es2launcher.exe'),
-    path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'EPSON', 'Epson Scan 2', 'Core', 'es2launcher.exe')
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(c)) { epsonScanLauncher = c; break; }
+// Devuelve { cmd, label } o null.
+let scanProgram = null;
+let scanProgramChecked = false;
+async function findScanProgram() {
+  if (scanProgramChecked) return scanProgram;
+  scanProgramChecked = true;
+  if (IS_WINDOWS) {
+    const candidates = [
+      path.join(process.env.ProgramFiles || 'C:\\Program Files', 'EPSON', 'Epson Scan 2', 'Core', 'es2launcher.exe'),
+      path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'EPSON', 'Epson Scan 2', 'Core', 'es2launcher.exe')
+    ];
+    for (const c of candidates) {
+      if (fs.existsSync(c)) { scanProgram = { cmd: c, label: 'EPSON Scan 2' }; break; }
+    }
+    return scanProgram;
   }
-  return epsonScanLauncher;
+  const linuxCandidates = [
+    ['epsonscan2', 'Epson Scan 2'],
+    ['imagescan', 'Image Scan'],
+    ['simple-scan', 'Simple Scan'],
+    ['xsane', 'XSane'],
+    ['skanlite', 'Skanlite']
+  ];
+  for (const [bin, label] of linuxCandidates) {
+    const found = await runBin('sh', ['-c', `command -v ${bin}`]);
+    if (found) { scanProgram = { cmd: found.split('\n')[0].trim(), label }; break; }
+  }
+  return scanProgram;
 }
 
 // Refresco en segundo plano: no bloquea el event loop durante la detección
-// (detectAllScanners ejecuta PowerShell/consultas de red de forma síncrona).
+// (sondeo de red y consultas al sistema).
 function refreshScannerCacheAsync() {
   if (scannerRefreshRunning) return;
   if ((Date.now() - lastScanCheck) <= SCANNER_CACHE_MS) return;
@@ -3159,13 +3308,14 @@ function refreshScannerCacheAsync() {
 app.get('/api/scanner/status', authMiddleware, requirePermission('scanner.read'), async (req, res) => {
   const now = Date.now();
   const stale = (now - lastScanCheck) > SCANNER_CACHE_MS;
-  // Refresco siempre en segundo plano: la detección ejecuta PowerShell síncrono
-  // (escaneo de red) y no debe bloquear el event loop.
+  // Refresco siempre en segundo plano: la detección (sondeo de red y
+  // consultas al sistema) no debe bloquear el event loop.
   if (stale) refreshScannerCacheAsync();
 
   const trayFiles = await getScannerFiles(req.user.employeeId);
 
   const connected = cachedScanners.length > 0;
+  const prog = await findScanProgram();
 
   res.json({
     connected,
@@ -3174,7 +3324,8 @@ app.get('/api/scanner/status', authMiddleware, requirePermission('scanner.read')
     networkCount: cachedScanners.filter(s => s.type === 'Red').length,
     trayCount: trayFiles.length,
     trayFiles,
-    epsonScanAvailable: !!findEpsonScanLauncher(),
+    epsonScanAvailable: !!prog,
+    scanProgramLabel: prog ? prog.label : null,
     subnet: hasPermission(req.user.role, 'scanner.manage') ? getLocalSubnet() : null,
     lastChecked: new Date(lastScanCheck).toISOString()
   });
@@ -3188,7 +3339,75 @@ app.post('/api/scanner/refresh', authMiddleware, requireAnyPermission('scanner.m
   res.json({ message: 'Actualización de escáneres iniciada. El estado se actualizará en unos segundos.', scanners: cachedScanners, count: cachedScanners.length, refreshing: true });
 });
 
+// Escaneo en Linux vía SANE (`scanimage`, paquete sane-utils).
+// Flujo: scanimage (PNG 200 dpi) → PDF con pdfkit → GridFS. Sin shell:
+// el binario y sus argumentos van separados (execFile), y el nombre del
+// archivo pasa por la misma allowlist que en Windows.
+async function scanWithSane(customName, ownerEmployeeId) {
+  const timestamp = Date.now();
+  let baseName = String((customName || `Escaner_Folio_${timestamp}_${crypto.randomBytes(3).toString('hex')}`))
+    .replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ _.-]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^[.\-]+|[.\-]+$/g, '')
+    .substring(0, 150);
+  if (!baseName || baseName === '') baseName = `Escaner_Folio_${timestamp}_${crypto.randomBytes(3).toString('hex')}`;
+  let pdfBase = `${baseName}.pdf`;
+  const trayNames = new Set((await getScannerFiles()).map(f => f.filename));
+  if (trayNames.has(pdfBase)) {
+    pdfBase = `${baseName}_${crypto.randomBytes(4).toString('hex')}.pdf`;
+  }
+
+  if (!(await requireScanimage())) {
+    return 'ERROR:scanimage no está instalado. Ejecute `sudo apt install sane-utils` y verifique con `scanimage -L`.';
+  }
+  let device = null;
+  const devList = await runBin('scanimage', ['-L']);
+  const devMatch = devList.match(/^device\s+`([^']+)'/m);
+  if (devMatch) device = devMatch[1].trim();
+  if (!device) return 'ERROR:Ningún escáner SANE disponible. Verifique que esté encendido y conectado (`scanimage -L`).';
+
+  const tempPng = path.join(os.tmpdir(), `_sane_${timestamp}_${crypto.randomBytes(4).toString('hex')}.png`);
+  const scanArgs = ['--format=png', '--resolution=200', '-d', device, '-o', tempPng];
+  const scanned = await new Promise((resolve) => {
+    execFile('scanimage', scanArgs, { timeout: 120000, maxBuffer: 64 * 1024 * 1024 }, (error) => {
+      if (error) {
+        console.warn('[SCANNER] scanimage falló:', error.message);
+        return resolve(false);
+      }
+      resolve(fs.existsSync(tempPng));
+    });
+  });
+  if (!scanned) return 'ERROR:No se pudo completar el escaneo con SANE.';
+  try {
+    const pngBuffer = fs.readFileSync(tempPng);
+    try { fs.unlinkSync(tempPng); } catch {}
+    const pdfBuffer = await new Promise((resolve, reject) => {
+      const chunks = [];
+      const doc = new PDFDocument({ autoFirstPage: false });
+      doc.on('data', chunk => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+      const img = doc.openImage(pngBuffer);
+      doc.addPage({ size: [img.width, img.height] });
+      doc.image(img, 0, 0, { width: img.width, height: img.height });
+      doc.end();
+    });
+    await storeFileBuffer(pdfBase, pdfBuffer, {
+      source: 'scanner', registered: false, sensitive: true,
+      ...(ownerEmployeeId ? { ownerEmployeeId } : {})
+    });
+    return pdfBase;
+  } catch (e) {
+    console.warn('[SCANNER] Error convirtiendo escaneo SANE a PDF:', e.message);
+    try { fs.unlinkSync(tempPng); } catch {}
+    return 'ERROR:' + e.message;
+  }
+}
+
 async function scanWithScanner(customName, ownerEmployeeId) {
+  // Linux: SANE. Windows: WIA (COM).
+  if (!IS_WINDOWS) return scanWithSane(customName, ownerEmployeeId);
   const escapedDir = SCANNER_DIR.replace(/\\/g, '\\\\');
   const timestamp = Date.now();
   // Nombre base único: el sufijo aleatorio evita colisiones de archivos en la bandeja
@@ -3307,18 +3526,18 @@ app.post('/api/scanner/scan', authMiddleware, requireAnyPermission('scanner.mana
 
 app.post('/api/scanner/launch-epson-scan', authMiddleware, requireAnyPermission('scanner.manage', 'scanner.scan'), scannerLimiter, async (req, res) => {
   try {
-    const launcher = findEpsonScanLauncher();
-    if (!launcher) {
-      return res.status(404).json({ error: 'EPSON Scan 2 no está instalado en este equipo.' });
+    const prog = await findScanProgram();
+    if (!prog) {
+      return res.status(404).json({ error: 'No hay programa de escaneo instalado en este equipo (Linux: instale sane-utils o simple-scan).' });
     }
-    const child = spawn(launcher, [], { detached: true, stdio: 'ignore' });
-    child.on('error', err => console.warn('Error abriendo EPSON Scan 2:', err.message));
+    const child = spawn(prog.cmd, [], { detached: true, stdio: 'ignore' });
+    child.on('error', err => console.warn(`Error abriendo ${prog.label}:`, err.message));
     child.unref();
-    await addAuditLog('Escáner Real', 'Se abrió EPSON Scan 2 para escanear a la bandeja.', req.user.name || 'Sistema', getClientIp(req));
-    res.json({ ok: true, message: 'EPSON Scan 2 abierto. Configure la salida en bandeja_escaner y registre el PDF desde la bandeja.' });
+    await addAuditLog('Escáner Real', `Se abrió ${prog.label} para escanear a la bandeja.`, req.user.name || 'Sistema', getClientIp(req));
+    res.json({ ok: true, message: `${prog.label} abierto. Configure la salida en bandeja_escaner y registre el PDF desde la bandeja.` });
   } catch (e) {
-    console.error('[SCAN] Error abriendo EPSON Scan 2:', e.message);
-    res.status(500).json({ error: 'Error al abrir EPSON Scan 2.' });
+    console.error('[SCAN] Error abriendo programa de escaneo:', e.message);
+    res.status(500).json({ error: 'Error al abrir el programa de escaneo.' });
   }
 });
 

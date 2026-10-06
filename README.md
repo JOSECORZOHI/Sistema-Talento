@@ -16,10 +16,10 @@ Aplicativo web para registrar, clasificar, consultar y hacer seguimiento a los d
 
 Requiere Node.js 18 o superior y una instancia MongoDB accesible.
 
-```powershell
-npm.cmd install
+```bash
+npm install
 # Copie .env.example a .env y complete DATABASE_URL y JWT_SECRET.
-npm.cmd start
+npm start
 ```
 
 Abra `http://localhost:3000`. Para depurar desde VS Code, ejecute primero el servidor y luego use la configuración **Iniciar Chrome para localhost**.
@@ -31,7 +31,7 @@ La configuración se lee de `.env` (ver `.env.example`). `JWT_SECRET` es obligat
 - Base de datos remota en MongoDB (`DATABASE_URL`): usuarios, funcionarios, catálogos, metadatos de documentos y auditoría.
 - Los **archivos** (PDFs cargados, adjuntos de correo y documentos escaneados al registrarse) se almacenan en **GridFS** dentro de MongoDB (`documentos.files`/`documentos.chunks`).
 - `database.json`: solo datos de referencia para la primera carga en la base remota.
-- `bandeja_escaner/`: carpeta local donde la multifunción (EPSON Scan 2 / WIA) deja los PDFs escaneados pendientes de clasificar. Es la única carpeta local del sistema y solo aplica en una máquina Windows con el escáner conectado.
+- `bandeja_escaner/`: carpeta local donde el programa de escaneo (SANE/simple-scan) deja los PDFs escaneados pendientes de clasificar. Es la única carpeta local del sistema y solo aplica en una máquina Linux con el escáner conectado.
 - `public/`: interfaz web.
 
 El sistema incluye catálogos y usuarios de ejemplo para facilitar la capacitación inicial. Sustitúyalos por los datos institucionales antes del despliegue.
@@ -54,11 +54,11 @@ Opcionalmente, puede restringir el dominio de correo permitido configurando `ALL
 
 Habilite Gmail API en Google Cloud y configure estas variables antes de iniciar el servidor:
 
-```powershell
-$env:GMAIL_CLIENT_ID="..."
-$env:GMAIL_CLIENT_SECRET="..."
-$env:GMAIL_REDIRECT_URI="http://localhost:3000/api/gmail/oauth2callback"
-$env:GMAIL_REFRESH_TOKEN="..."
+```bash
+export GMAIL_CLIENT_ID="..."
+export GMAIL_CLIENT_SECRET="..."
+export GMAIL_REDIRECT_URI="http://localhost:3000/api/gmail/oauth2callback"
+export GMAIL_REFRESH_TOKEN="..."
 ```
 
 Abra `/api/gmail/authorize` para autorizar la cuenta. Después, use la opción de sincronización en la bandeja de correo para descargar PDFs adjuntos. Los adjuntos se guardan en GridFS y quedan pendientes de registrar. Si el remitente coincide con el correo de un funcionario, se sugiere automáticamente al registrar.
@@ -72,7 +72,7 @@ Abra `/api/gmail/authorize` para autorizar la cuenta. Después, use la opción d
 - Comandos de calidad y prueba: `npm test` (pruebas con `node:test`) y `npm run lint` (ESLint).
 - Mantenga el acceso al equipo y a las credenciales de Gmail restringido a personal autorizado.
 - Verifique que los PDFs se puedan abrir y que sus metadatos correspondan al expediente antes de archivarlos.
-- Para actualizar dependencias, pruebe primero en un entorno de desarrollo y ejecute `npm.cmd audit`.
+- Para actualizar dependencias, pruebe primero en un entorno de desarrollo y ejecute `npm audit`.
 
 ## Cumplimiento legal y estándares
 

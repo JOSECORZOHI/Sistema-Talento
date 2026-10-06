@@ -290,7 +290,10 @@ async function refreshScannerStatus() {
     }
 
     const btnEpsonScan = document.getElementById('btn-portal-epson-scan');
-    if (btnEpsonScan) btnEpsonScan.style.display = epsonScanAvailable ? 'inline-flex' : 'none';
+    if (btnEpsonScan) {
+      btnEpsonScan.style.display = epsonScanAvailable ? 'inline-flex' : 'none';
+      if (epsonScanAvailable && data.scanProgramLabel) btnEpsonScan.textContent = data.scanProgramLabel;
+    }
 
     if (!list) return;
 

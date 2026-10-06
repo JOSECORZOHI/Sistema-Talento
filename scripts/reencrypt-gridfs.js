@@ -4,7 +4,7 @@
 // Uso: node scripts/reencrypt-gridfs.js
 //
 // ADVERTENCIA: modifica datos en la base. Antes de correrlo haga una copia de
-// seguridad (scripts/backup.ps1). Es un one-off para migrar el legado que quedó
+// seguridad (npm run backup). Es un one-off para migrar el legado que quedó
 // en claro antes de la política de cifrado total (Ley 1581/2012).
 //
 // Requiere DOC_ENC_KEY configurada con el MISMO valor que usa producción. El
