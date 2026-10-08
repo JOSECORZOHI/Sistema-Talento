@@ -21,6 +21,7 @@ npm install
 # Copie .env.example a .env y complete DATABASE_URL y JWT_SECRET.
 npm start
 ```
+En Windows use los mismos comandos en PowerShell (`npm install`, `npm start`).
 
 Abra `http://localhost:3000`. Para depurar desde VS Code, ejecute primero el servidor y luego use la configuración **Iniciar Chrome para localhost**.
 
@@ -69,6 +70,8 @@ Abra `/api/gmail/authorize` para autorizar la cuenta. Después, use la opción d
   - `npm run backup` crea un `mongodump` comprimido (colecciones + GridFS) en `backups/`
     usando `DATABASE_URL` del `.env` y conserva los 10 más recientes (requiere
     `mongodb-database-tools`, es decir, el comando `mongodump`, en el PATH).
+    Prográmelo a diario con `npm run backup:cron` (Linux, cron) o
+    `npm run backup:task` (Windows, Tarea Programada).
 - Comandos de calidad y prueba: `npm test` (pruebas con `node:test`) y `npm run lint` (ESLint).
 - Mantenga el acceso al equipo y a las credenciales de Gmail restringido a personal autorizado.
 - Verifique que los PDFs se puedan abrir y que sus metadatos correspondan al expediente antes de archivarlos.

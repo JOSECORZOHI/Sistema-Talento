@@ -14,6 +14,8 @@
     "backup": "node scripts/backup.js",
     "backup:verify": "node scripts/verify-backup.js",
     "backup:schedule": "node scripts/install-backup-cron.js",
+    "backup:cron": "node scripts/install-backup-cron.js",
+    "backup:task": "powershell -ExecutionPolicy Bypass -File scripts/install-backup-task.ps1",
     "admin:reset": "node scripts/reset-admin.js",
     "reencrypt": "node scripts/reencrypt-gridfs.js"
   },

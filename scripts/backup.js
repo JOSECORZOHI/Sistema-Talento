@@ -13,6 +13,10 @@
 //   --verify         ejecuta la prueba de restauración (verify-backup.js)
 //   --no-verify      omite la prueba de restauración
 //
+// Programación automática:
+//   Linux:   node scripts/install-backup-cron.js   (npm run backup:cron)
+//   Windows: scripts/install-backup-task.ps1       (npm run backup:task)
+//
 // Requiere: mongodb-database-tools (mongodump) en el PATH.
 
 const fs = require('fs');
@@ -54,7 +58,10 @@ function findMongodump() {
     '/usr/bin/mongodump',
     '/usr/local/bin/mongodump',
     '/opt/mongodb-tools/bin/mongodump',
-    '/opt/mongo-tools/bin/mongodump'
+    '/opt/mongo-tools/bin/mongodump',
+    // Windows: rutas típicas de MongoDB Database Tools.
+    'C:\\Program Files\\MongoDB\\Tools\\bin\\mongodump.exe',
+    'C:\\Program Files (x86)\\MongoDB\\Tools\\bin\\mongodump.exe'
   ];
   for (const c of candidates) {
     if (fs.existsSync(c)) return c;
