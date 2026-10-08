@@ -6,7 +6,7 @@ param(
 
 <#
   Backup completo de MongoDB Atlas (colecciones + GridFS) vía mongodump.
-  GridFS (fs.files/fs.chunks) queda incluido automáticamente en el dump de la BD.
+  GridFS (documentos.files/documentos.chunks) queda incluido automáticamente en el dump de la BD.
 
   Uso:
     npm run backup                      -> usa DATABASE_URL del .env y carpeta .\backups

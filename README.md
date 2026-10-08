@@ -14,7 +14,7 @@ Aplicativo web para registrar, clasificar, consultar y hacer seguimiento a los d
 
 ## Requisitos y ejecución
 
-Requiere Node.js 18 o superior y una instancia MongoDB accesible.
+Requiere Node.js 20 o superior y una instancia MongoDB accesible.
 
 ```bash
 npm install
@@ -32,7 +32,7 @@ La configuración se lee de `.env` (ver `.env.example`). `JWT_SECRET` es obligat
 - Base de datos remota en MongoDB (`DATABASE_URL`): usuarios, funcionarios, catálogos, metadatos de documentos y auditoría.
 - Los **archivos** (PDFs cargados, adjuntos de correo y documentos escaneados al registrarse) se almacenan en **GridFS** dentro de MongoDB (`documentos.files`/`documentos.chunks`).
 - `database.json`: solo datos de referencia para la primera carga en la base remota.
-- `bandeja_escaner/`: carpeta local donde el programa de escaneo (SANE/simple-scan) deja los PDFs escaneados pendientes de clasificar. Es la única carpeta local del sistema y solo aplica en una máquina Linux con el escáner conectado.
+- `bandeja_escaner/`: carpeta local donde el programa de escaneo (SANE/simple-scan en Linux, EPSON Scan 2 / WIA en Windows) deja los PDFs escaneados pendientes de clasificar. Es la única carpeta local del sistema y solo aplica en una máquina con el escáner conectado.
 - `public/`: interfaz web.
 
 El sistema incluye catálogos y usuarios de ejemplo para facilitar la capacitación inicial. Sustitúyalos por los datos institucionales antes del despliegue.

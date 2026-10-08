@@ -36,13 +36,13 @@ El script `scripts/reencrypt-gridfs.js` reencifra los documentos a un prefijo
 temporal y, al terminar, renombra los archivos. Así una interrupción a mitad
 no deja documentos a medio descifrar bajo el nombre final.
 
-1. Generar la clave nueva:
+1. Generar la clave nueva (base64 de 32 bytes, lo que exige `lib/crypto.js`):
    ```bash
-   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
    ```
 2. Ejecutar la reencripción con la clave nueva:
    ```bash
-   export DOC_ENC_KEY="<clave_nueva_hex>"   # solo terminal local; la final va en Railway
+   export DOC_ENC_KEY="<clave_nueva_base64>"   # solo terminal local; la final va en Railway
    npm run reencrypt
    ```
 3. Si el proceso falla a mitad, se puede reintentar: los archivos temporales se
@@ -82,7 +82,7 @@ no deja documentos a medio descifrar bajo el nombre final.
 
 ## Notas
 
-- `DOC_ENC_KEY` debe tener 64 caracteres hexadecimales (32 bytes).
+- `DOC_ENC_KEY` debe ser base64 de 32 bytes (ver `.env.example` y `lib/crypto.js`).
 - El cambio de `DOC_ENC_KEY` NO invalida sesiones ni contraseñas: solo afecta al
   contenido cifrado de documentos en GridFS.
 - Se recomienda rotar la clave al menos una vez al año o tras una fuga de
