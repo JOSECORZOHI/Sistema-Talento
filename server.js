@@ -961,7 +961,7 @@ const ROLES = {
       'audit.read', 'config.manage',
       'scanner.manage', 'scanner.read', 'scanner.refresh', 'scanner.scan',
       'email.manage',
-      'deletion.create'
+      'deletion.create', 'deletion.review'
     ]
   },
   funcionario: {
@@ -1713,6 +1713,12 @@ const twoFactorEnableSchema = z.object({
 const twoFactorCodeSchema = z.object({
   code: z.string().nullable().optional()
 });
+// Intercambio challenge→sesión: el challenge es obligatorio (token opaco de
+// un solo uso emitido en el login); el código se valida con isValidTotpCode.
+const twoFactorVerifySchema = z.object({
+  challenge: z.string().min(1, 'Falta el desafío de verificación. Inicie sesión nuevamente.'),
+  code: z.string().nullable().optional()
+});
 
 app.post('/api/auth/login', validateBody(loginSchema), async (req, res) => {
   try {
@@ -1874,7 +1880,7 @@ app.post('/api/auth/2fa/disable', authMiddleware, validateBody(twoFactorCodeSche
 });
 
 // Verifica el código durante el inicio de sesión (intercambia el challenge por sesión).
-app.post('/api/auth/2fa/verify', validateBody(twoFactorEnableSchema), async (req, res) => {
+app.post('/api/auth/2fa/verify', validateBody(twoFactorVerifySchema), async (req, res) => {
   try {
     const { challenge, code } = req.body || {};
     const ip = getClientIp(req);
@@ -2677,10 +2683,8 @@ app.get('/api/funcionario/deletion-requests', authMiddleware, async (req, res) =
   }
 });
 
-app.patch('/api/deletion-requests/:id/approve', authMiddleware, requirePermission('employees.read'), async (req, res) => {
+app.patch('/api/deletion-requests/:id/approve', authMiddleware, requirePermission('deletion.review'), async (req, res) => {
   try {
-    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Solo administradores pueden aprobar eliminaciones.' });
-
     // Consumo atómico de la solicitud: solo se procesa si sigue Pendiente (anti doble-aprobación)
     const request = await col('deletionRequests').findOneAndUpdate(
       { id: req.params.id, status: 'Pendiente' },
@@ -2706,10 +2710,8 @@ app.patch('/api/deletion-requests/:id/approve', authMiddleware, requirePermissio
   }
 });
 
-app.patch('/api/deletion-requests/:id/reject', authMiddleware, requirePermission('employees.read'), async (req, res) => {
+app.patch('/api/deletion-requests/:id/reject', authMiddleware, requirePermission('deletion.review'), async (req, res) => {
   try {
-    if (req.user.role !== 'admin') return res.status(403).json({ error: 'Solo administradores pueden rechazar eliminaciones.' });
-
     const request = await col('deletionRequests').findOneAndUpdate(
       { id: req.params.id, status: 'Pendiente' },
       { $set: { status: 'Rechazada', processedBy: req.user.name || req.user.email, processedAt: new Date().toISOString() } },
@@ -2880,12 +2882,11 @@ app.get('/api/document-file/:filename', fileAuthMiddleware, async (req, res) => 
         return res.status(403).json({ error: 'No tiene permisos para acceder a este archivo.' });
       }
     } else if ((folder === 'gmail' || folder === 'email') && hasPermission(req.user.role, 'scanner.read')) {
-      // Un funcionario solo puede leer adjuntos de los correos que se le han
-      // sugerido (suggestedEmployeeId === req.user.employeeId); no los de otros
-      // empleados, aunque conozca el nombre del archivo.
+      // Un funcionario solo puede leer adjuntos de los correos sugeridos a él
+      // o de su propia bandeja (mismo criterio que analyze y registro).
       const email = await col('emailsInbox').findOne({
         'attachments.filename': filename,
-        suggestedEmployeeId: req.user.employeeId
+        $or: [{ suggestedEmployeeId: req.user.employeeId }, { inboxOwner: req.user.employeeId }]
       });
       if (!email) {
         return res.status(403).json({ error: 'No tiene permisos para acceder a este archivo.' });

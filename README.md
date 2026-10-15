@@ -62,7 +62,7 @@ export GMAIL_REDIRECT_URI="http://localhost:3000/api/gmail/oauth2callback"
 export GMAIL_REFRESH_TOKEN="..."
 ```
 
-Abra `/api/gmail/authorize` para autorizar la cuenta. Después, use la opción de sincronización en la bandeja de correo para descargar PDFs adjuntos. Los adjuntos se guardan en GridFS y quedan pendientes de registrar. Si el remitente coincide con el correo de un funcionario, se sugiere automáticamente al registrar.
+Abra `/api/gmail/authorize` para autorizar la cuenta. Después, use la opción de sincronización en la bandeja de correo para indexar los adjuntos (diseño on-demand: la sync guarda solo metadatos y descarga el binario al previsualizar o registrar, sin llenar la BD). Los adjuntos quedan pendientes de registrar. Si el remitente coincide con el correo de un funcionario, se sugiere automáticamente al registrar.
 
 ## Operación y mantenimiento
 
