@@ -36,7 +36,11 @@ const frontendShared = [
   'fetchGmailStatus', 'renderGmailStatusBanner', 'startGmailAuthorization',
   'fetchEmails', 'renderEmailInbox', 'selectEmail', 'renderEmailDetail',
   'refreshScannerStatus', 'switchSubTab', 'portalShowTab', 'archiveDocument',
-  'linkFuncionarioGmail', 'checkFuncionarioGmailStatus', 'syncFuncionarioEmails'
+  'linkFuncionarioGmail', 'checkFuncionarioGmailStatus', 'syncFuncionarioEmails',
+  'openPortalPdf', 'openDeleteRequest', 'openRegisterScanner', 'openRegisterEmail',
+  'approveDeletionRequest', 'rejectDeletionRequest',
+  'toggleEmployeeStatus', 'deleteEmployee', 'openPdfModal', 'openEditDocModal',
+  'openRegisterLocalModal', 'openRegisterScannerModal', 'openRegisterEmailModal'
 ];
 
 module.exports = [
