@@ -677,6 +677,24 @@ function getClientIp(req) {
   return req.ip || req.connection?.remoteAddress || 'unknown';
 }
 
+// Redacción mínima de PII en logs de consola (los registros de auditoría de la BD
+// conservan el dato completo, que es donde corresponde la trazabilidad).
+function redactEmail(email) {
+  const s = String(email || '');
+  const at = s.indexOf('@');
+  if (at < 0) return '***';
+  const local = s.slice(0, at);
+  const domain = s.slice(at + 1);
+  return `${local.slice(0, 1) || '*'}***@${domain.slice(0, 1) || '*'}***`;
+}
+
+function redactFilename(filename) {
+  const s = String(filename || '');
+  const ext = path.extname(s);
+  const base = ext ? s.slice(0, -ext.length) : s;
+  return `${base.slice(0, 3)}***${ext}`;
+}
+
 // --- LOGGING DE SEGURIDAD ---
 /**
  * Inserta un registro en securityLogs y, si el evento es crítico, dispara la
@@ -698,7 +716,7 @@ async function addSecurityLog(event, details, ip, email) {
     severity: 'warning'
   };
   try { await col('securityLogs').insertOne(entry); } catch (e) { console.warn('Error al insertar log de seguridad:', e.message); }
-  console.log(`[SECURITY] ${event} | ${details} | IP: ${ip} | User: ${email}`);
+  console.log(`[SECURITY] ${event} | IP: ${ip} | User: ${redactEmail(email)}`);
   notifyAdminForEvent(entry).catch(() => {});
 }
 
@@ -2740,6 +2758,18 @@ app.post('/api/documents/analyze', authMiddleware, requireAnyPermission('documen
     return res.status(400).json({ error: 'Formato de archivo no soportado para análisis.' });
   }
 
+  // Correo autorizado: una sola consulta acotada al alcance del usuario, reutilizada
+  // para descargar el adjunto (evita leer el homónimo de otra bandeja).
+  const isEmailFolder = folder === 'gmail' || folder === 'email';
+  let emailDoc = null;
+  if (isEmailFolder) {
+    const emailFilter = { 'attachments.filename': targetFilename };
+    if (req.user.role === 'funcionario') {
+      emailFilter.$or = [{ suggestedEmployeeId: req.user.employeeId }, { inboxOwner: req.user.employeeId }];
+    }
+    emailDoc = await col('emailsInbox').findOne(emailFilter);
+  }
+
   // Aislamiento para funcionarios: solo pueden analizar archivos de su propia
   // bandeja (escáner o correo sugerido). El admin no tiene restricción.
   if (req.user.role === 'funcionario') {
@@ -2748,9 +2778,8 @@ app.post('/api/documents/analyze', authMiddleware, requireAnyPermission('documen
       if (!(await isFileInScannerTray(targetFilename, empId))) {
         return res.status(403).json({ error: 'No tiene permisos para analizar este archivo.' });
       }
-    } else if (folder === 'gmail' || folder === 'email') {
-      const ownEmail = await col('emailsInbox').findOne({ 'attachments.filename': targetFilename });
-      if (!ownEmail || (ownEmail.suggestedEmployeeId !== empId && ownEmail.inboxOwner !== empId)) {
+    } else if (isEmailFolder) {
+      if (!emailDoc) {
         return res.status(403).json({ error: 'No tiene permisos para analizar este adjunto.' });
       }
     } else {
@@ -2793,11 +2822,10 @@ app.post('/api/documents/analyze', authMiddleware, requireAnyPermission('documen
   }
 
   // Adjuntos de correo: como la sync ya no persiste el binario en GridFS, se
-  // descarga on-demand desde la cuenta dueña para poder analizarlo.
-  if (!buf && (folder === 'gmail' || folder === 'email')) {
-    const email = await col('emailsInbox').findOne({ 'attachments.filename': targetFilename });
-    const attachment = email && email.attachments.find(a => a.filename === targetFilename);
-    const fetched = email && attachment ? await fetchEmailAttachmentContent(email, attachment) : null;
+  // descarga on-demand desde el correo YA autorizado para poder analizarlo.
+  if (!buf && isEmailFolder && emailDoc) {
+    const attachment = (emailDoc.attachments || []).find(a => a.filename === targetFilename);
+    const fetched = attachment ? await fetchEmailAttachmentContent(emailDoc, attachment) : null;
     if (fetched && fetched.tooLarge) {
       return res.status(413).json({ error: 'El adjunto supera el tamaño máximo para análisis.' });
     }
@@ -2807,7 +2835,7 @@ app.post('/api/documents/analyze', authMiddleware, requireAnyPermission('documen
   try {
     const result = await analyzeFile(buf, targetFilename, { employees });
     if (!result) return res.status(422).json({ error: 'No se pudo extraer información del documento.' });
-    console.log(`[ANALYZE] '${targetFilename}' por ${req.user.email}: type=${result.suggestions.documentTypeId} cat=${result.suggestions.categoryId} ocr=${result.ocrUsed}`);
+    console.log(`[ANALYZE] '${redactFilename(targetFilename)}' por ${redactEmail(req.user.email)}: type=${result.suggestions.documentTypeId} cat=${result.suggestions.categoryId} ocr=${result.ocrUsed}`);
     res.json(result);
   } catch (e) {
     console.error('[ANALYZE] Error al analizar el documento:', e.message);
@@ -2833,7 +2861,7 @@ app.post('/api/documents/analyze-upload', authMiddleware, requireAnyPermission('
   try {
     const result = await analyzeFile(req.file.buffer, req.file.originalname, { employees });
     if (!result) return res.status(422).json({ error: 'No se pudo extraer información del documento.' });
-    console.log(`[ANALYZE-UPLOAD] '${req.file.originalname}' por ${req.user.email}: type=${result.suggestions.documentTypeId} cat=${result.suggestions.categoryId} ocr=${result.ocrUsed}`);
+    console.log(`[ANALYZE-UPLOAD] '${redactFilename(req.file.originalname)}' por ${redactEmail(req.user.email)}: type=${result.suggestions.documentTypeId} cat=${result.suggestions.categoryId} ocr=${result.ocrUsed}`);
     res.json(result);
   } catch (e) {
     console.error('[ANALYZE-UPLOAD] Error al analizar el documento:', e.message);
@@ -2853,8 +2881,9 @@ function fileAuthMiddleware(req, res, next) {
 }
 app.get('/api/document-file/:filename', fileAuthMiddleware, async (req, res) => {
   const filename = req.params.filename;
-  console.log(`[FILE-SERVE] Solicitud: user=${req.user.email} filename="${filename}" folder=${req.query.folder || '(none)'}`);
   const folder = req.query.folder;
+  const isEmailAttachment = folder === 'gmail' || folder === 'email';
+  console.log(`[FILE-SERVE] Solicitud: user=${redactEmail(req.user.email)} filename="${redactFilename(filename)}" folder=${folder || '(none)'}`);
   // La fuente autoritativa de archivos es GridFS. El único archivo que puede
   // vivir en disco es el de la bandeja del escáner (aún no cargado a GridFS).
   const isScanner = folder === 'scanner';
@@ -2865,6 +2894,9 @@ app.get('/api/document-file/:filename', fileAuthMiddleware, async (req, res) => 
   // Autorización: solo admin (documents.read) accede a cualquier archivo.
   // Funcionarios solo a sus propios documentos, bandeja de escáner o adjuntos de su correo sugerido.
   const canReadAll = hasPermission(req.user.role, 'documents.read');
+  // Correo autorizado: se resuelve UNA vez con el alcance del usuario y se reutiliza
+  // para descargar el contenido (evita servir un adjunto homónimo de otra bandeja).
+  let authorizedEmail = null;
   if (!canReadAll) {
     const owned = await col('documents').findOne({
       filename,
@@ -2881,19 +2913,53 @@ app.get('/api/document-file/:filename', fileAuthMiddleware, async (req, res) => 
       if (!inScannerTray) {
         return res.status(403).json({ error: 'No tiene permisos para acceder a este archivo.' });
       }
-    } else if ((folder === 'gmail' || folder === 'email') && hasPermission(req.user.role, 'scanner.read')) {
+    } else if (isEmailAttachment && hasPermission(req.user.role, 'scanner.read')) {
       // Un funcionario solo puede leer adjuntos de los correos sugeridos a él
       // o de su propia bandeja (mismo criterio que analyze y registro).
-      const email = await col('emailsInbox').findOne({
+      authorizedEmail = await col('emailsInbox').findOne({
         'attachments.filename': filename,
         $or: [{ suggestedEmployeeId: req.user.employeeId }, { inboxOwner: req.user.employeeId }]
       });
-      if (!email) {
+      if (!authorizedEmail) {
         return res.status(403).json({ error: 'No tiene permisos para acceder a este archivo.' });
       }
     } else {
       return res.status(403).json({ error: 'No tiene permisos para acceder a este archivo.' });
     }
+  } else if (isEmailAttachment) {
+    authorizedEmail = await col('emailsInbox').findOne({ 'attachments.filename': filename });
+  }
+
+  // Adjuntos de correo: se sirven SIEMPRE desde el correo ya autorizado. No se
+  // consulta GridFS por nombre para no devolver un archivo homónimo de otro dueño.
+  if (isEmailAttachment && authorizedEmail) {
+    try {
+      const attachment = (authorizedEmail.attachments || []).find(a => a.filename === filename);
+      const fetchResult = attachment ? await fetchEmailAttachmentContent(authorizedEmail, attachment) : null;
+      if (!fetchResult) {
+        console.warn(`[FILE-SERVE] Adjunto '${redactFilename(filename)}' no descargable on-demand.`);
+        return res.status(404).json({ error: 'Archivo no encontrado en el servidor.' });
+      }
+      if (fetchResult.tooLarge) {
+        return res.status(413).json({ error: 'El adjunto supera el tamaño máximo permitido.' });
+      }
+      const { buffer } = fetchResult;
+      const contentErr = validateFileContent(filename, buffer);
+      if (contentErr) {
+        console.warn(`[FILE-SERVE] Adjunto '${redactFilename(filename)}' rechazado on-demand: ${contentErr}`);
+        return res.status(415).json({ error: contentErr });
+      }
+      const mimeType = getMimeType(filename);
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Content-Disposition', buildContentDisposition(mimeType, filename));
+      res.end(buffer);
+    } catch (e) {
+      console.error(`[FILE-SERVE] Error sirviendo adjunto on-demand '${redactFilename(filename)}':`, e.message);
+      const status = e.code === 'GMAIL_NOT_LINKED' ? 403
+        : (e.code === 403 || e.code === 404) ? 404 : 500;
+      if (!res.headersSent) res.status(status).json({ error: 'No se pudo recuperar el adjunto desde Gmail.' });
+    }
+    return;
   }
 
   try {
@@ -2972,38 +3038,6 @@ app.get('/api/document-file/:filename', fileAuthMiddleware, async (req, res) => 
     } catch (e) {
       console.error(`[FILE-SERVE] Error sirviendo archivo de escáner '${filename}':`, e.message);
       if (!res.headersSent) res.status(500).json({ error: 'Error al servir archivo.' });
-    }
-  } else if (folder === 'gmail' || folder === 'email') {
-    // DISEÑO ON-DEMAND: los adjuntos de Gmail ya no se persisten en GridFS durante
-    // la sync, así que la vista previa descarga el binario desde la cuenta al vuelo.
-    try {
-      const email = await col('emailsInbox').findOne({ 'attachments.filename': filename });
-      const attachment = email && email.attachments.find(a => a.filename === filename);
-      const fetchResult = email && attachment
-        ? await fetchEmailAttachmentContent(email, attachment)
-        : null;
-      if (!fetchResult) {
-        console.warn(`[FILE-SERVE] Adjunto '${filename}' no descargable on-demand.`);
-        return res.status(404).json({ error: 'Archivo no encontrado en el servidor.' });
-      }
-      if (fetchResult.tooLarge) {
-        return res.status(413).json({ error: 'El adjunto supera el tamaño máximo permitido.' });
-      }
-      const { buffer } = fetchResult;
-      const contentErr = validateFileContent(filename, buffer);
-      if (contentErr) {
-        console.warn(`[FILE-SERVE] Adjunto '${filename}' rechazado on-demand: ${contentErr}`);
-        return res.status(415).json({ error: contentErr });
-      }
-      const mimeType = getMimeType(filename);
-      res.setHeader('Content-Type', mimeType);
-      res.setHeader('Content-Disposition', buildContentDisposition(mimeType, filename));
-      res.end(buffer);
-    } catch (e) {
-      console.error(`[FILE-SERVE] Error sirviendo adjunto on-demand '${filename}':`, e.message);
-      const status = e.code === 'GMAIL_NOT_LINKED' ? 403
-        : (e.code === 403 || e.code === 404) ? 404 : 500;
-      if (!res.headersSent) res.status(status).json({ error: 'No se pudo recuperar el adjunto desde Gmail.' });
     }
   } else {
     res.status(404).json({ error: 'Archivo no encontrado en el servidor.' });
@@ -3906,12 +3940,12 @@ async function performGmailSync(gmail, opts = {}) {
     const attachments = [];
     for (const part of attachmentParts) {
       if (!part.body || !part.body.attachmentId) {
-        console.warn(`[GMAIL-SYNC] Adjunto '${part.filename}' sin attachmentId, se omite.`);
+        console.warn(`[GMAIL-SYNC] Adjunto '${redactFilename(part.filename)}' sin attachmentId, se omite.`);
         continue;
       }
       const sizeBytes = part.body.size || 0;
       if (sizeBytes > MAX_GMAIL_ATTACHMENT_BYTES) {
-        console.warn(`[GMAIL-SYNC] Adjunto '${part.filename}' excede ${MAX_GMAIL_ATTACHMENT_BYTES} bytes; se omite.`);
+        console.warn(`[GMAIL-SYNC] Adjunto '${redactFilename(part.filename)}' excede ${MAX_GMAIL_ATTACHMENT_BYTES} bytes; se omite.`);
         continue;
       }
       attachments.push({
