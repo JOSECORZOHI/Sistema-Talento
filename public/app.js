@@ -367,6 +367,7 @@ async function fetchDeletionRequests() {
     const response = await apiFetch('/api/deletion-requests');
     if (response.ok) appState.deletionRequests = await response.json();
   } catch (e) { /* se conserva el listado del dashboard */ }
+  if (!Array.isArray(appState.deletionRequests)) appState.deletionRequests = [];
 }
 
 async function fetchStats() {

@@ -188,7 +188,7 @@ async function sendViaGmailApi({ to, subject, html, text, refreshToken }) {
  * @returns {Promise<boolean>} true si el correo fue enviado o simulado.
  */
 async function sendEmail({ to, subject, html, text }) {
-  console.log('[MAIL] Intentando enviar a:', to, '| SMTP_ENABLED:', SMTP_ENABLED);
+  console.log('[MAIL] Intentando enviar a:', redactEmail(to), '| SMTP_ENABLED:', SMTP_ENABLED);
 
   if (SMTP_ENABLED) {
     const transporter = getMailTransporter();
@@ -206,7 +206,7 @@ async function sendEmail({ to, subject, html, text }) {
             'Precedence': 'bulk'
           }
         });
-        console.log('[MAIL] Correo enviado a', to, '| messageId:', info.messageId);
+        console.log('[MAIL] Correo enviado a', redactEmail(to), '| messageId:', info.messageId);
         return true;
       } catch (err) {
         console.warn('[MAIL] SMTP falló, intentando Gmail API:', err.message || err);
@@ -220,7 +220,7 @@ async function sendEmail({ to, subject, html, text }) {
     if (sent) return true;
   }
 
-  console.error('[MAIL] No se pudo enviar correo a', to);
+  console.error('[MAIL] No se pudo enviar correo a', redactEmail(to));
   return false;
 }
 
@@ -407,7 +407,8 @@ const scannerLimiter = rateLimit({
 
 const twoFactorLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 15,
+  // En tests se eleva para que la suite no dependa del conteo acumulado.
+  max: process.env.NODE_ENV === 'test' ? 1000 : 15,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Demasiados intentos de verificación 2FA. Intente de nuevo en 15 minutos.' }
@@ -426,6 +427,9 @@ const gmailSyncLimiter = rateLimit({
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
+  // Por usuario, no por IP: en oficinas con NAT una cuenta no debe bloquear a
+  // las demás. Las rutas que lo usan ya pasaron por authMiddleware.
+  keyGenerator: (req) => req.user?.email || req.user?.employeeId || 'anon',
   message: { error: 'Demasiadas sincronizaciones de correo. Intente de nuevo en 15 minutos.' }
 });
 
@@ -777,7 +781,7 @@ async function notifyAdminForEvent(entry) {
       </div>`,
     text: `Alerta de seguridad: ${entry.event}\nDetalle: ${entry.details}\nFecha: ${new Date(entry.timestamp).toLocaleString('es-CO')}\nIP: ${entry.ip}\nUsuario: ${entry.email}`
   });
-  if (ok) console.log(`[ALERTA] Notificación de '${entry.event}' enviada a ${adminEmail}`);
+  if (ok) console.log(`[ALERTA] Notificación de '${entry.event}' enviada a ${redactEmail(adminEmail)}`);
 }
 
 // --- JWT VERSIONING ---
@@ -847,6 +851,7 @@ async function authenticateUser(user, collectionName, role, username, password, 
           tokenHash: crypto.createHash('sha256').update(challengeToken).digest('hex'),
           email: user.email,
           role,
+          attempts: 0,
           createdAt: new Date(),
           expiresAt: new Date(Date.now() + TWO_FACTOR_CHALLENGE_TTL_MS)
         });
@@ -1923,12 +1928,22 @@ app.post('/api/auth/2fa/verify', validateBody(twoFactorVerifySchema), async (req
       return res.status(400).json({ error: 'Ingrese el código de 6 dígitos de su aplicación de autenticación.' });
     }
     const challengeHash = crypto.createHash('sha256').update(challenge).digest('hex');
-    // Se lee sin consumir para no quemar el reto ante un simple error de digitación.
-    const ch = await col('twoFactorChallenges').findOne({ tokenHash: challengeHash });
-    if (!ch) return res.status(400).json({ error: 'La solicitud de verificación no es válida o ya fue utilizada.' });
-    if (new Date(ch.expiresAt) < new Date()) {
-      await col('twoFactorChallenges').deleteOne({ tokenHash: challengeHash });
-      return res.status(400).json({ error: 'La solicitud de verificación expiró. Inicie sesión nuevamente.' });
+    // Incremento atómico en BD ANTES de validar: evita la carrera del
+    // read-then-write (varias peticiones concurrentes leían el mismo contador y
+    // todas pasaban del límite). El filtro corta en 5 y no toca retos expirados.
+    const ch = await col('twoFactorChallenges').findOneAndUpdate(
+      {
+        tokenHash: challengeHash,
+        expiresAt: { $gt: new Date() },
+        $or: [{ attempts: { $lt: 5 } }, { attempts: { $exists: false } }]
+      },
+      { $inc: { attempts: 1 } },
+      { returnDocument: 'after' }
+    );
+    if (!ch) {
+      // Limpieza perezosa de expirados; un reto agotado se conserva hasta el TTL.
+      await col('twoFactorChallenges').deleteOne({ tokenHash: challengeHash, expiresAt: { $lt: new Date() } });
+      return res.status(400).json({ error: 'La solicitud de verificación no es válida, expiró o superó el número de intentos. Inicie sesión nuevamente.' });
     }
     const collection = getCollectionForRole(ch.role);
     const user = await col(collection).findOne({ email: ch.email });
@@ -1945,12 +1960,10 @@ app.post('/api/auth/2fa/verify', validateBody(twoFactorVerifySchema), async (req
     }
     if (!verifyTOTP(user.totpSecret, code)) {
       await addSecurityLog('2FA Fallido', `Código de verificación incorrecto para ${user.email}.`, ip, user.email);
-      const attempts = (ch.attempts || 0) + 1;
-      if (attempts >= 5) {
+      if ((ch.attempts || 0) >= 5) {
         await col('twoFactorChallenges').deleteOne({ tokenHash: challengeHash });
         return res.status(401).json({ error: 'Demasiados intentos incorrectos. Inicie sesión nuevamente.' });
       }
-      await col('twoFactorChallenges').updateOne({ tokenHash: challengeHash }, { $inc: { attempts: 1 } });
       return res.status(401).json({ error: 'El código de verificación es incorrecto.' });
     }
     // Consumo atómico: solo el primer request que llega con el código correcto gana.
@@ -2086,7 +2099,7 @@ app.post('/api/auth/forgot-password', async (req, res) => {
   });
 
   if (!sent) {
-    console.warn('[MAIL] No se pudo enviar correo de restablecimiento a', normalizedEmail, resetUrl ? '(el enlace solo se entrega por pantalla en desarrollo)' : '');
+    console.warn('[MAIL] No se pudo enviar correo de restablecimiento a', redactEmail(normalizedEmail), resetUrl ? '(el enlace solo se entrega por pantalla en desarrollo)' : '');
     // Solo en desarrollo se entrega el enlace por pantalla para no depender de SMTP.
     if (process.env.NODE_ENV === 'development' && resetUrl) {
       return res.json({ message: genericMessage, resetLink: resetUrl });
@@ -2744,10 +2757,11 @@ app.get('/api/deletion-requests', authMiddleware, requirePermission('deletion.re
 
 app.patch('/api/deletion-requests/:id/approve', authMiddleware, requirePermission('deletion.review'), async (req, res) => {
   try {
-    // Consumo atómico de la solicitud: solo se procesa si sigue Pendiente (anti doble-aprobación)
+    // Consumo atómico: solo se procesa si sigue Pendiente (anti doble-aprobación).
+    // Se usa un estado intermedio para no marcarla Aprobada antes de borrar.
     const request = await col('deletionRequests').findOneAndUpdate(
       { id: req.params.id, status: 'Pendiente' },
-      { $set: { status: 'Aprobada', processedBy: req.user.name || req.user.email, processedAt: new Date().toISOString() } },
+      { $set: { status: 'Procesando', processedBy: req.user.name || req.user.email, processedAt: new Date().toISOString() } },
       { returnDocument: 'before' }
     );
     if (!request) {
@@ -2761,15 +2775,24 @@ app.patch('/api/deletion-requests/:id/approve', authMiddleware, requirePermissio
       try {
         await deleteDocAndPhysicalFile(doc.id, doc.filename);
       } catch (delError) {
-        // Revertir a Pendiente para permitir reintentar; sin esto la solicitud
-        // quedaría aprobada apuntando a un documento que sigue existiendo.
-        await col('deletionRequests').updateOne(
-          { id: request.id, status: 'Aprobada' },
-          { $set: { status: 'Pendiente', processedBy: null, processedAt: null } }
-        );
-        throw delError;
+        // Si el documento sigue existiendo, revertir a Pendiente para reintentar.
+        // Si ya no existe, el borrado principal se cumplió: solo falló la limpieza.
+        const stillThere = await col('documents').findOne({ id: request.documentId });
+        if (stillThere) {
+          await col('deletionRequests').updateOne(
+            { id: request.id, status: 'Procesando' },
+            { $set: { status: 'Pendiente', processedBy: null, processedAt: null } }
+          );
+          throw delError;
+        }
+        console.warn('[DEL] Documento eliminado, pero falló la limpieza del archivo:', delError.message);
       }
     }
+
+    await col('deletionRequests').updateOne(
+      { id: request.id, status: 'Procesando' },
+      { $set: { status: 'Aprobada' } }
+    );
 
     await addAuditLog('Eliminación Aprobada', `El administrador ${req.user.name} aprobó la eliminación del documento '${request.documentFilename}' de ${request.employeeName}.`, req.user.name || req.user.email, getClientIp(req));
     res.json({ message: 'Solicitud aprobada. Documento eliminado.' });
@@ -2850,13 +2873,21 @@ app.post('/api/documents/analyze', authMiddleware, requireAnyPermission('documen
   }
 
   // Lee el buffer (descifrado en reposo si aplica) respetando el límite de
-  // análisis; readFileBuffer lanza si el archivo excede `maxBytes`.
-  let buf;
-  try {
-    const got = await readFileBuffer(targetFilename, MAX_ANALYZE_BYTES);
-    buf = got ? got.buffer : null;
-  } catch {
-    return res.status(413).json({ error: 'El archivo supera el tamaño máximo para análisis.' });
+  // análisis. Para adjuntos de correo NO se consulta GridFS por nombre: eso
+  // permitía analizar el homónimo de otra bandeja. Solo se leen del correo
+  // autorizado (on-demand) o del disco del escáner.
+  let buf = null;
+  if (!isEmailFolder) {
+    try {
+      const got = await readFileBuffer(targetFilename, MAX_ANALYZE_BYTES);
+      buf = got ? got.buffer : null;
+    } catch (e) {
+      if (/supera el tamaño máximo/i.test(e.message || '')) {
+        return res.status(413).json({ error: 'El archivo supera el tamaño máximo para análisis.' });
+      }
+      console.error('[ANALYZE] Error leyendo archivo:', e.message);
+      return res.status(500).json({ error: 'No se pudo leer el archivo para análisis.' });
+    }
   }
 
   // Fallback a disco SOLO para la bandeja del escáner (archivo físico aún no en GridFS).
@@ -2876,11 +2907,27 @@ app.post('/api/documents/analyze', authMiddleware, requireAnyPermission('documen
   // descarga on-demand desde el correo YA autorizado para poder analizarlo.
   if (!buf && isEmailFolder && emailDoc) {
     const attachment = (emailDoc.attachments || []).find(a => a.filename === targetFilename);
-    const fetched = attachment ? await fetchEmailAttachmentContent(emailDoc, attachment) : null;
+    let fetched = null;
+    try {
+      fetched = attachment ? await fetchEmailAttachmentContent(emailDoc, attachment) : null;
+    } catch (e) {
+      const status = e.code === 'GMAIL_NOT_LINKED' ? 403
+        : e.code === 'GMAIL_NOT_CONFIGURED' ? 503 : 502;
+      console.error('[ANALYZE] No se pudo descargar el adjunto:', redactFilename(targetFilename), e.code || e.message);
+      return res.status(status).json({
+        error: status === 403 ? 'La cuenta de correo no está vinculada.'
+          : status === 503 ? 'El correo no está configurado en el servidor.'
+            : 'No se pudo descargar el adjunto desde el correo.'
+      });
+    }
     if (fetched && fetched.tooLarge) {
       return res.status(413).json({ error: 'El adjunto supera el tamaño máximo para análisis.' });
     }
     if (fetched) buf = fetched.buffer;
+  }
+
+  if (!buf) {
+    return res.status(404).json({ error: 'El archivo no está disponible en el servidor.' });
   }
 
   try {
@@ -3443,8 +3490,8 @@ app.get('/api/scanner/status', authMiddleware, requirePermission('scanner.read')
 });
 
 app.post('/api/scanner/refresh', authMiddleware, requireAnyPermission('scanner.manage', 'scanner.refresh'), scannerLimiter, (req, res) => {
-  // Forzar refresco en segundo plano; nunca bloquear el event loop.
-  scannerRefreshRunning = false;
+  // Forzar refresco en segundo plano; nunca bloquear el event loop. No se resetea
+  // el mutex: si ya hay una detección en curso, su resultado será el fresco.
   lastScanCheck = 0;
   refreshScannerCacheAsync();
   res.json({ message: 'Actualización de escáneres iniciada. El estado se actualizará en unos segundos.', scanners: cachedScanners, count: cachedScanners.length, refreshing: true });
@@ -3807,7 +3854,7 @@ app.get('/api/gmail/oauth2callback', async (req, res) => {
     }
     res.json({ success: true, message: 'Autorización completada. Gmail ya quedó autorizado.' });
   } catch (error) {
-    console.error('Error al autorizar Gmail:', error);
+    console.error('Error al autorizar Gmail:', error && error.message);
     res.status(502).json({ error: 'No se pudo completar la autorización con Google.' });
   }
 });
@@ -3891,7 +3938,7 @@ function launchGmailSyncJob(key, gmail, opts) {
         await sleep(2500);
       }
     } catch (error) {
-      console.error(`Error al sincronizar Gmail (${key}):`, error);
+      console.error(`Error al sincronizar Gmail (${redactEmail(key)}):`, error && error.message);
       const expired = error && (
         (error.response && error.response.data && error.response.data.error === 'invalid_grant') ||
         /invalid_grant|expired or revoked/i.test(error.message || '')
@@ -4219,7 +4266,7 @@ h2{margin:0 0 8px}.ok{color:#16a34a;font-weight:600}.hint{color:#666;font-size:1
 <script nonce="${res.locals.cspNonce}">document.getElementById('btn-close').addEventListener('click',function(){window.close();});</script>
 </div></body></html>`);
   } catch (error) {
-    console.error('Error al autorizar Gmail del funcionario:', error);
+    console.error('Error al autorizar Gmail del funcionario:', error && error.message);
     res.status(502).json({ error: 'No se pudo completar la autorización con Google.' });
   }
 });

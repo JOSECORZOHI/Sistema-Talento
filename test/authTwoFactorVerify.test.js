@@ -63,7 +63,17 @@ function fakeCollection(name) {
       if (doc) challenges.delete(filter.tokenHash);
       return doc;
     },
-    findOneAndUpdate: async () => null,
+    findOneAndUpdate: async (filter = {}, update = {}) => {
+      if (filter.tokenHash && challenges.has(filter.tokenHash)) {
+        const c = challenges.get(filter.tokenHash);
+        if (filter.expiresAt && filter.expiresAt.$gt
+          && new Date(c.expiresAt) <= new Date(filter.expiresAt.$gt)) return null;
+        if ((c.attempts || 0) >= 5) return null;
+        if (update.$inc && update.$inc.attempts) c.attempts = (c.attempts || 0) + update.$inc.attempts;
+        return { ...c };
+      }
+      return null;
+    },
     updateOne: async (filter = {}, update = {}) => {
       if (filter.tokenHash && challenges.has(filter.tokenHash) && update.$inc && update.$inc.attempts) {
         const c = challenges.get(filter.tokenHash);
@@ -197,6 +207,21 @@ test('2fa/verify invalida el challenge tras 5 intentos fallidos', async () => {
     const last = await verify(baseUrl, { challenge: CHALLENGE, code: '000000' });
     assert.equal(last.status, 401);
     assert.match((await last.json()).error, /Demasiados intentos/i);
+    const after = await verify(baseUrl, { challenge: CHALLENGE, code: generateTOTP(TEST_SECRET) });
+    assert.equal(after.status, 400);
+  });
+});
+
+test('2fa/verify no permite saltarse el límite con intentos concurrentes', async () => {
+  resetChallenges();
+  await withServer(async (baseUrl) => {
+    const responses = await Promise.all(
+      Array.from({ length: 6 }, () => verify(baseUrl, { challenge: CHALLENGE, code: '000000' }))
+    );
+    const statuses = responses.map((r) => r.status);
+    await Promise.all(responses.map((r) => r.text().catch(() => '')));
+    assert.ok(statuses.every((s) => s === 400 || s === 401), `estados inesperados: ${statuses}`);
+    assert.ok(!statuses.includes(200));
     const after = await verify(baseUrl, { challenge: CHALLENGE, code: generateTOTP(TEST_SECRET) });
     assert.equal(after.status, 400);
   });

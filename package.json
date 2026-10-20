@@ -34,7 +34,7 @@
     "mongodb": "^6.21.0",
     "multer": "^2.0.1",
     "mupdf": "^1.28.0",
-    "nodemailer": "^9.0.3",
+    "nodemailer": "^10.1.7",
     "pdfjs-dist": "^4.8.69",
     "pdfkit": "^0.19.1",
     "tesseract.js": "^5.1.1",
