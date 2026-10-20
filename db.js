@@ -445,9 +445,10 @@ function storeFileBuffer(filename, buffer, metadata = {}) {
 }
 
 // Lee un archivo de GridFS y devuelve un Buffer descifrado si estaba cifrado.
-async function readFileBuffer(filename, maxBytes) {
+async function readFileBuffer(filename, maxBytes, metadataFilter) {
   const bucket = getBucket();
-  const cursor = bucket.find({ filename }).sort({ uploadDate: -1 }).limit(1);
+  const query = metadataFilter ? { filename, ...metadataFilter } : { filename };
+  const cursor = bucket.find(query).sort({ uploadDate: -1 }).limit(1);
   const file = await cursor.next();
   if (!file) return null;
   const stream = bucket.openDownloadStream(file._id);

@@ -168,7 +168,7 @@ async function sendViaGmailApi({ to, subject, html, text, refreshToken }) {
       userId: 'me',
       requestBody: { raw: encodedMessage }
     });
-    console.log('[MAIL-GAPI] Correo enviado a', to);
+    console.log('[MAIL-GAPI] Correo enviado a', redactEmail(to));
     return true;
   } catch (err) {
     console.error('[MAIL-GAPI] Error:', err.message || err);
@@ -2747,6 +2747,13 @@ app.get('/api/funcionario/deletion-requests', authMiddleware, async (req, res) =
 // Listado de solicitudes para revisión (permiso propio, independiente del dashboard).
 app.get('/api/deletion-requests', authMiddleware, requirePermission('deletion.review'), async (req, res) => {
   try {
+    // Recupera solicitudes varadas en 'Procesando' (caída del proceso a mitad de
+    // la aprobación) para que puedan reintentarse.
+    const staleLimit = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    await col('deletionRequests').updateMany(
+      { status: 'Procesando', processedAt: { $lt: staleLimit } },
+      { $set: { status: 'Pendiente', processedBy: null, processedAt: null } }
+    ).catch(() => {});
     const requests = await col('deletionRequests').find().sort({ createdAt: -1 }).limit(200).toArray();
     res.json(requests);
   } catch (e) {
@@ -2789,10 +2796,13 @@ app.patch('/api/deletion-requests/:id/approve', authMiddleware, requirePermissio
       }
     }
 
-    await col('deletionRequests').updateOne(
+    const approved = await col('deletionRequests').updateOne(
       { id: request.id, status: 'Procesando' },
       { $set: { status: 'Aprobada' } }
     );
+    if (!approved || approved.modifiedCount === 0) {
+      console.warn(`[DEL] La solicitud '${request.id}' no pudo marcarse como Aprobada (¿cambio concurrente?).`);
+    }
 
     await addAuditLog('Eliminación Aprobada', `El administrador ${req.user.name} aprobó la eliminación del documento '${request.documentFilename}' de ${request.employeeName}.`, req.user.name || req.user.email, getClientIp(req));
     res.json({ message: 'Solicitud aprobada. Documento eliminado.' });
@@ -2840,6 +2850,10 @@ app.post('/api/documents/analyze', authMiddleware, requireAnyPermission('documen
     const emailFilter = { 'attachments.filename': targetFilename };
     if (req.user.role === 'funcionario') {
       emailFilter.$or = [{ suggestedEmployeeId: req.user.employeeId }, { inboxOwner: req.user.employeeId }];
+    } else {
+      // El admin solo opera la bandeja institucional; no se resuelve un homónimo
+      // de la bandeja privada de un funcionario.
+      emailFilter.inboxOwner = 'admin';
     }
     emailDoc = await col('emailsInbox').findOne(emailFilter);
   }
@@ -2861,6 +2875,18 @@ app.post('/api/documents/analyze', authMiddleware, requireAnyPermission('documen
     }
   }
 
+  // Aislamiento del escáner: el funcionario solo lee archivos etiquetados con su
+  // ownerEmployeeId en GridFS. Los que están en disco se adoptan primero (misma
+  // semántica que /api/scanner/status) para no analizar el homónimo de otro.
+  let scannerFilter = null;
+  if (folder === 'scanner') {
+    scannerFilter = { 'metadata.source': 'scanner', 'metadata.registered': false };
+    if (req.user.role === 'funcionario') {
+      await getScannerFiles(req.user.employeeId).catch(() => []);
+      scannerFilter['metadata.ownerEmployeeId'] = String(req.user.employeeId);
+    }
+  }
+
   // Reutiliza la constante global MAX_UPLOAD_BYTES (25MB) para que multer,
   // el analizador y la bandeja Gmail compartan el mismo límite coherente.
   const MAX_ANALYZE_BYTES = MAX_UPLOAD_BYTES;
@@ -2879,7 +2905,7 @@ app.post('/api/documents/analyze', authMiddleware, requireAnyPermission('documen
   let buf = null;
   if (!isEmailFolder) {
     try {
-      const got = await readFileBuffer(targetFilename, MAX_ANALYZE_BYTES);
+      const got = await readFileBuffer(targetFilename, MAX_ANALYZE_BYTES, scannerFilter);
       buf = got ? got.buffer : null;
     } catch (e) {
       if (/supera el tamaño máximo/i.test(e.message || '')) {
@@ -2890,9 +2916,10 @@ app.post('/api/documents/analyze', authMiddleware, requireAnyPermission('documen
     }
   }
 
-  // Fallback a disco SOLO para la bandeja del escáner (archivo físico aún no en GridFS).
-  // Los documentos cargados ya viven en GridFS.
-  if (!buf && folder === 'scanner') {
+  // Fallback a disco SOLO para la bandeja global del admin. El funcionario ya
+  // adoptó sus archivos a GridFS con dueño; leer el disco compartido por nombre
+  // permitiría analizar un archivo de otro.
+  if (!buf && folder === 'scanner' && req.user.role !== 'funcionario') {
     const filePath = getSafeFilePath(SCANNER_DIR, targetFilename);
     if (!filePath || !fs.existsSync(filePath)) {
       return res.status(404).json({ error: 'El archivo no está disponible en el servidor.' });
@@ -3025,7 +3052,7 @@ app.get('/api/document-file/:filename', fileAuthMiddleware, async (req, res) => 
       return res.status(403).json({ error: 'No tiene permisos para acceder a este archivo.' });
     }
   } else if (isEmailAttachment) {
-    authorizedEmail = await col('emailsInbox').findOne({ 'attachments.filename': filename });
+    authorizedEmail = await col('emailsInbox').findOne({ 'attachments.filename': filename, inboxOwner: 'admin' });
   }
 
   // Adjuntos de correo: se sirven SIEMPRE desde el correo ya autorizado. No se

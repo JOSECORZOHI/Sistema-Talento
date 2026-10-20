@@ -226,3 +226,21 @@ test('2fa/verify no permite saltarse el límite con intentos concurrentes', asyn
     assert.equal(after.status, 400);
   });
 });
+
+test('2fa/verify permite el código correcto en el 5.º intento', async () => {
+  resetChallenges();
+  challenges.get(challengeHash(CHALLENGE)).attempts = 4;
+  await withServer(async (baseUrl) => {
+    const res = await verify(baseUrl, { challenge: CHALLENGE, code: generateTOTP(TEST_SECRET) });
+    assert.equal(res.status, 200);
+  });
+});
+
+test('2fa/verify acepta retos legacy sin contador de intentos', async () => {
+  resetChallenges();
+  delete challenges.get(challengeHash(CHALLENGE)).attempts;
+  await withServer(async (baseUrl) => {
+    const res = await verify(baseUrl, { challenge: CHALLENGE, code: generateTOTP(TEST_SECRET) });
+    assert.equal(res.status, 200);
+  });
+});
