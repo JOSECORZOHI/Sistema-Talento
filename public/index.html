@@ -208,8 +208,15 @@
           });
           const data = await res.json();
           if (!res.ok) {
-            errorDiv.textContent = data.error || 'El código de verificación es incorrecto.';
+            const msg = data.error || 'El código de verificación es incorrecto.';
+            errorDiv.textContent = msg;
             errorDiv.style.display = 'block';
+            // Reto inválido/expirado o bloqueado por intentos: ya no sirve, exigir login nuevo.
+            if (res.status === 400 || /Demasiados intentos/i.test(msg)) {
+              pendingChallenge = null;
+              codeInput.value = '';
+              errorDiv.textContent = msg + ' Use «Volver» para iniciar sesión de nuevo.';
+            }
             return;
           }
           finishLogin(data);

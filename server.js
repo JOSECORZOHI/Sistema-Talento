@@ -421,6 +421,14 @@ const uploadLimiter = rateLimit({
   message: { error: 'Límite de subidas alcanzado. Intente de nuevo en una hora.' }
 });
 
+const gmailSyncLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiadas sincronizaciones de correo. Intente de nuevo en 15 minutos.' }
+});
+
 app.use('/api/', globalLimiter);
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/forgot-password', authLimiter);
@@ -1734,7 +1742,7 @@ const twoFactorCodeSchema = z.object({
 // Intercambio challenge→sesión: el challenge es obligatorio (token opaco de
 // un solo uso emitido en el login); el código se valida con isValidTotpCode.
 const twoFactorVerifySchema = z.object({
-  challenge: z.string().min(1, 'Falta el desafío de verificación. Inicie sesión nuevamente.'),
+  challenge: z.string({ required_error: 'Falta el desafío de verificación. Inicie sesión nuevamente.' }).min(1, 'Falta el desafío de verificación. Inicie sesión nuevamente.'),
   code: z.string().nullable().optional()
 });
 
@@ -1858,10 +1866,15 @@ app.post('/api/auth/2fa/enable', authMiddleware, validateBody(twoFactorEnableSch
         return res.status(401).json({ error: 'El código de su 2FA actual es incorrecto. No se modificó la configuración.' });
       }
     }
+    const nextVersion = ((account && account.jwtVersion) || 0) + 1;
     await col(getCollectionForRole(req.user.role)).updateOne(
       lookup,
-      { $set: { totpEnabled: true, totpSecret: String(secret).toUpperCase() } }
+      { $set: { totpEnabled: true, totpSecret: String(secret).toUpperCase(), jwtVersion: nextVersion } }
     );
+    // Invalidar sesiones previas y renovar la sesión actual con la nueva versión.
+    const freshPayload = { email: req.user.email, name: req.user.name, role: req.user.role, v: nextVersion };
+    if (req.user.role === 'funcionario') freshPayload.employeeId = req.user.employeeId;
+    setAuthCookie(res, signToken(freshPayload));
     await addSecurityLog('2FA Activado', `Se activó la autenticación de dos factores para ${req.user.email}.`, ip, req.user.email);
     await addAuditLog('Seguridad', `El usuario ${req.user.name} activó la autenticación de dos factores.`, req.user.name, ip);
     return res.json({ message: 'Autenticación de dos factores activada.', enabled: true });
@@ -1884,10 +1897,14 @@ app.post('/api/auth/2fa/disable', authMiddleware, validateBody(twoFactorCodeSche
       await addSecurityLog('2FA Desactivación Fallida', `Código de verificación incorrecto para desactivar 2FA en ${req.user.email}.`, ip, req.user.email);
       return res.status(401).json({ error: 'El código de verificación es incorrecto.' });
     }
+    const nextVersion = (user.jwtVersion || 0) + 1;
     await col(getCollectionForRole(req.user.role)).updateOne(
       lookup,
-      { $set: { totpEnabled: false, totpSecret: null } }
+      { $set: { totpEnabled: false, totpSecret: null, jwtVersion: nextVersion } }
     );
+    const freshPayload = { email: req.user.email, name: req.user.name, role: req.user.role, v: nextVersion };
+    if (req.user.role === 'funcionario') freshPayload.employeeId = req.user.employeeId;
+    setAuthCookie(res, signToken(freshPayload));
     await addSecurityLog('2FA Desactivado', `Se desactivó la autenticación de dos factores para ${req.user.email}.`, ip, req.user.email);
     await addAuditLog('Seguridad', `El usuario ${req.user.name} desactivó la autenticación de dos factores.`, req.user.name, ip);
     return res.json({ message: 'Autenticación de dos factores desactivada.', enabled: false });
@@ -1906,9 +1923,11 @@ app.post('/api/auth/2fa/verify', validateBody(twoFactorVerifySchema), async (req
       return res.status(400).json({ error: 'Ingrese el código de 6 dígitos de su aplicación de autenticación.' });
     }
     const challengeHash = crypto.createHash('sha256').update(challenge).digest('hex');
-    const ch = await col('twoFactorChallenges').findOneAndDelete({ tokenHash: challengeHash });
+    // Se lee sin consumir para no quemar el reto ante un simple error de digitación.
+    const ch = await col('twoFactorChallenges').findOne({ tokenHash: challengeHash });
     if (!ch) return res.status(400).json({ error: 'La solicitud de verificación no es válida o ya fue utilizada.' });
     if (new Date(ch.expiresAt) < new Date()) {
+      await col('twoFactorChallenges').deleteOne({ tokenHash: challengeHash });
       return res.status(400).json({ error: 'La solicitud de verificación expiró. Inicie sesión nuevamente.' });
     }
     const collection = getCollectionForRole(ch.role);
@@ -1926,7 +1945,18 @@ app.post('/api/auth/2fa/verify', validateBody(twoFactorVerifySchema), async (req
     }
     if (!verifyTOTP(user.totpSecret, code)) {
       await addSecurityLog('2FA Fallido', `Código de verificación incorrecto para ${user.email}.`, ip, user.email);
+      const attempts = (ch.attempts || 0) + 1;
+      if (attempts >= 5) {
+        await col('twoFactorChallenges').deleteOne({ tokenHash: challengeHash });
+        return res.status(401).json({ error: 'Demasiados intentos incorrectos. Inicie sesión nuevamente.' });
+      }
+      await col('twoFactorChallenges').updateOne({ tokenHash: challengeHash }, { $inc: { attempts: 1 } });
       return res.status(401).json({ error: 'El código de verificación es incorrecto.' });
+    }
+    // Consumo atómico: solo el primer request que llega con el código correcto gana.
+    const consumed = await col('twoFactorChallenges').findOneAndDelete({ tokenHash: challengeHash });
+    if (!consumed) {
+      return res.status(400).json({ error: 'La solicitud de verificación no es válida o ya fue utilizada.' });
     }
     const tokenPayload = { email: user.email, name: user.name, role: ch.role, v: user.jwtVersion || 0 };
     if (ch.role === 'funcionario') tokenPayload.employeeId = user.id;
@@ -2701,6 +2731,17 @@ app.get('/api/funcionario/deletion-requests', authMiddleware, async (req, res) =
   }
 });
 
+// Listado de solicitudes para revisión (permiso propio, independiente del dashboard).
+app.get('/api/deletion-requests', authMiddleware, requirePermission('deletion.review'), async (req, res) => {
+  try {
+    const requests = await col('deletionRequests').find().sort({ createdAt: -1 }).limit(200).toArray();
+    res.json(requests);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al obtener solicitudes.' });
+  }
+});
+
 app.patch('/api/deletion-requests/:id/approve', authMiddleware, requirePermission('deletion.review'), async (req, res) => {
   try {
     // Consumo atómico de la solicitud: solo se procesa si sigue Pendiente (anti doble-aprobación)
@@ -2717,7 +2758,17 @@ app.patch('/api/deletion-requests/:id/approve', authMiddleware, requirePermissio
 
     const doc = await col('documents').findOne({ id: request.documentId });
     if (doc) {
-      await deleteDocAndPhysicalFile(doc.id, doc.filename);
+      try {
+        await deleteDocAndPhysicalFile(doc.id, doc.filename);
+      } catch (delError) {
+        // Revertir a Pendiente para permitir reintentar; sin esto la solicitud
+        // quedaría aprobada apuntando a un documento que sigue existiendo.
+        await col('deletionRequests').updateOne(
+          { id: request.id, status: 'Aprobada' },
+          { $set: { status: 'Pendiente', processedBy: null, processedAt: null } }
+        );
+        throw delError;
+      }
     }
 
     await addAuditLog('Eliminación Aprobada', `El administrador ${req.user.name} aprobó la eliminación del documento '${request.documentFilename}' de ${request.employeeName}.`, req.user.name || req.user.email, getClientIp(req));
@@ -2870,7 +2921,7 @@ app.post('/api/documents/analyze-upload', authMiddleware, requireAnyPermission('
 });
 
 // --- SERVIR ARCHIVOS ---
-// Token via query param para iframes que no pueden enviar headers Authorization
+// Autenticación por cookie httpOnly o cabecera Authorization: Bearer.
 function fileAuthMiddleware(req, res, next) {
   // El token SOLO se acepta por cabecera Authorization (Bearer). No se admite en
   // la URL (?token=): evita que el JWT quede expuesto en logs, referrer o historial.
@@ -3559,7 +3610,18 @@ app.post('/api/scanner/scan', authMiddleware, requireAnyPermission('scanner.mana
     if (scanInProgress) {
       return res.status(409).json({ error: 'Ya hay un escaneo en curso. Espere a que termine.' });
     }
-    if ((Date.now() - lastScanCheck) > SCANNER_CACHE_MS) refreshScannerCacheAsync();
+    if (cachedScanners.length === 0) {
+      // Arranque en frío: detectar de forma síncrona antes de responder para que
+      // el primer escaneo tras un reinicio no falle con "No hay escáner conectado".
+      try {
+        cachedScanners = await detectAllScanners();
+        lastScanCheck = Date.now();
+      } catch (e) {
+        console.error('[SCANNER] Error detecting scanners:', e.message);
+      }
+    } else if ((Date.now() - lastScanCheck) > SCANNER_CACHE_MS) {
+      refreshScannerCacheAsync();
+    }
     if (cachedScanners.length === 0) {
       return res.status(400).json({ error: 'No hay escáner conectado.' });
     }
@@ -4007,7 +4069,7 @@ async function performGmailSync(gmail, opts = {}) {
   return { updated: true, count: newEmails.length, downloaded: attachmentsIndexed, emails: newEmails, remaining: Math.max(0, pendingRefs.length - newEmails.length) };
 }
 
-app.post('/api/email-inbox/sync', authMiddleware, requirePermission('email.manage'), async (req, res) => {
+app.post('/api/email-inbox/sync', authMiddleware, requirePermission('email.manage'), gmailSyncLimiter, async (req, res) => {
   let gmail;
   try {
     gmail = getGmailClient(await getAdminGmailRefreshToken());
@@ -4165,7 +4227,7 @@ h2{margin:0 0 8px}.ok{color:#16a34a;font-weight:600}.hint{color:#666;font-size:1
 // Sincroniza la cuenta del funcionario con SU propio refresh token. Solo almacena
 // correos con `suggestedEmployeeId` = este funcionario, de modo que ve únicamente
 // los suyos.
-app.post('/api/funcionario/gmail/sync', authMiddleware, async (req, res) => {
+app.post('/api/funcionario/gmail/sync', authMiddleware, gmailSyncLimiter, async (req, res) => {
   if (req.user.role !== 'funcionario') return res.status(403).json({ error: 'Acceso denegado.' });
   const employee = await col('employees').findOne({ id: req.user.employeeId });
   if (!employee || !employee.gmailRefreshToken) {

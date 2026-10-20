@@ -326,6 +326,7 @@ async function loadAllData(retries = 5) {
       appState.scannerFiles = data.scannerFiles;
       appState.emails = data.emails;
       appState.stats = data.stats;
+      await fetchDeletionRequests();
 
       populateDropdown('upload-type', appState.documentTypes);
       populateDropdown('upload-category', appState.categories);
@@ -359,6 +360,15 @@ async function loadAllData(retries = 5) {
 
 
 
+async function fetchDeletionRequests() {
+  // Endpoint propio (deletion.review); el dashboard sigue enviando el listado
+  // como respaldo si este falla.
+  try {
+    const response = await apiFetch('/api/deletion-requests');
+    if (response.ok) appState.deletionRequests = await response.json();
+  } catch (e) { /* se conserva el listado del dashboard */ }
+}
+
 async function fetchStats() {
   const response = await apiFetch('/api/dashboard');
   if (!response.ok) throw new Error(`Error HTTP ${response.status}`);
@@ -370,6 +380,7 @@ async function fetchStats() {
   appState.scannerFiles = data.scannerFiles;
   appState.emails = data.emails;
   appState.stats = data.stats;
+  await fetchDeletionRequests();
   renderStats(data.stats);
 }
 

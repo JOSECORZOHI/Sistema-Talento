@@ -132,6 +132,21 @@ test('RBAC: un funcionario no accede a rutas de administrador (403)', async () =
   });
 });
 
+test('RBAC: un funcionario no revisa solicitudes de eliminación (403)', async () => {
+  await withServer(async (baseUrl) => {
+    const cookie = cookieFor(FUNC_EMAIL, 'funcionario', { employeeId: 'emp-1' });
+    const list = await fetch(baseUrl + '/api/deletion-requests', { headers: { Cookie: cookie } });
+    assert.equal(list.status, 403);
+    for (const action of ['approve', 'reject']) {
+      const res = await fetch(`${baseUrl}/api/deletion-requests/x/${action}`, {
+        method: 'PATCH',
+        headers: { Cookie: cookie, 'X-Requested-With': 'XMLHttpRequest' }
+      });
+      assert.equal(res.status, 403, `${action} debe ser 403`);
+    }
+  });
+});
+
 test('una ruta API inexistente responde 404 JSON', async () => {
   await withServer(async (baseUrl) => {
     const res = await fetch(baseUrl + '/api/ruta-inexistente', {

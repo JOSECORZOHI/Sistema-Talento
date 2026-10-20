@@ -40,6 +40,9 @@ jobs:
       - name: Tests unitarios y smoke
         run: npm test
         env:
-          SMOKE_BASE_URL: https://sistema-talento-production.up.railway.app
+          # Opcional: definir la variable de repositorio SMOKE_BASE_URL con la URL
+          # pública cuando el servicio esté desplegado. Sin ella, los 3 smoke HTTP
+          # se omiten y el CI no depende de producción.
+          SMOKE_BASE_URL: ${{ vars.SMOKE_BASE_URL }}
           # El smoke reintenta hasta ~40s ante 5xx/red (reinicio de Railway durante
           # el despliegue); una regresión real (200 donde se espera 404) falla al instante.

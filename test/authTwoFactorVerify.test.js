@@ -64,10 +64,19 @@ function fakeCollection(name) {
       return doc;
     },
     findOneAndUpdate: async () => null,
-    updateOne: async () => ({ modifiedCount: 1 }),
+    updateOne: async (filter = {}, update = {}) => {
+      if (filter.tokenHash && challenges.has(filter.tokenHash) && update.$inc && update.$inc.attempts) {
+        const c = challenges.get(filter.tokenHash);
+        c.attempts = (c.attempts || 0) + update.$inc.attempts;
+      }
+      return { modifiedCount: 1 };
+    },
     updateMany: async () => ({ modifiedCount: 0 }),
     deleteMany: async () => ({ deletedCount: 0 }),
-    deleteOne: async () => ({ deletedCount: 0 }),
+    deleteOne: async (filter = {}) => {
+      if (filter.tokenHash && challenges.delete(filter.tokenHash)) return { deletedCount: 1 };
+      return { deletedCount: 0 };
+    },
     insertOne: async () => ({ insertedId: 'fake-id' }),
     countDocuments: async () => (name === 'users' ? 1 : 0),
     indexes: async () => [],
@@ -128,6 +137,7 @@ test('2fa/verify intercambia challenge vigente + código válido por sesión (20
     const body = await res.json();
     assert.equal(body.user.email, TEST_EMAIL);
     assert.equal(body.user.role, 'admin');
+    assert.match(res.headers.get('set-cookie') || '', /th_token=/);
   });
 });
 
@@ -167,5 +177,27 @@ test('2fa/verify rechaza challenge expirado (400)', async () => {
     const res = await verify(baseUrl, { challenge: CHALLENGE, code: generateTOTP(TEST_SECRET) });
     assert.equal(res.status, 400);
     assert.match((await res.json()).error, /expir/i);
+  });
+});
+
+test('2fa/verify no quema el challenge con un código incorrecto (401 y luego 200)', async () => {
+  resetChallenges();
+  await withServer(async (baseUrl) => {
+    const wrong = await verify(baseUrl, { challenge: CHALLENGE, code: '000000' });
+    assert.equal(wrong.status, 401);
+    const ok = await verify(baseUrl, { challenge: CHALLENGE, code: generateTOTP(TEST_SECRET) });
+    assert.equal(ok.status, 200);
+  });
+});
+
+test('2fa/verify invalida el challenge tras 5 intentos fallidos', async () => {
+  resetChallenges();
+  challenges.get(challengeHash(CHALLENGE)).attempts = 4;
+  await withServer(async (baseUrl) => {
+    const last = await verify(baseUrl, { challenge: CHALLENGE, code: '000000' });
+    assert.equal(last.status, 401);
+    assert.match((await last.json()).error, /Demasiados intentos/i);
+    const after = await verify(baseUrl, { challenge: CHALLENGE, code: generateTOTP(TEST_SECRET) });
+    assert.equal(after.status, 400);
   });
 });

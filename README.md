@@ -30,7 +30,7 @@ La configuración se lee de `.env` (ver `.env.example`). `JWT_SECRET` es obligat
 ## Estructura de datos y archivos
 
 - Base de datos remota en MongoDB (`DATABASE_URL`): usuarios, funcionarios, catálogos, metadatos de documentos y auditoría.
-- Los **archivos** (PDFs cargados, adjuntos de correo y documentos escaneados al registrarse) se almacenan en **GridFS** dentro de MongoDB (`documentos.files`/`documentos.chunks`).
+- Los **archivos** cargados y los documentos escaneados registrados se almacenan en **GridFS** dentro de MongoDB (`documentos.files`/`documentos.chunks`). Los **adjuntos de correo** se indexan como metadatos y se descargan on-demand desde Gmail al previsualizar o registrar.
 - `database.json`: solo datos de referencia para la primera carga en la base remota.
 - `bandeja_escaner/`: carpeta local donde el programa de escaneo (SANE/simple-scan en Linux, EPSON Scan 2 / WIA en Windows) deja los PDFs escaneados pendientes de clasificar. Es la única carpeta local del sistema y solo aplica en una máquina con el escáner conectado.
 - `public/`: interfaz web.
