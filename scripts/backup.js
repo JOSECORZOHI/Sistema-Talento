@@ -112,16 +112,29 @@ function main() {
   // Comprimir en un único .tar.gz para facilitar la descarga.
   const archive = `${target}.tar.gz`;
   const tar = spawnSync('tar', ['-czf', archive, '-C', outDir, path.basename(target)], { stdio: 'inherit' });
+  let finalArchive = archive;
   if (tar.status === 0) {
     fs.rmSync(target, { recursive: true, force: true });
-    console.log(`[BACKUP] OK -> ${archive}`);
+    try {
+      const { encryptBuffer } = require('../lib/crypto');
+      const plainBytes = fs.readFileSync(archive);
+      const encryptedBytes = encryptBuffer(plainBytes);
+      const encArchive = `${archive}.enc`;
+      fs.writeFileSync(encArchive, encryptedBytes);
+      fs.rmSync(archive, { force: true });
+      finalArchive = encArchive;
+      console.log(`[BACKUP] OK (cifrado AES-256-GCM) -> ${finalArchive}`);
+    } catch (encErr) {
+      console.warn(`[BACKUP] Advertencia: no se pudo cifrar el respaldo (${encErr.message}). Se conserva archivo sin cifrar.`);
+      console.log(`[BACKUP] OK -> ${archive}`);
+    }
   } else {
     console.log(`[BACKUP] Compresión omitida; el dump quedó en ${target}`);
   }
 
   // Rotación: conservar solo los 10 backups más recientes.
   const archives = fs.readdirSync(outDir)
-    .filter((f) => f.endsWith('.tar.gz') || f.endsWith('.gz'))
+    .filter((f) => f.endsWith('.tar.gz') || f.endsWith('.gz') || f.endsWith('.enc'))
     .map((f) => ({ f, mtime: fs.statSync(path.join(outDir, f)).mtimeMs }))
     .sort((a, b) => b.mtime - a.mtime)
     .slice(10);
@@ -130,14 +143,14 @@ function main() {
   // Prueba de restauración opcional: restaura en una BD temporal y compara conteos.
   // Se activa con --verify (backup:schedule la incluye por defecto).
   if (process.argv.includes('--verify')) {
-    const withArchive = fs.existsSync(archive);
+    const withArchive = fs.existsSync(finalArchive);
     if (withArchive) {
       console.log('[BACKUP] Ejecutando prueba de restauración...');
-      const v = spawnSync(process.execPath, [path.join(__dirname, 'verify-backup.js'), '--backup', archive], { stdio: 'inherit' });
+      const v = spawnSync(process.execPath, [path.join(__dirname, 'verify-backup.js'), '--backup', finalArchive], { stdio: 'inherit' });
       if (v.status !== 0) console.warn('[BACKUP] La verificación de restauración FALLÓ (revise los avisos).');
       else console.log('[BACKUP] Verificación de restauración OK.');
     } else {
-      console.warn('[BACKUP] No se pudo verificar (falta el .tar.gz).');
+      console.warn('[BACKUP] No se pudo verificar (falta el archivo de respaldo).');
     }
   }
   console.log('[BACKUP] Listo.');

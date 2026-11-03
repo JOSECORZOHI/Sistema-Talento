@@ -802,6 +802,7 @@ async function authenticateUser(user, collectionName, role, username, password, 
       const responseUser = { email: user.email, name: user.name, role, department: user.department };
       if (role === 'funcionario') responseUser.employeeId = user.id;
       if (user.mustChangePassword) responseUser.mustChangePassword = true;
+      if (role === 'admin' && !user.totpEnabled) responseUser.mustSetup2FA = true;
       setAuthCookie(res, token);
       return res.json({ user: responseUser });
     }
@@ -1689,6 +1690,9 @@ app.post('/api/auth/2fa/enable', authMiddleware, validateBody(twoFactorEnableSch
 // Desactiva 2FA: exige un código vigente del secreto ya almacenado.
 app.post('/api/auth/2fa/disable', authMiddleware, validateBody(twoFactorCodeSchema), async (req, res) => {
   try {
+    if (req.user.role === 'admin' && (process.env.REQUIRE_ADMIN_2FA === 'true' || process.env.NODE_ENV === 'production')) {
+      return res.status(403).json({ error: 'La autenticación de dos factores es obligatoria para administradores y no puede ser desactivada.' });
+    }
     const { code } = req.body || {};
     if (!isValidTotpCode(code)) return res.status(400).json({ error: 'Ingrese el código de 6 dígitos de su aplicación de autenticación.' });
     const ip = getClientIp(req);
@@ -2221,8 +2225,8 @@ app.delete('/api/employees/:id', authMiddleware, requirePermission('employees.de
       await replaceManyText(col('securityLogs'), [empName, id, empEmail], scrub);
     }
 
-    await addAuditLog('Eliminar Empleado', `Se eliminó permanentemente al funcionario (C.C. ${id}) y todos sus datos personales, documentos y registros asociados conforme a la Ley 1581 de 2012 (derecho de supresión).`, req.user.name, ip);
-    await addSecurityLog('Empleado Eliminado', `Funcionario (C.C. ${id}) eliminado permanentemente con supresión total de sus datos personales por ${req.user.name}.`, ip);
+    await addAuditLog('Eliminar Empleado', 'Se eliminó permanentemente al funcionario y todos sus datos personales, documentos y registros asociados conforme a la Ley 1581 de 2012 (derecho de supresión). Titular: [SUPRIMIDO].', req.user.name, ip);
+    await addSecurityLog('Empleado Eliminado', `Funcionario eliminado permanentemente con supresión total de sus datos personales por ${req.user.name}. Titular: [SUPRIMIDO].`, ip);
     res.json({ message: `Funcionario eliminado permanentemente. Sus datos personales, documentos y registros asociados fueron suprimidos conforme a la Ley 1581 de 2012.` });
   } catch (error) {
     console.error('[DELETE-EMPLOYEE] Error:', error);
@@ -2464,15 +2468,9 @@ app.delete('/api/documents/:id', authMiddleware, requirePermission('documents.de
   if (!doc) return res.status(404).json({ error: 'Documento no encontrado.' });
 
   if (deletePhysical === 'true') {
-    try {
-      await deleteDocAndPhysicalFile(id, doc.filename);
-      await addAuditLog('Eliminación Física', `Se eliminó físicamente el archivo '${doc.filename}' y su registro de la base de datos.`, req.user.name, getClientIp(req));
-      await addSecurityLog('Documento Eliminado', `Documento '${doc.filename}' eliminado físicamente por ${req.user.name}.`, getClientIp(req), req.user.email);
-      res.json({ message: 'Documento eliminado física y lógicamente.' });
-    } catch (e) {
-      console.error(e);
-      res.status(500).json({ error: 'Error al eliminar el archivo físico del servidor.' });
-    }
+    return res.status(403).json({
+      error: 'La eliminación física directa no está permitida. Requiere tramitar y aprobar una solicitud formal de eliminación bajo el principio de doble control.'
+    });
   } else {
     await col('documents').updateOne({ id }, { $set: { status: 'Archivado', updatedAt: new Date().toISOString() } });
     await addAuditLog('Archivado de Documento', `Se archivó el documento '${doc.filename}' asociado a ${doc.employeeName}.`, req.user.name, getClientIp(req));

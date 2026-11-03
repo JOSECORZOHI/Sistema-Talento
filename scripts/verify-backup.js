@@ -74,7 +74,10 @@ function findTool(name) {
 function latestBackup(backupsDir) {
   if (!fs.existsSync(backupsDir)) return null;
   const files = fs.readdirSync(backupsDir)
-    .filter(f => f.toLowerCase().endsWith('.gz'))
+    .filter(f => {
+      const lower = f.toLowerCase();
+      return lower.endsWith('.gz') || lower.endsWith('.enc');
+    })
     .map(f => ({ f, t: fs.statSync(path.join(backupsDir, f)).mtimeMs }))
     .sort((a, b) => b.t - a.t);
   return files.length ? path.join(backupsDir, files[0].f) : null;
@@ -125,15 +128,24 @@ function usage() {
     dumpRoot = backupPath;
   } else {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'th-verify-'));
-    console.log(`[VERIFY] Extrayendo ${backupPath} ...`);
-    const xtract = spawnSync('tar', ['-zxf', backupPath, '-C', tempDir], { stdio: 'inherit' });
+    let tarFile = backupPath;
+    if (backupPath.endsWith('.enc')) {
+      console.log(`[VERIFY] Descifrando ${backupPath} (AES-256-GCM)...`);
+      const { decryptBuffer } = require('../lib/crypto');
+      const encBytes = fs.readFileSync(backupPath);
+      const decBytes = decryptBuffer(encBytes);
+      tarFile = path.join(tempDir, 'decrypted_dump.tar.gz');
+      fs.writeFileSync(tarFile, decBytes);
+    }
+    console.log(`[VERIFY] Extrayendo ${tarFile} ...`);
+    const xtract = spawnSync('tar', ['-zxf', tarFile, '-C', tempDir], { stdio: 'inherit' });
     if (xtract.status !== 0) {
-      console.error('[VERIFY] No se pudo extraer el archivo .gz (¿tar disponible?).');
+      console.error('[VERIFY] No se pudo extraer el archivo de respaldo (¿tar disponible?).');
       process.exit(1);
     }
     const entries = fs.readdirSync(tempDir, { withFileTypes: true }).filter(e => e.isDirectory());
     if (entries.length !== 1) {
-      console.error('[VERIFY] El .gz no tiene la estructura esperada (una carpeta raíz).');
+      console.error('[VERIFY] El respaldo no tiene la estructura esperada (una carpeta raíz).');
       process.exit(1);
     }
     dumpRoot = path.join(tempDir, entries[0].name);

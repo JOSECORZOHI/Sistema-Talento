@@ -63,7 +63,7 @@ async function authMiddleware(req, res, next) {
     const collection = getCollectionForRole(decoded.role);
     const dbUser = await col(collection).findOne(
       { email: decoded.email },
-      { projection: { jwtVersion: 1, status: 1, active: 1, id: 1, name: 1, mustChangePassword: 1 } }
+      { projection: { jwtVersion: 1, status: 1, active: 1, id: 1, name: 1, mustChangePassword: 1, totpEnabled: 1 } }
     );
     if (!dbUser) {
       return res.status(401).json({ error: 'Usuario no encontrado. Inicie sesión nuevamente.' });
@@ -75,14 +75,31 @@ async function authMiddleware(req, res, next) {
       return res.status(401).json({ error: 'Su cuenta no está activa. Contacte al administrador.' });
     }
     const bootstrapPath = req.baseUrl + req.path;
-    const allowedWhileRestricted = ['/api/auth/change-password', '/api/auth/me'].includes(bootstrapPath);
+    const allowedWhileRestricted = [
+      '/api/auth/change-password',
+      '/api/auth/me',
+      '/api/auth/2fa/status',
+      '/api/auth/2fa/setup',
+      '/api/auth/2fa/enable',
+      '/api/auth/logout'
+    ].includes(bootstrapPath);
     if (decoded.role === 'funcionario' && dbUser.active === false && !allowedWhileRestricted) {
       return res.status(401).json({ error: 'Su cuenta no está activa. Contacte al administrador.' });
     }
     if (dbUser.mustChangePassword && !allowedWhileRestricted) {
       return res.status(403).json({ error: 'Debe cambiar su contraseña antes de continuar.', mustChangePassword: true });
     }
+    const requireAdmin2FA = process.env.REQUIRE_ADMIN_2FA === 'true' || process.env.NODE_ENV === 'production';
+    if (decoded.role === 'admin' && requireAdmin2FA && !dbUser.totpEnabled && !allowedWhileRestricted) {
+      return res.status(403).json({
+        error: 'Debe configurar la autenticación de dos factores (2FA) antes de realizar acciones administrativas.',
+        mustSetup2FA: true
+      });
+    }
     req.user = decoded;
+    if (decoded.role === 'admin' && !dbUser.totpEnabled) {
+      req.user.mustSetup2FA = true;
+    }
     next();
   } catch (err) {
     if (err.name === 'TokenExpiredError') {
