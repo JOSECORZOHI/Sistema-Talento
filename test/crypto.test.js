@@ -106,3 +106,18 @@ test('sin DOC_ENC_KEY ni JWT_SECRET lanza (no hay clave hardcodeada)', () => {
     else process.env.JWT_SECRET = prevJwt;
   }
 });
+
+test('encryptText y decryptText: round-trip de cadenas de texto y fallback legacy', () => {
+  const key = cryptoLib.genKey();
+  const secret = 'JBSWY3DPEHPK3PXP';
+  withKey(key, () => {
+    const encrypted = cryptoLib.encryptText(secret);
+    assert.notEqual(encrypted, secret);
+    const decrypted = cryptoLib.decryptText(encrypted);
+    assert.equal(decrypted, secret);
+    // Fallback legacy (cadena no cifrada)
+    assert.equal(cryptoLib.decryptText('plaintext_legacy_token'), 'plaintext_legacy_token');
+    assert.equal(cryptoLib.decryptText(''), '');
+    assert.equal(cryptoLib.decryptText(null), null);
+  });
+});

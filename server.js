@@ -47,7 +47,7 @@ const {
   getHeader, parseDateHeader, validatePasswordStrength
 } = require('./lib/helpers');
 const { renderResetPasswordEmail, renderCredentialsEmail } = require('./lib/emailTemplates');
-const { assertEncryptionKey } = require('./lib/crypto');
+const { assertEncryptionKey, encryptText, decryptText } = require('./lib/crypto');
 const { generateSecret, verifyTOTP, buildOtpauthURL } = require('./lib/totp');
 
 // Manejo de errores no controlados.
@@ -1169,7 +1169,7 @@ function generateId(prefix) {
   return `${prefix}_${Date.now()}_${crypto.randomBytes(6).toString('hex')}`;
 }
 
-function createDoc({ filename, originalName, employeeId, employeeName, documentTypeId, categoryId, description, issueDate, expiryDate, status, fileSize, uploadedBy, uploadedByEmployee, visibleToEmployee, sourceEmailId, sourceSenderEmail }) {
+function createDoc({ filename, originalName, employeeId, employeeName, documentTypeId, categoryId, description, issueDate, expiryDate, status, fileSize, fileHash, uploadedBy, uploadedByEmployee, visibleToEmployee, sourceEmailId, sourceSenderEmail }) {
   const statusErr = validateDocStatus(status);
   if (statusErr) {
     throw new Error(`Estado no válido para el documento: ${status}`);
@@ -1181,7 +1181,9 @@ function createDoc({ filename, originalName, employeeId, employeeName, documentT
     description: description || '', issueDate, expiryDate: expiryDate || '',
     status: status || 'Pendiente',
     registeredAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
-    fileSize, uploadedBy: uploadedBy || 'Sistema',
+    fileSize,
+    fileHash: fileHash || null,
+    uploadedBy: uploadedBy || 'Sistema',
     uploadedByEmployee: !!uploadedByEmployee, visibleToEmployee: visibleToEmployee !== false,
     ...(sourceEmailId ? { sourceEmailId, sourceSenderEmail: sourceSenderEmail || '' } : {})
   };
@@ -1202,6 +1204,7 @@ async function registerDocumentCore({ req, filename, employeeId, documentTypeId,
   let fileSize = 0;
   let stored = false;
   let deferredOriginalDelete = null;
+  let registeredBuffer = fileBuffer || null;
   const sensitive = isSensitiveDocument(documentTypeId, categoryId);
 
   try {
@@ -1226,6 +1229,7 @@ async function registerDocumentCore({ req, filename, employeeId, documentTypeId,
           chunks.push(chunk);
         }
         const buf = Buffer.concat(chunks);
+        registeredBuffer = buf;
         targetFilename = getUniqueFilename(filename);
         await storeFileBuffer(targetFilename, buf, { source: gridFSSource || sourceDir || 'upload', registered: true, sensitive });
         stored = true;
@@ -1248,6 +1252,7 @@ async function registerDocumentCore({ req, filename, employeeId, documentTypeId,
         // para no registrar un archivo suplantado/corrupto que no coincide con su extensión.
         const trayContentError = validateFileContent(filename, buf);
         if (trayContentError) return { error: trayContentError, status: 400 };
+        registeredBuffer = buf;
         targetFilename = getUniqueFilename(filename);
         await storeFileBuffer(targetFilename, buf, { source: gridFSSource || sourceDir || 'upload', registered: true, sensitive });
         stored = true;
@@ -1265,6 +1270,7 @@ async function registerDocumentCore({ req, filename, employeeId, documentTypeId,
           const got = await readFileBuffer(filename).catch(() => null);
           if (got && got.buffer) {
             const buf = got.buffer;
+            registeredBuffer = buf;
             await deleteFileByName(filename);
             await storeFileBuffer(filename, buf, { source: gridFSSource || sourceDir || 'upload', registered: true, sensitive });
             fileSize = buf.length;
@@ -1277,11 +1283,13 @@ async function registerDocumentCore({ req, filename, employeeId, documentTypeId,
 
     if (!targetFilename) return { error: 'No se pudo localizar el archivo para registrar.', status: 404 };
 
+    const fileHash = registeredBuffer ? crypto.createHash('sha256').update(registeredBuffer).digest('hex') : null;
+
     const newDoc = createDoc({
       filename: targetFilename, originalName: filename,
       employeeId, employeeName: employee.name,
       documentTypeId, categoryId, description, issueDate, expiryDate,
-      status, fileSize,
+      status, fileSize, fileHash,
       ...(extraDocFields || {})
     });
     await col('documents').insertOne(newDoc);
@@ -1426,7 +1434,7 @@ function createGmailAuthClient() {
 async function getAdminGmailRefreshToken() {
   try {
     const cfg = await col('config').findOne({ key: 'gmailAdmin' });
-    if (cfg && cfg.refreshToken) return cfg.refreshToken;
+    if (cfg && cfg.refreshToken) return decryptText(cfg.refreshToken);
   } catch (e) { console.warn('[GMAIL] No se pudo leer el token admin de BD:', e.message); }
   return process.env.GMAIL_REFRESH_TOKEN || null;
 }
@@ -1458,7 +1466,7 @@ async function getGmailClientForInboxOwner(inboxOwner) {
     error.code = 'GMAIL_NOT_LINKED';
     throw error;
   }
-  return { gmail: getGmailClient(employee.gmailRefreshToken), label: inboxOwner };
+  return { gmail: getGmailClient(decryptText(employee.gmailRefreshToken)), label: inboxOwner };
 }
 
 // Descarga on-demand el contenido de un adjunto de un correo desde la cuenta a
@@ -1655,7 +1663,7 @@ app.post('/api/auth/2fa/enable', authMiddleware, validateBody(twoFactorEnableSch
       if (!isValidTotpCode(currentCode)) {
         return res.status(400).json({ error: 'Ya tiene 2FA activo. Ingrese un código vigente de su autenticador actual para reconfigurarlo.' });
       }
-      if (!verifyTOTP(account.totpSecret, currentCode)) {
+      if (!verifyTOTP(decryptText(account.totpSecret), currentCode)) {
         await addSecurityLog('2FA Reconfiguración Fallida', `Código actual incorrecto al intentar reconfigurar 2FA en ${req.user.email}.`, ip, req.user.email);
         return res.status(401).json({ error: 'El código de su 2FA actual es incorrecto. No se modificó la configuración.' });
       }
@@ -1663,7 +1671,7 @@ app.post('/api/auth/2fa/enable', authMiddleware, validateBody(twoFactorEnableSch
     const nextVersion = ((account && account.jwtVersion) || 0) + 1;
     await col(getCollectionForRole(req.user.role)).updateOne(
       lookup,
-      { $set: { totpEnabled: true, totpSecret: String(secret).toUpperCase(), jwtVersion: nextVersion } }
+      { $set: { totpEnabled: true, totpSecret: encryptText(String(secret).toUpperCase()), jwtVersion: nextVersion } }
     );
     // Invalidar sesiones previas y renovar la sesión actual con la nueva versión.
     const freshPayload = { email: req.user.email, name: req.user.name, role: req.user.role, v: nextVersion };
@@ -1687,7 +1695,7 @@ app.post('/api/auth/2fa/disable', authMiddleware, validateBody(twoFactorCodeSche
     const lookup = getLookupForRole(req.user.role, req.user);
     const user = await col(getCollectionForRole(req.user.role)).findOne(lookup);
     if (!user || !user.totpEnabled || !user.totpSecret) return res.status(400).json({ error: 'La autenticación de dos factores no está activa.' });
-    if (!verifyTOTP(user.totpSecret, code)) {
+    if (!verifyTOTP(decryptText(user.totpSecret), code)) {
       await addSecurityLog('2FA Desactivación Fallida', `Código de verificación incorrecto para desactivar 2FA en ${req.user.email}.`, ip, req.user.email);
       return res.status(401).json({ error: 'El código de verificación es incorrecto.' });
     }
@@ -1747,7 +1755,7 @@ app.post('/api/auth/2fa/verify', validateBody(twoFactorVerifySchema), async (req
       || locked) {
       return res.status(401).json({ error: 'La cuenta no está habilitada. Contacte al administrador.' });
     }
-    if (!verifyTOTP(user.totpSecret, code)) {
+    if (!verifyTOTP(decryptText(user.totpSecret), code)) {
       await addSecurityLog('2FA Fallido', `Código de verificación incorrecto para ${user.email}.`, ip, user.email);
       if ((ch.attempts || 0) >= 5) {
         await col('twoFactorChallenges').deleteOne({ tokenHash: challengeHash });
@@ -2875,6 +2883,7 @@ app.get('/api/document-file/:filename', fileAuthMiddleware, async (req, res) => 
       const mimeType = getMimeType(filename);
       res.setHeader('Content-Type', mimeType);
       res.setHeader('Content-Disposition', buildContentDisposition(mimeType, filename));
+      addAuditLog('Descarga de Documento', `Descarga de '${redactFilename(filename)}'`, req.user.email || req.user.name || 'Sistema', getClientIp(req)).catch(() => {});
       let finished = false;
 
       // Capturar errores del stream ANTES de pipe para evitar que escapen al uncaughtException
@@ -3652,7 +3661,7 @@ app.get('/api/gmail/oauth2callback', async (req, res) => {
     if (tokens.refresh_token) {
       await col('config').updateOne(
         { key: 'gmailAdmin' },
-        { $set: { refreshToken: tokens.refresh_token, linkedAt: new Date().toISOString() } },
+        { $set: { refreshToken: encryptText(tokens.refresh_token), linkedAt: new Date().toISOString() } },
         { upsert: true }
       );
       if (process.env.NODE_ENV === 'development') {
@@ -4049,7 +4058,7 @@ app.get('/api/funcionario/gmail/callback', async (req, res) => {
     // pertenecían a este funcionario (para evitar mezclas entre cuentas).
     const result = await col('employees').updateOne({ id: employeeId }, {
       $set: {
-        gmailRefreshToken: tokens.refresh_token,
+        gmailRefreshToken: encryptText(tokens.refresh_token),
         gmailLinkedAt: new Date().toISOString(),
         ...(gmailEmail ? { gmailEmail } : {})
       }
@@ -4091,7 +4100,7 @@ app.post('/api/funcionario/gmail/sync', authMiddleware, gmailSyncLimiter, async 
   }
   let gmail;
   try {
-    gmail = getGmailClient(employee.gmailRefreshToken);
+    gmail = getGmailClient(decryptText(employee.gmailRefreshToken));
   } catch (error) {
     const status = error.code === 'GMAIL_NOT_CONFIGURED' ? 503 : 502;
     return res.status(status).json({ error: 'No se pudo iniciar la sincronización de Gmail.' });
