@@ -1,9 +1,30 @@
 require('dotenv').config();
+const logger = require('./lib/logger');
+const {
+  parseCookies,
+  getAuthToken,
+  setAuthCookie,
+  clearAuthCookie,
+  authMiddleware,
+  fileAuthMiddleware,
+  hasPermission,
+  requirePermission,
+  requireAnyPermission,
+  csrfProtection,
+  z,
+  validateBody,
+  globalLimiter,
+  authLimiter,
+  createLimiter,
+  scannerLimiter,
+  twoFactorLimiter,
+  uploadLimiter,
+  gmailSyncLimiter
+} = require('./middlewares');
 require('dns').setDefaultResultOrder('ipv4first');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
 const mongoSanitize = require('express-mongo-sanitize');
 const hpp = require('hpp');
 const multer = require('multer');
@@ -28,7 +49,6 @@ const {
 const { renderResetPasswordEmail, renderCredentialsEmail } = require('./lib/emailTemplates');
 const { assertEncryptionKey } = require('./lib/crypto');
 const { generateSecret, verifyTOTP, buildOtpauthURL } = require('./lib/totp');
-const { z, validateBody } = require('./lib/validate');
 
 // Manejo de errores no controlados.
 // unhandledRejection: se loguea sin salir (permite que la reconexión a Mongo se recupere).
@@ -318,120 +338,7 @@ app.use((req, res, next) => {
 app.use(mongoSanitize({ replaceWith: '_' }));
 app.use(hpp());
 
-// --- AUTENTICACIÓN POR COOKIE httpOnly --------------------------------------
-// El JWT de sesión viaja en una cookie httpOnly (no accesible por JavaScript),
-// lo que evita su robo vía XSS desde localStorage. Se conserva la aceptación del
-// encabezado Authorization: Bearer por retrocompatibilidad (clientes/scripts).
-const AUTH_COOKIE = 'th_token';
-const AUTH_COOKIE_MAX_AGE_MS = 8 * 60 * 60 * 1000; // 8h (igual que la expiración del JWT)
-const AUTH_COOKIE_SECURE = process.env.NODE_ENV === 'production';
-
-function authCookieOptions() {
-  return { httpOnly: true, sameSite: 'lax', secure: AUTH_COOKIE_SECURE, path: '/' };
-}
-
-function parseCookies(req) {
-  const header = req.headers && req.headers.cookie;
-  const out = {};
-  if (!header) return out;
-  for (const part of header.split(';')) {
-    const idx = part.indexOf('=');
-    if (idx < 0) continue;
-    const key = part.slice(0, idx).trim();
-    const value = part.slice(idx + 1).trim();
-    if (!key) continue;
-    try { out[key] = decodeURIComponent(value); } catch { out[key] = value; }
-  }
-  return out;
-}
-
-function getAuthToken(req) {
-  const fromCookie = parseCookies(req)[AUTH_COOKIE];
-  if (fromCookie) return fromCookie;
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) return authHeader.slice(7);
-  return null;
-}
-
-function setAuthCookie(res, token) {
-  res.cookie(AUTH_COOKIE, token, { ...authCookieOptions(), maxAge: AUTH_COOKIE_MAX_AGE_MS });
-}
-
-function clearAuthCookie(res) {
-  res.clearCookie(AUTH_COOKIE, authCookieOptions());
-}
-
-// --- PROTECCIÓN CSRF ---------------------------------------------------------
-// Las cookies se envían solas; para las peticiones que cambian estado se exige un
-// encabezado personalizado que un formulario cross-site no puede añadir. Las
-// peticiones con Bearer quedan exentas porque no dependen de cookies.
-function csrfProtection(req, res, next) {
-  const method = req.method.toUpperCase();
-  if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return next();
-  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) return next();
-  const requestedWith = String(req.get('x-requested-with') || '').toLowerCase();
-  if (requestedWith === 'xmlhttprequest') return next();
-  return res.status(403).json({ error: 'Solicitud no permitida (protección CSRF).' });
-}
 app.use(csrfProtection);
-
-const globalLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 200,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Demasiadas peticiones desde esta IP. Intente de nuevo en 15 minutos.' }
-});
-
-const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 15,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Demasiados intentos de autenticación. Intente de nuevo en 15 minutos.' }
-});
-
-const createLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  max: 20,
-  message: { error: 'Límite de creación alcanzado. Intente de nuevo en una hora.' }
-});
-
-const scannerLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 12,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Demasiadas solicitudes de refresco de escáner. Intente de nuevo en 15 minutos.' }
-});
-
-const twoFactorLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  // En tests se eleva para que la suite no dependa del conteo acumulado.
-  max: process.env.NODE_ENV === 'test' ? 1000 : 15,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Demasiados intentos de verificación 2FA. Intente de nuevo en 15 minutos.' }
-});
-
-const uploadLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  max: 60,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Límite de subidas alcanzado. Intente de nuevo en una hora.' }
-});
-
-const gmailSyncLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 20,
-  standardHeaders: true,
-  legacyHeaders: false,
-  // Por usuario, no por IP: en oficinas con NAT una cuenta no debe bloquear a
-  // las demás. Las rutas que lo usan ya pasaron por authMiddleware.
-  keyGenerator: (req) => req.user?.email || req.user?.employeeId || 'anon',
-  message: { error: 'Demasiadas sincronizaciones de correo. Intente de nuevo en 15 minutos.' }
-});
 
 app.use('/api/', globalLimiter);
 app.use('/api/auth/login', authLimiter);
@@ -439,6 +346,7 @@ app.use('/api/auth/forgot-password', authLimiter);
 app.use('/api/auth/activate', authLimiter);
 app.use('/api/auth/reset-password', authLimiter);
 app.use('/api/auth/2fa/verify', twoFactorLimiter);
+
 // --- CSP con NONCE (endurecimiento Content-Security-Policy) ---
 // Se genera un nonce por petición (en el middleware global de arriba) y se inyecta
 // en los <script> en línea de las páginas HTML, eliminando la dependencia de
@@ -509,6 +417,10 @@ app.use('/api', async (req, res, next) => {
     return res.status(503).json({ error: 'Base de datos temporalmente no disponible. Intente de nuevo en unos segundos.' });
   }
 });
+
+
+
+
 
 const ALLOWED_EXTENSIONS = new Set([
   '.pdf','.doc','.docx','.xls','.xlsx','.ppt','.pptx',
@@ -705,6 +617,31 @@ function redactFilename(filename) {
   const ext = path.extname(s);
   const base = ext ? s.slice(0, -ext.length) : s;
   return `${base.slice(0, 3)}***${ext}`;
+}
+
+// --- REGISTRO DE AUDITORÍA ---
+/**
+ * Inserta un registro en auditLogs. Nunca lanza para no interrumpir el flujo principal.
+ *
+ * @param {string} action - Acción/evento.
+ * @param {string} details - Detalles del evento.
+ * @param {string} [user='Sistema'] - Usuario implicado.
+ * @param {string} [ip] - IP de origen.
+ */
+async function addAuditLog(action, details, user = 'Sistema', ip) {
+  const entry = {
+    id: 'audit_' + Date.now() + '_' + crypto.randomBytes(4).toString('hex'),
+    timestamp: new Date().toISOString(),
+    action,
+    details,
+    user: user || 'Sistema',
+    ip: ip || 'unknown'
+  };
+  try {
+    await col('auditLogs').insertOne(entry);
+  } catch (e) {
+    console.warn('Error al insertar log de auditoría:', e.message);
+  }
 }
 
 // --- LOGGING DE SEGURIDAD ---
@@ -983,103 +920,7 @@ async function addToPasswordHistory(email, hashedPassword, role) {
   );
 }
 
-// --- ROLES Y PERMISOS ---
-const ROLES = {
-  admin: {
-    permissions: [
-      'employees.create', 'employees.read', 'employees.update', 'employees.delete', 'employees.suspend', 'employees.reactivate',
-      'documents.create', 'documents.read', 'documents.update', 'documents.delete', 'documents.analyze',
-      'audit.read', 'config.manage',
-      'scanner.manage', 'scanner.read', 'scanner.refresh', 'scanner.scan',
-      'email.manage',
-      'deletion.create', 'deletion.review'
-    ]
-  },
-  funcionario: {
-    permissions: [
-      'scanner.read', 'scanner.refresh', 'scanner.scan',
-      'email.read', 'email.sync',
-      'documents.analyze',
-      'deletion.create'
-    ]
-  }
-};
 
-/**
- * Comprueba si un rol tiene un permiso específico.
- *
- * @param {string} role - 'admin' | 'funcionario'.
- * @param {string} permission - Identificador de permiso.
- * @returns {boolean} true si el rol posee el permiso.
- */
-function hasPermission(role, permission) {
-  return ROLES[role]?.permissions.includes(permission) || false;
-}
-
-/**
- * Middleware Express: responde 403 si el usuario autenticado no tiene el permiso.
- *
- * @param {string} permission - Permiso requerido.
- * @returns {function} Middleware de Express.
- */
-function requirePermission(permission) {
-  return (req, res, next) => {
-    if (!req.user || !hasPermission(req.user.role, permission)) {
-      return res.status(403).json({ error: 'No tiene permisos para realizar esta acción.' });
-    }
-    next();
-  };
-}
-
-/**
- * Middleware Express: responde 403 si el usuario no tiene al menos uno de los
- * permisos indicados.
- *
- * @param {...string} permissions - Permisos alternativos.
- * @returns {function} Middleware de Express.
- */
-function requireAnyPermission(...permissions) {
-  return (req, res, next) => {
-    if (!req.user || !permissions.some(p => hasPermission(req.user.role, p))) {
-      return res.status(403).json({ error: 'No tiene permisos para realizar esta acción.' });
-    }
-    next();
-  };
-}
-
-/**
- * Inserta una entrada en auditLogs; nunca lanza (solo advierte en consola).
- *
- * @param {string} action - Acción realizada.
- * @param {string} details - Detalle legible.
- * @param {string} userEmail - Correo del actor.
- * @param {string} ip - IP del actor.
- */
-async function addAuditLog(action, details, userEmail, ip) {
-  try {
-    const newLog = {
-      id: generateId('log'),
-      timestamp: new Date().toISOString(),
-      user: userEmail || 'Sistema',
-      action,
-      details,
-      ip: ip || 'unknown'
-    };
-    await col('auditLogs').insertOne(newLog);
-  } catch (e) {
-    console.warn('Error guardando registro de auditoría:', e.message);
-  }
-}
-
-/**
- * Resuelve un nombre de archivo a una ruta segura dentro del directorio:
- * rechaza separadores de ruta (..,%2f), nombres vacíos y extensiones no
- * permitidas (anti path traversal).
- *
- * @param {string} directory - Directorio base.
- * @param {string} filename - Nombre del archivo a resolver.
- * @returns {string|null} Ruta segura o null si es inválida.
- */
 function getSafeFilePath(directory, filename) {
   if (typeof filename !== 'string' || filename !== path.basename(filename) || !isAllowedFile(filename)) {
     return null;
@@ -1671,58 +1512,6 @@ function getAttachmentParts(part, attachmentParts = []) {
   }
   (part.parts || []).forEach(child => getAttachmentParts(child, attachmentParts));
   return attachmentParts;
-}
-
-// --- MIDDLEWARE DE AUTENTICACIÓN ---
-async function authMiddleware(req, res, next) {
-  const token = getAuthToken(req);
-  if (!token) {
-    return res.status(401).json({ error: 'No autenticado. Inicie sesión.' });
-  }
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
-    if (decoded.v === undefined) {
-      return res.status(401).json({ error: 'Sesión no válida. Inicie sesión nuevamente.' });
-    }
-    const collection = getCollectionForRole(decoded.role);
-    const dbUser = await col(collection).findOne(
-      { email: decoded.email },
-      { projection: { jwtVersion: 1, status: 1, active: 1, id: 1, name: 1, mustChangePassword: 1 } }
-    );
-    if (!dbUser) {
-      return res.status(401).json({ error: 'Usuario no encontrado. Inicie sesión nuevamente.' });
-    }
-    if (decoded.v !== (dbUser.jwtVersion || 0)) {
-      return res.status(401).json({ error: 'Sesión expirada por cambio de contraseña. Inicie sesión nuevamente.' });
-    }
-    if (dbUser.status === 'suspendida' || dbUser.status === 'inactiva' || dbUser.status === 'bloqueada') {
-      return res.status(401).json({ error: 'Su cuenta no está activa. Contacte al administrador.' });
-    }
-    // Rutas de arranque permitidas mientras la cuenta exige cambio de contraseña
-    // o está pendiente de activación. La comparación es sobre la RUTA exacta
-    // (req.baseUrl + req.path), nunca sobre originalUrl, para que un query string
-    // como `?x=/auth/change-password` no permita evadir el control.
-    const bootstrapPath = req.baseUrl + req.path;
-    const allowedWhileRestricted = ['/api/auth/change-password', '/api/auth/me'].includes(bootstrapPath);
-    if (decoded.role === 'funcionario' && dbUser.active === false && !allowedWhileRestricted) {
-      return res.status(401).json({ error: 'Su cuenta no está activa. Contacte al administrador.' });
-    }
-    if (dbUser.mustChangePassword && !allowedWhileRestricted) {
-      return res.status(403).json({ error: 'Debe cambiar su contraseña antes de continuar.', mustChangePassword: true });
-    }
-    req.user = decoded;
-    next();
-  } catch (err) {
-    if (err.name === 'TokenExpiredError') {
-      return res.status(401).json({ error: 'Sesión expirada. Inicie sesión nuevamente.' });
-    }
-    if (err.name === 'JsonWebTokenError' || err.name === 'NotBeforeError') {
-      return res.status(401).json({ error: 'Token inválido. Inicie sesión nuevamente.' });
-    }
-    // Error de BD/red (p. ej. TLS transitorio de Atlas): 503 en vez de 401,
-    // para que el frontend no fuerce un logout ante un problema temporal.
-    return res.status(503).json({ error: 'Error temporal de base de datos. Intente de nuevo en unos segundos.' });
-  }
 }
 
 // --- INICIO DE SESIÓN UNIFICADO ---
@@ -2895,7 +2684,7 @@ app.post('/api/documents/analyze', authMiddleware, requireAnyPermission('documen
   try {
     employees = await col('employees').find({}, { projection: { id: 1, name: 1, lastName: 1, identification: 1 } }).limit(2000).toArray();
   } catch (e) {
-    console.warn('[ANALYZE] No se pudieron cargar los empleados para sugerir:', e.message);
+    logger.warn('[ANALYZE] No se pudieron cargar los empleados para sugerir:', e.message);
   }
 
   // Lee el buffer (descifrado en reposo si aplica) respetando el límite de
@@ -2911,7 +2700,7 @@ app.post('/api/documents/analyze', authMiddleware, requireAnyPermission('documen
       if (/supera el tamaño máximo/i.test(e.message || '')) {
         return res.status(413).json({ error: 'El archivo supera el tamaño máximo para análisis.' });
       }
-      console.error('[ANALYZE] Error leyendo archivo:', e.message);
+      logger.error('[ANALYZE] Error leyendo archivo:', e.message);
       return res.status(500).json({ error: 'No se pudo leer el archivo para análisis.' });
     }
   }
@@ -2940,7 +2729,7 @@ app.post('/api/documents/analyze', authMiddleware, requireAnyPermission('documen
     } catch (e) {
       const status = e.code === 'GMAIL_NOT_LINKED' ? 403
         : e.code === 'GMAIL_NOT_CONFIGURED' ? 503 : 502;
-      console.error('[ANALYZE] No se pudo descargar el adjunto:', redactFilename(targetFilename), e.code || e.message);
+      logger.error('[ANALYZE] No se pudo descargar el adjunto:', redactFilename(targetFilename), e.code || e.message);
       return res.status(status).json({
         error: status === 403 ? 'La cuenta de correo no está vinculada.'
           : status === 503 ? 'El correo no está configurado en el servidor.'
@@ -2963,7 +2752,7 @@ app.post('/api/documents/analyze', authMiddleware, requireAnyPermission('documen
     console.log(`[ANALYZE] '${redactFilename(targetFilename)}' por ${redactEmail(req.user.email)}: type=${result.suggestions.documentTypeId} cat=${result.suggestions.categoryId} ocr=${result.ocrUsed}`);
     res.json(result);
   } catch (e) {
-    console.error('[ANALYZE] Error al analizar el documento:', e.message);
+    logger.error('[ANALYZE] Error al analizar el documento:', e.message);
     res.status(422).json({ error: 'No se pudo analizar el documento.' });
   }
 });
@@ -2980,7 +2769,7 @@ app.post('/api/documents/analyze-upload', authMiddleware, requireAnyPermission('
   try {
     employees = await col('employees').find({}, { projection: { id: 1, name: 1, lastName: 1, identification: 1 } }).limit(2000).toArray();
   } catch (e) {
-    console.warn('[ANALYZE-UPLOAD] No se pudieron cargar los empleados para sugerir:', e.message);
+    logger.warn('[ANALYZE-UPLOAD] No se pudieron cargar los empleados para sugerir:', e.message);
   }
 
   try {
@@ -2989,21 +2778,14 @@ app.post('/api/documents/analyze-upload', authMiddleware, requireAnyPermission('
     console.log(`[ANALYZE-UPLOAD] '${redactFilename(req.file.originalname)}' por ${redactEmail(req.user.email)}: type=${result.suggestions.documentTypeId} cat=${result.suggestions.categoryId} ocr=${result.ocrUsed}`);
     res.json(result);
   } catch (e) {
-    console.error('[ANALYZE-UPLOAD] Error al analizar el documento:', e.message);
+    logger.error('[ANALYZE-UPLOAD] Error al analizar el documento:', e.message);
     res.status(422).json({ error: 'No se pudo analizar el documento.' });
   }
 });
 
 // --- SERVIR ARCHIVOS ---
 // Autenticación por cookie httpOnly o cabecera Authorization: Bearer.
-function fileAuthMiddleware(req, res, next) {
-  // El token SOLO se acepta por cabecera Authorization (Bearer). No se admite en
-  // la URL (?token=): evita que el JWT quede expuesto en logs, referrer o historial.
-  if (req.query.token && !req.headers.authorization) {
-    return res.status(401).json({ error: 'Autenticación inválida. Vuelva a iniciar sesión.' });
-  }
-  return authMiddleware(req, res, next);
-}
+
 app.get('/api/document-file/:filename', fileAuthMiddleware, async (req, res) => {
   const filename = req.params.filename;
   const folder = req.query.folder;
@@ -3213,7 +2995,7 @@ function requireScanimage() {
   return runBin('sh', ['-c', 'command -v scanimage']).then(p => {
     if (!p && !scanimageWarned) {
       scanimageWarned = true;
-      console.warn('[SCANNER] scanimage no encontrado. Instale sane-utils (`sudo apt install sane-utils`) para detectar y usar el escáner en Linux.');
+      logger.warn('[SCANNER] scanimage no encontrado. Instale sane-utils (`sudo apt install sane-utils`) para detectar y usar el escáner en Linux.');
     }
     return !!p;
   });
@@ -3557,7 +3339,7 @@ async function scanWithSane(customName, ownerEmployeeId) {
   const scanned = await new Promise((resolve) => {
     execFile('scanimage', scanArgs, { timeout: 120000, maxBuffer: 64 * 1024 * 1024 }, (error) => {
       if (error) {
-        console.warn('[SCANNER] scanimage falló:', error.message);
+        logger.warn('[SCANNER] scanimage falló:', error.message);
         return resolve(false);
       }
       resolve(fs.existsSync(tempPng));
@@ -3584,7 +3366,7 @@ async function scanWithSane(customName, ownerEmployeeId) {
     });
     return pdfBase;
   } catch (e) {
-    console.warn('[SCANNER] Error convirtiendo escaneo SANE a PDF:', e.message);
+    logger.warn('[SCANNER] Error convirtiendo escaneo SANE a PDF:', e.message);
     try { fs.unlinkSync(tempPng); } catch {}
     return 'ERROR:' + e.message;
   }
@@ -3715,7 +3497,7 @@ app.post('/api/scanner/scan', authMiddleware, requireAnyPermission('scanner.mana
     }
   } catch (e) {
     scanInProgress = false;
-    console.error('[SCAN]', e);
+    logger.error('[SCAN]', e);
     res.status(500).json({ error: 'Error al ejecutar el escáner.' });
   }
 });
@@ -3732,7 +3514,7 @@ app.post('/api/scanner/launch-epson-scan', authMiddleware, requireAnyPermission(
     await addAuditLog('Escáner Real', `Se abrió ${prog.label} para escanear a la bandeja.`, req.user.name || 'Sistema', getClientIp(req));
     res.json({ ok: true, message: `${prog.label} abierto. Configure la salida en bandeja_escaner y registre el PDF desde la bandeja.` });
   } catch (e) {
-    console.error('[SCAN] Error abriendo programa de escaneo:', e.message);
+    logger.error('[SCAN] Error abriendo programa de escaneo:', e.message);
     res.status(500).json({ error: 'Error al abrir el programa de escaneo.' });
   }
 });
@@ -3874,7 +3656,7 @@ app.get('/api/gmail/oauth2callback', async (req, res) => {
         { upsert: true }
       );
       if (process.env.NODE_ENV === 'development') {
-        console.log('[GMAIL] Refresh token guardado en BD (colección config).');
+        logger.info('[GMAIL] Refresh token guardado en BD (colección config).');
       }
     } else {
       console.warn('[GMAIL] Google no devolvió refresh_token (¿autorización previa sin prompt=consent?).');
@@ -4611,7 +4393,7 @@ if (require.main === module) {
   // ni perjudica si falla (se reintenta en el primer análisis real).
   if (process.env.OCR_WARMUP !== '0') {
     warmupOcr().then(ok => {
-      console.log('[OCR] Modelo español precargado' + (ok ? ' (listo)' : ' (falló; se reintentará en el primer análisis)'));
+      logger.info('[OCR] Modelo español precargado' + (ok ? ' (listo)' : ' (falló; se reintentará en el primer análisis)'));
     });
   }
 }
