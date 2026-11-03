@@ -15,12 +15,14 @@ const {
   validateBody,
   globalLimiter,
   authLimiter,
-  createLimiter,
   scannerLimiter,
   twoFactorLimiter,
   uploadLimiter,
   gmailSyncLimiter
 } = require('./middlewares');
+const { createDeletionRequestsRouter } = require('./routes/deletionRequests');
+const { createEmployeesRouter } = require('./routes/employees');
+const { createSystemRouter } = require('./routes/system');
 require('dns').setDefaultResultOrder('ipv4first');
 const express = require('express');
 const cors = require('cors');
@@ -2086,201 +2088,19 @@ app.patch('/api/documents/:id/visibilidad', authMiddleware, requirePermission('d
 });
 
 // --- EMPLEADOS ---
-app.get('/api/employees', authMiddleware, requirePermission('employees.read'), async (req, res) => {
-  // Se excluyen credenciales y secretos (contraseñas, tokens OAuth de Gmail y
-  // secretos TOTP de 2FA) para no enviarlos nunca al navegador.
-  const projection = { password: 0, passwordHistory: 0, gmailRefreshToken: 0, totpSecret: 0 };
-  res.json(await col('employees').find({}, { projection }).limit(2000).toArray());
-});
-
-app.post('/api/employees', authMiddleware, requirePermission('employees.create'), createLimiter, async (req, res) => {
-  const ip = getClientIp(req);
-  let { id, name, department, position, email, consent } = req.body;
-  if (!department || !email) {
-    return res.status(400).json({ error: 'La dependencia y el correo electrónico son obligatorios.' });
-  }
-  if (consent !== true) {
-    return res.status(400).json({ error: 'Debe confirmar que el titular autoriza el tratamiento de sus datos personales conforme a la Política de Privacidad.' });
-  }
-  if (!id) id = email.split('@')[0].replace(/[^a-zA-Z0-9]/g, '') + crypto.randomInt(0, 1000).toString().padStart(3, '0');
-  if (!name) name = id.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[._-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase()).trim();
-  if (!position) position = 'Funcionario';
-  if (!isAllowedInstitutionalEmail(email)) {
-    const hint = ALLOWED_EMAIL_DOMAIN ? ` (@${ALLOWED_EMAIL_DOMAIN})` : '';
-    return res.status(400).json({ error: `El correo del funcionario no es válido${hint}.` });
-  }
-  if (await col('employees').findOne({ id })) {
-    return res.status(400).json({ error: 'Ya existe un empleado con esta identificación (Cédula).' });
-  }
-  if (await col('employees').findOne({ email: normalizeEmail(email) })) {
-    return res.status(400).json({ error: 'Ya existe un empleado con este correo electrónico.' });
-  }
-  if (await col('users').findOne({ email: normalizeEmail(email) })) {
-    return res.status(400).json({ error: 'El correo electrónico ya pertenece a una cuenta de administrador.' });
-  }
-
-  const tempPassword = generateTempPassword();
-  const tempHash = await bcrypt.hash(tempPassword, 12);
-
-  const newEmployee = {
-    id, name, department, position,
-    email: normalizeEmail(email),
-    status: 'pendiente',
-    active: false,
-    mustChangePassword: true,
-    password: tempHash,
-    registeredAt: new Date().toISOString(),
-    registeredBy: 'Administrador',
-    failedAttempts: 0,
-    lockedUntil: null,
-    dataConsent: {
-      granted: true,
-      grantedAt: new Date().toISOString(),
-      grantedByAccount: 'Administrador',
-      grantedByIp: ip,
-      version: 'v1'
-    }
-  };
-  try {
-    await col('employees').insertOne(newEmployee);
-  } catch (insertErr) {
-    if (insertErr.code === 11000) {
-      return res.status(400).json({ error: 'Ya existe un empleado con esta identificación o correo electrónico.' });
-    }
-    throw insertErr;
-  }
-
-  await addAuditLog('Crear Empleado', `Se registró al funcionario ${name} con C.C. ${id}. Contraseña temporal generada y enviada por correo.`, 'Administrador', ip);
-
-  const baseUrl = getAppBaseUrl(req);
-  const logoUrl = baseUrl ? `${baseUrl}/Escudo_Valledupar.png` : 'Escudo_Valledupar.png';
-  const loginUrl = baseUrl || '#';
-  const emailSent = await sendEmail({
-    to: normalizeEmail(email),
-    subject: 'Credenciales de acceso — Sistema de Talento Humano',
-    html: renderCredentialsEmail({ name, email: normalizeEmail(email), tempPassword, logoUrl, loginUrl }),
-    text: `Hola ${name},\n\nSe creó su cuenta en el Sistema de Gestión Documental de la Alcaldía de Valledupar.\n\nCorreo: ${normalizeEmail(email)}\nContraseña temporal: ${tempPassword}\n\nDebe cambiar esta contraseña en su primer inicio de sesión.\nInicie sesión en: ${loginUrl}\n\nSi no solicitó esta cuenta, ignore este correo.`
-  });
-
-  res.status(201).json({
-    ...newEmployee,
-    password: undefined,
-    ...(emailSent
-      ? { emailSent: true, message: 'Empleado creado. Se enviaron las credenciales de acceso al correo del funcionario.' }
-      : {
-          emailSent: false,
-          message: 'Empleado creado, pero no se pudo enviar el correo.',
-          // La contraseña temporal NO se expone por la API por seguridad.
-          // Solo se devuelve si el operador lo habilita explícitamente (entornos de prueba sin SMTP).
-          ...(process.env.ALLOW_TEMP_PASSWORD_RESPONSE === 'true' ? { tempPassword } : {})
-        })
-  });
-});
-
-app.delete('/api/employees/:id', authMiddleware, requirePermission('employees.delete'), async (req, res) => {
-  try {
-    const ip = getClientIp(req);
-    const { id } = req.params;
-    const employee = await col('employees').findOne({ id });
-    if (!employee) return res.status(404).json({ error: 'Funcionario no encontrado.' });
-
-    const empEmail = employee.email;
-    const empName = employee.name;
-
-    // 1) Eliminar documentos del funcionario (registro + archivo físico en GridFS)
-    const empDocs = await col('documents').find({ employeeId: id }).toArray();
-    for (const doc of empDocs) {
-      await deleteDocAndPhysicalFile(doc.id, doc.filename);
-    }
-
-    // 2) Eliminar solicitudes de eliminación asociadas
-    await col('deletionRequests').deleteMany({ email: empEmail });
-    await col('deletionRequests').deleteMany({ employeeId: id });
-
-    // 3) Eliminar correos sugeridos al funcionario
-    await col('emailsInbox').deleteMany({ suggestedEmployeeId: id });
-
-    // 4) Eliminar tokens y registros de acceso vinculados
-    await col('employees').deleteOne({ id });
-    await col('loginAttempts').deleteMany({ identifier: empEmail });
-    await col('activationTokens').deleteMany({ email: empEmail });
-    await col('passwordResetTokens').deleteMany({ email: empEmail });
-
-    // 5) Anonimizar historial (auditLogs / securityLogs) para cumplir el derecho de
-    //    supresión (art. 8 lit. f, Ley 1581): se eliminan los datos personales que
-    //    identifican al titular, conservando el agregado no personal.
-    const scrub = '[Dato eliminado por supresión]';
-    await col('auditLogs').updateMany(
-      { $or: [{ actor: empEmail }, { actor: empName }, { actor: id }] },
-      { $set: { actor: scrub, actorDeleted: true } }
-    );
-    await col('securityLogs').updateMany(
-      { $or: [{ actor: empEmail }, { actor: empName }, { actor: id }, { user: empEmail }] },
-      { $set: { actor: scrub, user: scrub, actorDeleted: true } }
-    );
-    // Reemplazar referencias al nombre/C.C./correo dentro de las descripciones de los logs
-    const { replaceManyText } = require('./lib/logScrub');
-    if (typeof replaceManyText === 'function') {
-      await replaceManyText(col('auditLogs'), [empName, id, empEmail], scrub);
-      await replaceManyText(col('securityLogs'), [empName, id, empEmail], scrub);
-    }
-
-    await addAuditLog('Eliminar Empleado', 'Se eliminó permanentemente al funcionario y todos sus datos personales, documentos y registros asociados conforme a la Ley 1581 de 2012 (derecho de supresión). Titular: [SUPRIMIDO].', req.user.name, ip);
-    await addSecurityLog('Empleado Eliminado', `Funcionario eliminado permanentemente con supresión total de sus datos personales por ${req.user.name}. Titular: [SUPRIMIDO].`, ip);
-    res.json({ message: `Funcionario eliminado permanentemente. Sus datos personales, documentos y registros asociados fueron suprimidos conforme a la Ley 1581 de 2012.` });
-  } catch (error) {
-    console.error('[DELETE-EMPLOYEE] Error:', error);
-    res.status(500).json({ error: 'Error al eliminar el funcionario.' });
-  }
-});
-
-app.patch('/api/employees/:id/toggle-active', authMiddleware, requirePermission('employees.suspend'), async (req, res) => {
-  try {
-    const ip = getClientIp(req);
-    const { id } = req.params;
-    const employee = await col('employees').findOne({ id });
-    if (!employee) return res.status(404).json({ error: 'Funcionario no encontrado.' });
-
-    const newActive = !employee.active;
-    const wasPending = employee.status === 'pendiente';
-    // Pendientes activados por admin se marcan como activa directamente
-    const newStatus = wasPending && newActive ? 'activa' : (wasPending && !newActive ? 'inactiva' : (newActive ? 'activa' : 'inactiva'));
-    await col('employees').updateOne({ id }, { $set: { active: newActive, status: newStatus } });
-    await col('employees').updateOne({ id }, { $inc: { jwtVersion: 1 } });
-    if (!newActive) {
-      await col('activationTokens').deleteMany({ email: employee.email });
-      await col('passwordResetTokens').deleteMany({ email: employee.email });
-    }
-
-    const statusText = wasPending ? 'pendiente de activación' : (newActive ? 'activado' : 'desactivado');
-    const statusEmoji = newActive ? '✓' : '✕';
-    await addAuditLog(`${statusEmoji} ${newActive ? 'Reactivar' : 'Desactivar'} Empleado`, `El funcionario ${employee.name} (C.C. ${id}) fue ${statusText}.`, req.user.name, ip);
-    res.json({ message: `Funcionario "${employee.name}" ${statusText} exitosamente.`, active: newActive, status: newStatus });
-  } catch (error) {
-    console.error('[TOGGLE-ACTIVE] Error:', error);
-    res.status(500).json({ error: 'Error al cambiar estado del funcionario.' });
-  }
-});
-
-// --- FUNCIONARIO: ACTUALIZAR PROPIO NOMBRE ---
-app.put('/api/employees/profile', authMiddleware, async (req, res) => {
-  try {
-    const { name } = req.body;
-    if (!name || !name.trim()) return res.status(400).json({ error: 'El nombre es obligatorio.' });
-    const trimmed = name.trim();
-    if (trimmed.length < 3 || trimmed.length > 100) return res.status(400).json({ error: 'El nombre debe tener entre 3 y 100 caracteres.' });
-
-    const employee = await col('employees').findOne({ email: req.user.email });
-    if (!employee) return res.status(404).json({ error: 'Funcionario no encontrado.' });
-
-    await col('employees').updateOne({ _id: employee._id }, { $set: { name: trimmed } });
-    await addAuditLog('Actualizar Nombre', `El funcionario ${employee.name} actualizó su nombre a "${trimmed}".`, employee.email, getClientIp(req));
-    res.json({ message: 'Nombre actualizado exitosamente.', name: trimmed });
-  } catch (error) {
-    console.error('[PROFILE] Error:', error);
-    res.status(500).json({ error: 'Error al actualizar el nombre.' });
-  }
-});
+app.use('/api/employees', createEmployeesRouter({
+  getClientIp,
+  generateTempPassword,
+  isAllowedInstitutionalEmail,
+  normalizeEmail,
+  ALLOWED_EMAIL_DOMAIN,
+  getAppBaseUrl,
+  sendEmail,
+  renderCredentialsEmail,
+  addAuditLog,
+  addSecurityLog,
+  deleteDocAndPhysicalFile
+}));
 
 // --- DASHBOARD CONSOLIDADO (1 sola llamada) ---
 app.get('/api/dashboard', authMiddleware, requirePermission('employees.read'), async (req, res) => {
@@ -2289,7 +2109,9 @@ app.get('/api/dashboard', authMiddleware, requirePermission('employees.read'), a
     // Con límites para no cargar colecciones completas en memoria (paginación liviana).
     const documentTypes = await col('documentTypes').find().toArray();
     const categories = await col('categories').find().toArray();
-    const employees = await col('employees').find({}, { projection: { password: 0, passwordHistory: 0, gmailRefreshToken: 0, totpSecret: 0 } }).toArray();
+    const employees = await col('employees').find({}, {
+      projection: { id: 1, name: 1, email: 1, department: 1, role: 1, status: 1, active: 1, registeredBy: 1 }
+    }).toArray();
     const documents = await col('documents').find().sort({ registeredAt: -1 }).limit(1000).toArray();
     const auditLogs = await col('auditLogs').find().sort({ timestamp: -1 }).limit(500).toArray();
     const deletionRequests = await col('deletionRequests').find().sort({ createdAt: -1 }).limit(200).toArray();
@@ -2479,51 +2301,12 @@ app.delete('/api/documents/:id', authMiddleware, requirePermission('documents.de
 });
 
 // --- SOLICITUDES DE ELIMINACIÓN ---
-app.post('/api/deletion-requests', authMiddleware, requirePermission('deletion.create'), async (req, res) => {
-  try {
-    const { documentId, reason } = req.body;
-    if (!documentId) return res.status(400).json({ error: 'Falta el ID del documento.' });
-
-    const doc = await col('documents').findOne({ id: documentId });
-    if (!doc) return res.status(404).json({ error: 'Documento no encontrado.' });
-
-    const employee = await col('employees').findOne({ id: doc.employeeId });
-    const employeeName = employee ? employee.name : doc.employeeName || 'Desconocido';
-
-    // Solo el propietario o admin puede solicitar
-    if (req.user.role === 'funcionario' && req.user.employeeId !== doc.employeeId) {
-      return res.status(403).json({ error: 'No tiene permiso para solicitar la eliminación de este documento.' });
-    }
-
-    // Verificar si ya existe una solicitud pendiente para este documento
-    const existing = await col('deletionRequests').findOne({ documentId, status: 'Pendiente' });
-    if (existing) {
-      return res.status(400).json({ error: 'Ya existe una solicitud pendiente para este documento.' });
-    }
-
-    const request = {
-      id: generateId('delreq'),
-      documentId,
-      documentFilename: doc.filename,
-      employeeId: doc.employeeId,
-      employeeName,
-      documentType: doc.documentTypeId,
-      categoryId: doc.categoryId,
-      reason: reason || '',
-      requestedBy: req.user.name || req.user.email,
-      requestedByRole: req.user.role,
-      status: 'Pendiente',
-      createdAt: new Date().toISOString()
-    };
-
-    await col('deletionRequests').insertOne(request);
-    await addAuditLog('Solicitud de Eliminación', `${request.requestedBy} solicitó eliminar el documento '${doc.filename}' de ${employeeName}. Motivo: ${request.reason || 'No especificado'}.`, req.user.name || req.user.email, getClientIp(req));
-    res.status(201).json(request);
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Error al crear solicitud.' });
-  }
-});
+app.use('/api/deletion-requests', createDeletionRequestsRouter({
+  generateId,
+  addAuditLog,
+  getClientIp,
+  deleteDocAndPhysicalFile
+}));
 
 // El funcionario puede consultar el estado de SUS solicitudes de eliminación.
 app.get('/api/funcionario/deletion-requests', authMiddleware, async (req, res) => {
@@ -2536,95 +2319,6 @@ app.get('/api/funcionario/deletion-requests', authMiddleware, async (req, res) =
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Error al obtener solicitudes.' });
-  }
-});
-
-// Listado de solicitudes para revisión (permiso propio, independiente del dashboard).
-app.get('/api/deletion-requests', authMiddleware, requirePermission('deletion.review'), async (req, res) => {
-  try {
-    // Recupera solicitudes varadas en 'Procesando' (caída del proceso a mitad de
-    // la aprobación) para que puedan reintentarse.
-    const staleLimit = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-    await col('deletionRequests').updateMany(
-      { status: 'Procesando', processedAt: { $lt: staleLimit } },
-      { $set: { status: 'Pendiente', processedBy: null, processedAt: null } }
-    ).catch(() => {});
-    const requests = await col('deletionRequests').find().sort({ createdAt: -1 }).limit(200).toArray();
-    res.json(requests);
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Error al obtener solicitudes.' });
-  }
-});
-
-app.patch('/api/deletion-requests/:id/approve', authMiddleware, requirePermission('deletion.review'), async (req, res) => {
-  try {
-    // Consumo atómico: solo se procesa si sigue Pendiente (anti doble-aprobación).
-    // Se usa un estado intermedio para no marcarla Aprobada antes de borrar.
-    const request = await col('deletionRequests').findOneAndUpdate(
-      { id: req.params.id, status: 'Pendiente' },
-      { $set: { status: 'Procesando', processedBy: req.user.name || req.user.email, processedAt: new Date().toISOString() } },
-      { returnDocument: 'before' }
-    );
-    if (!request) {
-      const exists = await col('deletionRequests').findOne({ id: req.params.id });
-      if (!exists) return res.status(404).json({ error: 'Solicitud no encontrada.' });
-      return res.status(400).json({ error: 'Esta solicitud ya fue procesada.' });
-    }
-
-    const doc = await col('documents').findOne({ id: request.documentId });
-    if (doc) {
-      try {
-        await deleteDocAndPhysicalFile(doc.id, doc.filename);
-      } catch (delError) {
-        // Si el documento sigue existiendo, revertir a Pendiente para reintentar.
-        // Si ya no existe, el borrado principal se cumplió: solo falló la limpieza.
-        const stillThere = await col('documents').findOne({ id: request.documentId });
-        if (stillThere) {
-          await col('deletionRequests').updateOne(
-            { id: request.id, status: 'Procesando' },
-            { $set: { status: 'Pendiente', processedBy: null, processedAt: null } }
-          );
-          throw delError;
-        }
-        console.warn('[DEL] Documento eliminado, pero falló la limpieza del archivo:', delError.message);
-      }
-    }
-
-    const approved = await col('deletionRequests').updateOne(
-      { id: request.id, status: 'Procesando' },
-      { $set: { status: 'Aprobada' } }
-    );
-    if (!approved || approved.modifiedCount === 0) {
-      console.warn(`[DEL] La solicitud '${request.id}' no pudo marcarse como Aprobada (¿cambio concurrente?).`);
-    }
-
-    await addAuditLog('Eliminación Aprobada', `El administrador ${req.user.name} aprobó la eliminación del documento '${request.documentFilename}' de ${request.employeeName}.`, req.user.name || req.user.email, getClientIp(req));
-    res.json({ message: 'Solicitud aprobada. Documento eliminado.' });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Error al procesar solicitud.' });
-  }
-});
-
-app.patch('/api/deletion-requests/:id/reject', authMiddleware, requirePermission('deletion.review'), async (req, res) => {
-  try {
-    const request = await col('deletionRequests').findOneAndUpdate(
-      { id: req.params.id, status: 'Pendiente' },
-      { $set: { status: 'Rechazada', processedBy: req.user.name || req.user.email, processedAt: new Date().toISOString() } },
-      { returnDocument: 'before' }
-    );
-    if (!request) {
-      const exists = await col('deletionRequests').findOne({ id: req.params.id });
-      if (!exists) return res.status(404).json({ error: 'Solicitud no encontrada.' });
-      return res.status(400).json({ error: 'Esta solicitud ya fue procesada.' });
-    }
-
-    await addAuditLog('Eliminación Rechazada', `El administrador ${req.user.name} rechazó la eliminación del documento '${request.documentFilename}' de ${request.employeeName}.`, req.user.name || req.user.email, getClientIp(req));
-    res.json({ message: 'Solicitud rechazada.' });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: 'Error al procesar solicitud.' });
   }
 });
 
@@ -4213,88 +3907,11 @@ app.use((error, req, res, next) => {
 });
 
 // --- PANEL DE ESTADO DEL SISTEMA ---
-// Estado consolidado para el admin: BD, índices, Gmail, escáner, métricas y seguridad.
-app.get('/api/system/status', authMiddleware, requirePermission('audit.read'), async (req, res) => {
-  const startedAt = Date.now();
-  let dbConnected = false;
-  let dbLatencyMs = null;
-  const counts = {};
-  let indexes = { ok: true, missing: [] };
-  try {
-    const t0 = Date.now();
-    const [users, employees, documents] = await Promise.all([
-      col('users').countDocuments(),
-      col('employees').countDocuments(),
-      col('documents').countDocuments()
-    ]);
-    dbLatencyMs = Date.now() - t0;
-    dbConnected = true;
-    counts.users = users;
-    counts.employees = employees;
-    counts.documents = documents;
-
-    // Verificar presencia de los índices esenciales (los que listan por fecha).
-    const requiredIndexes = {
-      documents: ['issueDate_-1'],
-      securityLogs: ['timestamp_-1'],
-      emailsInbox: ['date_-1'],
-      auditLogs: ['timestamp_-1']
-    };
-    for (const [collectionName, wanted] of Object.entries(requiredIndexes)) {
-      let names = [];
-      try {
-        names = (await col(collectionName).indexes()).map(i => i.name);
-      } catch { indexes.ok = false; }
-      for (const indexName of wanted) {
-        if (!names.includes(indexName)) indexes.missing.push(`${collectionName}.${indexName}`);
-      }
-    }
-    if (indexes.missing.length > 0) indexes.ok = false;
-  } catch {
-    dbConnected = false;
-  }
-
-  const { GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REDIRECT_URI } = process.env;
-  const gmailConfigured = !!(GMAIL_CLIENT_ID && GMAIL_CLIENT_SECRET && GMAIL_REDIRECT_URI);
-  const gmailAuthenticated = gmailConfigured && !!(await getAdminGmailRefreshToken());
-
-  let securityLast24h = null;
-  try {
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    securityLast24h = await col('securityLogs').countDocuments({ timestamp: { $gte: since } });
-  } catch {}
-
-  let errorsLast24h = null;
-  let recentErrors = [];
-  try {
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    errorsLast24h = await col('errorLogs').countDocuments({ timestamp: { $gte: since } });
-    recentErrors = await col('errorLogs').find({})
-      .sort({ timestamp: -1 })
-      .limit(5)
-      .project({ message: 1, source: 1, timestamp: 1, status: 1, path: 1 })
-      .toArray();
-  } catch {}
-
-  let unregistered = 0;
-  try { unregistered = (await getUnregisteredFiles()).length; } catch {}
-
-  const pkg = require('./package.json');
-  res.json({
-    generatedAt: new Date().toISOString(),
-    uptimeSeconds: Math.round(process.uptime()),
-    node: process.version,
-    version: pkg.version || null,
-    memoryMb: Math.round(process.memoryUsage().rss / 1024 / 1024),
-    database: { connected: dbConnected, latencyMs: dbLatencyMs, counts, indexes },
-    gmail: { configured: gmailConfigured, authenticated: gmailAuthenticated },
-    scanner: { localFolder: fs.existsSync(SCANNER_DIR) },
-    security: { last24hEvents: securityLast24h },
-    errors: { last24h: errorsLast24h, recent: recentErrors },
-    documents: { unregistered },
-    responseTimeMs: Date.now() - startedAt
-  });
-});
+app.use('/api/system', createSystemRouter({
+  getAdminGmailRefreshToken,
+  getUnregisteredFiles,
+  SCANNER_DIR
+}));
 
 // --- HEALTH CHECK ---
 // Devuelve 503 cuando la BD no responde para que Railway y el monitoreo externo

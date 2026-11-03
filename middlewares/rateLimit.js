@@ -2,7 +2,7 @@ const rateLimit = require('express-rate-limit');
 
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 200,
+  max: process.env.NODE_ENV === 'test' ? 5000 : 1500,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Demasiadas peticiones desde esta IP. Intente de nuevo en 15 minutos.' }
