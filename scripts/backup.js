@@ -83,10 +83,10 @@ function main() {
     process.exit(1);
   }
   const dbName = dbNameFromUri(databaseUrl);
-  fs.mkdirSync(outDir, { recursive: true });
+  fs.mkdirSync(outDir, { recursive: true, mode: 0o700 });
 
   const target = path.join(outDir, stamp());
-  fs.mkdirSync(target, { recursive: true });
+  fs.mkdirSync(target, { recursive: true, mode: 0o700 });
   console.log(`[BACKUP] BD: ${dbName}`);
   console.log(`[BACKUP] Destino: ${target}`);
 
@@ -120,7 +120,7 @@ function main() {
       const plainBytes = fs.readFileSync(archive);
       const encryptedBytes = encryptBuffer(plainBytes);
       const encArchive = `${archive}.enc`;
-      fs.writeFileSync(encArchive, encryptedBytes);
+      fs.writeFileSync(encArchive, encryptedBytes, { mode: 0o600 });
       fs.rmSync(archive, { force: true });
       finalArchive = encArchive;
       console.log(`[BACKUP] OK (cifrado AES-256-GCM) -> ${finalArchive}`);
