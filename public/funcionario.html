@@ -108,15 +108,16 @@
     .portal-welcome .welcome-stat {
       background: rgba(255,255,255,0.08); backdrop-filter: blur(10px);
       -webkit-backdrop-filter: blur(10px);
-      border: 1px solid rgba(255,255,255,0.1); border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.16); border-radius: 14px;
       padding: 12px 20px; min-width: 130px; text-align: center;
-      transition: transform 0.2s, background 0.2s;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15), 0 4px 12px rgba(0, 0, 0, 0.15);
+      transition: transform 0.2s, background 0.2s, box-shadow 0.2s;
     }
-    .portal-welcome .welcome-stat:hover { transform: translateY(-2px); background: rgba(255,255,255,0.12); }
+    .portal-welcome .welcome-stat:hover { transform: translateY(-2px); background: rgba(255,255,255,0.14); }
     .portal-welcome .welcome-stat strong {
-      display: block; font-size: 22px; font-weight: 800; font-family: var(--font-display); line-height: 1.2;
+      display: block; font-size: 24px; font-weight: 800; font-family: var(--font-display); line-height: 1.1; color: #FFFFFF;
     }
-    .portal-welcome .welcome-stat span { font-size: 10px; opacity: 0.65; display: block; margin-top: 2px; letter-spacing: 0.3px; }
+    .portal-welcome .welcome-stat span { font-size: 11px; opacity: 0.85; display: block; margin-top: 3px; letter-spacing: 0.3px; color: rgba(255, 255, 255, 0.85); }
 
     /* --- TABS --- */
     .portal-tabs {
@@ -538,7 +539,7 @@
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
             <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          Los documentos que usted suba quedarán registrados como <strong>Pendientes</strong> y visibles para el administrador de Talento Humano, quien confirmará su estado.
+          <span>Los documentos que usted suba quedarán registrados como <strong>Pendientes</strong> y visibles para el administrador de Talento Humano, quien confirmará su estado.</span>
         </div>
         <div class="portal-upload-card">
           <h3>Subir un Documento</h3>
@@ -587,15 +588,15 @@
           <span id="portal-scanner-count" style="font-size:12px;font-weight:600;">0 dispositivo(s)</span>
         </div>
         <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;">
-          <div id="portal-scanner-status" style="display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;">
+          <div id="portal-scanner-status" style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;">
             <span style="width:8px;height:8px;border-radius:50%;background:#ccc;display:inline-block;" id="portal-scanner-dot"></span>
             <span id="portal-scanner-dot-text">Verificando...</span>
           </div>
-          <input type="text" id="input-scan-filename" aria-label="Nombre del documento a escanear" placeholder="Nombre del documento" style="padding:6px 10px;font-size:12px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-primary);color:var(--text-primary);width:auto;flex:1 1 180px;min-width:150px;" />
+          <input type="text" id="input-scan-filename" aria-label="Nombre del documento a escanear" placeholder="Nombre del documento" style="height:38px;box-sizing:border-box;padding:0 12px;font-size:12px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-primary);color:var(--text-primary);width:auto;flex:1 1 180px;min-width:150px;outline:none;" />
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-            <button class="btn btn-primary" id="btn-portal-scan" style="padding:8px 18px;font-size:13px;">Escanear Documento</button>
-            <button class="btn btn-secondary" id="btn-portal-epson-scan" style="font-size:12px;padding:8px 14px;display:none;" title="Abrir el programa de escaneo: escanee y guarde el PDF en la bandeja de escáner para registrarlo">Programa de escaneo</button>
-            <button class="btn btn-secondary" id="btn-portal-refresh-scanners" style="font-size:12px;padding:8px 14px;">🔄 Actualizar lista</button>
+            <button class="btn btn-primary" id="btn-portal-scan" style="height:38px;box-sizing:border-box;display:inline-flex;align-items:center;padding:0 18px;font-size:13px;border-radius:8px;">Escanear Documento</button>
+            <button class="btn btn-secondary" id="btn-portal-epson-scan" style="height:38px;box-sizing:border-box;font-size:12px;padding:0 14px;border-radius:8px;display:none;" title="Abrir el programa de escaneo: escanee y guarde el PDF en la bandeja de escáner para registrarlo">Programa de escaneo</button>
+            <button class="btn btn-secondary" id="btn-portal-refresh-scanners" style="height:38px;box-sizing:border-box;font-size:12px;padding:0 14px;border-radius:8px;display:inline-flex;align-items:center;gap:5px;">🔄 Actualizar lista</button>
           </div>
         </div>
         <div class="portal-scanner-device-list" id="portal-scanner-device-list"></div>

@@ -2101,24 +2101,22 @@ textarea:focus {
   border-radius: 50%;
 }
 
-/* Decoración de franja de bandera en la parte inferior del panel de marca */
-.login-brand-panel .bandera-stripe {
-  position: absolute;
+/* Franja continua de la bandera de Valledupar en la base de la pantalla */
+.login-page::after {
+  content: '';
+  position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
-  height: 6px;
-  display: flex;
+  height: 5px;
+  background: linear-gradient(90deg, #1A5276 0% 33.33%, #FFFFFF 33.33% 66.66%, #B03A2E 66.66% 100%);
+  z-index: 99;
+  pointer-events: none;
 }
 
-.login-brand-panel .bandera-stripe span {
-  flex: 1;
-  display: block;
+.login-brand-panel .bandera-stripe {
+  display: none;
 }
-
-.login-brand-panel .bandera-stripe span:nth-child(1) { background-color: #1A5276; }
-.login-brand-panel .bandera-stripe span:nth-child(2) { background-color: #FFFFFF; }
-.login-brand-panel .bandera-stripe span:nth-child(3) { background-color: #B03A2E; }
 
 .login-brand-content {
   position: relative;
@@ -2421,7 +2419,14 @@ textarea:focus {
 /* Variante: login y páginas públicas (pie del formulario) */
 .legal-links--login {
   text-align: center;
-  margin-top: 12px;
+  margin-top: 16px;
+}
+.legal-links--login a {
+  color: #475569;
+  font-weight: 500;
+}
+.legal-links--login a:hover {
+  color: var(--primary);
 }
 /* Variante: sidebar lateral (sobre fondo del widget) */
 .legal-links--sidebar {
@@ -2430,11 +2435,19 @@ textarea:focus {
   border-top: 1px solid var(--border);
   text-align: center;
 }
-/* Variante: cabecera del portal de funcionario */
+/* Variante: cabecera del portal de funcionario (integrada y translúcida) */
 .legal-links--portal {
-  padding: 8px 16px;
-  background: var(--bg-secondary);
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
   text-align: center;
+}
+.legal-links--portal a {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+}
+.legal-links--portal a:hover {
+  color: #ffffff;
 }
 
 .login-success-msg {
