@@ -39,3 +39,10 @@ docs/manual-tecnico.md
 docs/manual-tecnico.doc
 docs/pendientes.md
 docs/planificacion/
+
+# Documentos de práctica académica y formatos con datos personales
+docs/*.doc
+docs/*.docx
+docs/*.pdf
+docs/*practica*
+
