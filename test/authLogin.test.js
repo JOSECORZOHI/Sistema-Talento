@@ -28,8 +28,6 @@ const adminDoc = {
   role: 'admin',
   status: 'activa',
   active: true,
-  totpEnabled: false,
-  totpSecret: null,
   jwtVersion: 0,
   failedAttempts: 0,
   lockedUntil: null,

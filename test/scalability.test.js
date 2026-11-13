@@ -46,7 +46,6 @@ require.cache[dbPath] = { id: dbPath, filename: dbPath, loaded: true, exports: f
 const { app } = require('../server');
 const { parsePagination, paginateQuery } = require('../lib/pagination');
 const { encryptBuffer, decryptBuffer } = require('../lib/crypto');
-const { generateTOTP, verifyTOTP } = require('../lib/totp');
 
 async function withServer(fn) {
   const srv = app.listen(0);
@@ -139,20 +138,4 @@ test('escalabilidad: rechazo inmediato HTTP 413 ante payloads que exceden el lí
 
     assert.equal(res.status, 413, 'Debe devolver HTTP 413 Payload Too Large');
   });
-});
-
-test('escalabilidad: alta concurrencia de emisión y verificación TOTP RFC 6238', () => {
-  const secret = 'JBSWY3DPEHPK3PXP';
-  const total = 200;
-
-  const inicio = Date.now();
-  for (let i = 0; i < total; i++) {
-    const code = generateTOTP(secret);
-    assert.equal(typeof code, 'string');
-    assert.equal(code.length, 6);
-    assert.equal(verifyTOTP(secret, code), true, 'El código generado debe ser válido');
-  }
-  const duracion = Date.now() - inicio;
-
-  assert.ok(duracion < 300, `200 generaciones y verificaciones TOTP deben tomar menos de 300ms (tomó ${duracion}ms)`);
 });

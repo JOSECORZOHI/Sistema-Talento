@@ -25,7 +25,7 @@ function createEmployeesRouter(deps) {
 
   // GET /api/employees
   router.get('/', authMiddleware, requirePermission('employees.read'), async (req, res) => {
-    const projection = { password: 0, passwordHistory: 0, gmailRefreshToken: 0, totpSecret: 0 };
+    const projection = { password: 0, passwordHistory: 0, gmailRefreshToken: 0 };
     res.json(await col('employees').find({}, { projection }).limit(2000).toArray());
   });
 

@@ -23,7 +23,6 @@ const COLLECTIONS = {
   passwordResetTokens: 'passwordResetTokens',
   loginAttempts: 'loginAttempts',
   securityLogs: 'securityLogs',
-  twoFactorChallenges: 'twoFactorChallenges',
   config: 'config',
   oauthStates: 'oauthStates',
   errorLogs: 'errorLogs'
@@ -114,13 +113,13 @@ async function runMigrations() {
         { status: { $exists: false } },
         { $set: { status: 'activa', failedAttempts: 0, lockedUntil: null } }
       );
-      const twofaUsersRes = await db.collection(COLLECTIONS.users).updateMany(
-        { totpEnabled: { $exists: false } },
-        { $set: { totpEnabled: false, totpSecret: null } }
+      await db.collection(COLLECTIONS.users).updateMany(
+        { $or: [{ totpEnabled: { $exists: true } }, { totpSecret: { $exists: true } }] },
+        { $unset: { totpEnabled: '', totpSecret: '' } }
       );
-      const twofaEmpsRes = await db.collection(COLLECTIONS.employees).updateMany(
-        { totpEnabled: { $exists: false } },
-        { $set: { totpEnabled: false, totpSecret: null } }
+      await db.collection(COLLECTIONS.employees).updateMany(
+        { $or: [{ totpEnabled: { $exists: true } }, { totpSecret: { $exists: true } }] },
+        { $unset: { totpEnabled: '', totpSecret: '' } }
       );
       const docsModified = docsRes.modifiedCount;
       const empsModified = empsRes.modifiedCount;
@@ -130,10 +129,6 @@ async function runMigrations() {
       if (empsModified > 0) console.log(`Migración: ${empsModified} funcionarios actualizados con active=true`);
       if (usersMigrated > 0) console.log(`Migración: ${usersMigrated} usuarios admin migrados con status=activa`);
       if (empsStatusMigrated > 0) console.log(`Migración: ${empsStatusMigrated} funcionarios migrados con status=activa`);
-      const twofaUsersMigrated = twofaUsersRes.modifiedCount;
-      const twofaEmpsMigrated = twofaEmpsRes.modifiedCount;
-      if (twofaUsersMigrated > 0) console.log(`Migración: ${twofaUsersMigrated} usuarios con campo 2FA inicializado`);
-      if (twofaEmpsMigrated > 0) console.log(`Migración: ${twofaEmpsMigrated} funcionarios con campo 2FA inicializado`);
       break;
     } catch (e) {
       if (migAttempt < 2) { await new Promise(r => setTimeout(r, 1000)); continue; }
@@ -197,8 +192,6 @@ async function ensureIndexes() {
     [COLLECTIONS.config, { key: 1 }, { unique: true }],
     // Estados OAuth de Gmail: TTL 15 min (ya no viven en memoria del proceso).
     [COLLECTIONS.oauthStates, { expiresAt: 1 }, { expireAfterSeconds: 0 }],
-    // Retos 2FA de un solo uso: TTL sobre expiresAt (5 min, ver TWO_FACTOR_CHALLENGE_TTL_MS).
-    [COLLECTIONS.twoFactorChallenges, { expiresAt: 1 }, { expireAfterSeconds: 0 }],
     // Registro de errores no controlados: retención 30 días.
     [COLLECTIONS.errorLogs, { timestamp: 1 }, { expireAfterSeconds: 30 * 24 * 60 * 60 }]
   ];
@@ -627,15 +620,6 @@ const VALIDATORS = {
       subject: { bsonType: 'string' },
       read: { bsonType: 'bool' },
       date: { bsonType: 'string' }
-    }
-  },
-  twoFactorChallenges: {
-    bsonType: 'object', additionalProperties: true,
-    required: ['tokenHash', 'email', 'expiresAt'],
-    properties: {
-      tokenHash: { bsonType: 'string' },
-      email: { bsonType: 'string' },
-      expiresAt: { bsonType: 'date' }
     }
   },
   oauthStates: {

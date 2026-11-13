@@ -16,7 +16,6 @@ const {
   globalLimiter,
   authLimiter,
   scannerLimiter,
-  twoFactorLimiter,
   uploadLimiter,
   gmailSyncLimiter
 } = require('./middlewares');
@@ -40,7 +39,6 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const PDFDocument = require('pdfkit');
-const QRCode = require('qrcode');
 const nodemailer = require('nodemailer');
 const { connect, col, isHealthy, reconnect, closeDb, storeFileBuffer, readFileStream, readFileBuffer, deleteFileByName, listFilesBySource, markFileRegistered, generateTempPassword } = require('./db');
 const { analyzeFile, warmupOcr } = require('./documentAnalyzer.js');
@@ -51,7 +49,6 @@ const {
 } = require('./lib/helpers');
 const { renderResetPasswordEmail, renderCredentialsEmail } = require('./lib/emailTemplates');
 const { assertEncryptionKey, encryptText, decryptText } = require('./lib/crypto');
-const { generateSecret, verifyTOTP, buildOtpauthURL } = require('./lib/totp');
 
 // Manejo de errores no controlados.
 // unhandledRejection: se loguea sin salir (permite que la reconexión a Mongo se recupere).
@@ -350,7 +347,6 @@ app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/forgot-password', authLimiter);
 app.use('/api/auth/activate', authLimiter);
 app.use('/api/auth/reset-password', authLimiter);
-app.use('/api/auth/2fa/verify', twoFactorLimiter);
 
 // --- CSP con NONCE (endurecimiento Content-Security-Policy) ---
 // Se genera un nonce por petición (en el middleware global de arriba) y se inyecta
@@ -785,21 +781,6 @@ async function authenticateUser(user, collectionName, role, username, password, 
     if (valid) {
       await col(collectionName).updateOne({ _id: user._id }, { $set: { failedAttempts: 0, lockedUntil: null } });
       await col('loginAttempts').deleteMany({ identifier: normalizeEmail(username) });
-      // Si la cuenta tiene 2FA activo, no se emite el JWT de sesión: se genera un
-      // challenge de un solo uso que debe intercambiarse por el código TOTP.
-      if (user.totpEnabled) {
-        const challengeToken = crypto.randomBytes(32).toString('hex');
-        await col('twoFactorChallenges').insertOne({
-          tokenHash: crypto.createHash('sha256').update(challengeToken).digest('hex'),
-          email: user.email,
-          role,
-          attempts: 0,
-          createdAt: new Date(),
-          expiresAt: new Date(Date.now() + TWO_FACTOR_CHALLENGE_TTL_MS)
-        });
-        await addSecurityLog('2FA Requerido', `Contraseña correcta; se solicitó el código de verificación para ${user.email}.`, ip, user.email);
-        return res.json({ twoFactorRequired: true, challenge: challengeToken, expiresIn: Math.round(TWO_FACTOR_CHALLENGE_TTL_MS / 1000) });
-      }
       const tokenPayload = { email: user.email, name: user.name, role, v: user.jwtVersion || 0 };
       if (role === 'funcionario') tokenPayload.employeeId = user.id;
       const token = signToken(tokenPayload);
@@ -807,9 +788,6 @@ async function authenticateUser(user, collectionName, role, username, password, 
       const responseUser = { email: user.email, name: user.name, role, department: user.department };
       if (role === 'funcionario') responseUser.employeeId = user.id;
       if (user.mustChangePassword) responseUser.mustChangePassword = true;
-      const requireAdmin2FA = process.env.REQUIRE_ADMIN_2FA === 'true' ||
-        (process.env.NODE_ENV === 'production' && process.env.REQUIRE_ADMIN_2FA !== 'false');
-      if (role === 'admin' && requireAdmin2FA && !user.totpEnabled) responseUser.mustSetup2FA = true;
       setAuthCookie(res, token);
       return res.json({ user: responseUser });
     }
@@ -1541,20 +1519,6 @@ const changePasswordSchema = z.object({
   currentPassword: z.string({ required_error: 'Ingrese la contraseña actual y la nueva contraseña.' }).min(1, 'Ingrese la contraseña actual y la nueva contraseña.').max(256),
   newPassword: z.string({ required_error: 'Ingrese la contraseña actual y la nueva contraseña.' }).min(1, 'Ingrese la contraseña actual y la nueva contraseña.').max(256)
 });
-const twoFactorEnableSchema = z.object({
-  secret: z.string().nullable().optional(),
-  code: z.string().nullable().optional(),
-  currentCode: z.string().nullable().optional()
-});
-const twoFactorCodeSchema = z.object({
-  code: z.string().nullable().optional()
-});
-// Intercambio challenge→sesión: el challenge es obligatorio (token opaco de
-// un solo uso emitido en el login); el código se valida con isValidTotpCode.
-const twoFactorVerifySchema = z.object({
-  challenge: z.string({ required_error: 'Falta el desafío de verificación. Inicie sesión nuevamente.' }).min(1, 'Falta el desafío de verificación. Inicie sesión nuevamente.'),
-  code: z.string().nullable().optional()
-});
 
 app.post('/api/auth/login', validateBody(loginSchema), async (req, res) => {
   try {
@@ -1619,196 +1583,6 @@ app.post('/api/auth/change-password', authMiddleware, validateBody(changePasswor
     return res.status(400).json({ error: 'La nueva contraseña debe ser diferente a la actual.' });
   }
   return handleChangePasswordForRole(req.user, currentPassword, newPassword, req.user.role, ip, res);
-});
-
-// --- AUTENTICACIÓN DE DOS FACTORES (TOTP) ---
-// El secreto se guarda en Base32 (estándar RFC 4648). El challenge de verificación
-// es de un solo uso (se consume con findOneAndDelete) y expira por TTL en Mongo.
-const TWO_FACTOR_CHALLENGE_TTL_MS = 5 * 60 * 1000;
-const TOTP_SECRET_RE = /^[A-Za-z2-7]{16,64}$/;
-const TOTP_CODE_RE = /^\d{6}$/;
-
-function isValidTotpCode(code) {
-  return typeof code === 'string' && TOTP_CODE_RE.test(code);
-}
-
-function isValidTotpSecret(secret) {
-  return typeof secret === 'string' && TOTP_SECRET_RE.test(secret);
-}
-
-// Estado 2FA del usuario autenticado.
-app.get('/api/auth/2fa/status', authMiddleware, async (req, res) => {
-  try {
-    const lookup = getLookupForRole(req.user.role, req.user);
-    const user = await col(getCollectionForRole(req.user.role)).findOne(lookup, { projection: { totpEnabled: 1 } });
-    const requireAdmin2FA = process.env.REQUIRE_ADMIN_2FA === 'true' ||
-      (process.env.NODE_ENV === 'production' && process.env.REQUIRE_ADMIN_2FA !== 'false');
-    const required = req.user.role === 'admin' && requireAdmin2FA;
-    return res.json({ enabled: !!(user && user.totpEnabled), required });
-  } catch (error) {
-    console.error('[2FA] Error en status:', error.message);
-    return res.status(503).json({ error: 'Error temporal de base de datos. Intente de nuevo en unos segundos.' });
-  }
-});
-
-// Genera un secreto TOTP nuevo y código QR SVG nativo (aún no se activa).
-app.post('/api/auth/2fa/setup', authMiddleware, async (req, res) => {
-  try {
-    const secret = generateSecret();
-    const otpauth = buildOtpauthURL({ issuer: 'Sistema Talento Humano', account: req.user.email, secret });
-    let qrSvg = '';
-    try {
-      qrSvg = await QRCode.toString(otpauth, { type: 'svg' });
-    } catch (qrErr) {
-      console.warn('[2FA] Error generando QR SVG:', qrErr.message);
-    }
-    return res.json({ secret, otpauth, qrSvg });
-  } catch (err) {
-    console.error('[2FA] Error en setup:', err.message);
-    return res.status(500).json({ error: 'Error al generar la configuración de 2FA.' });
-  }
-});
-
-// Activa 2FA: valida un primer código con el secreto generado.
-app.post('/api/auth/2fa/enable', authMiddleware, validateBody(twoFactorEnableSchema), async (req, res) => {
-  try {
-    const { secret, code, currentCode } = req.body || {};
-    if (!isValidTotpSecret(secret)) return res.status(400).json({ error: 'Secreto de 2FA inválido. Genera uno nuevo.' });
-    if (!isValidTotpCode(code)) return res.status(400).json({ error: 'Ingrese el código de 6 dígitos de su aplicación de autenticación.' });
-    if (!verifyTOTP(secret, code)) return res.status(400).json({ error: 'El código de verificación no coincide.' });
-    const ip = getClientIp(req);
-    const lookup = getLookupForRole(req.user.role, req.user);
-    const account = await col(getCollectionForRole(req.user.role)).findOne(lookup);
-    // Si ya hay 2FA activo, exigir un código vigente del secreto actual antes de
-    // reemplazarlo: evita que una sesión robada registre un autenticador nuevo.
-    if (account && account.totpEnabled && account.totpSecret) {
-      if (!isValidTotpCode(currentCode)) {
-        return res.status(400).json({ error: 'Ya tiene 2FA activo. Ingrese un código vigente de su autenticador actual para reconfigurarlo.' });
-      }
-      if (!verifyTOTP(decryptText(account.totpSecret), currentCode)) {
-        await addSecurityLog('2FA Reconfiguración Fallida', `Código actual incorrecto al intentar reconfigurar 2FA en ${req.user.email}.`, ip, req.user.email);
-        return res.status(401).json({ error: 'El código de su 2FA actual es incorrecto. No se modificó la configuración.' });
-      }
-    }
-    const nextVersion = ((account && account.jwtVersion) || 0) + 1;
-    await col(getCollectionForRole(req.user.role)).updateOne(
-      lookup,
-      { $set: { totpEnabled: true, totpSecret: encryptText(String(secret).toUpperCase()), jwtVersion: nextVersion } }
-    );
-    // Invalidar sesiones previas y renovar la sesión actual con la nueva versión.
-    const freshPayload = { email: req.user.email, name: req.user.name, role: req.user.role, v: nextVersion };
-    if (req.user.role === 'funcionario') freshPayload.employeeId = req.user.employeeId;
-    setAuthCookie(res, signToken(freshPayload));
-    await addSecurityLog('2FA Activado', `Se activó la autenticación de dos factores para ${req.user.email}.`, ip, req.user.email);
-    await addAuditLog('Seguridad', `El usuario ${req.user.name} activó la autenticación de dos factores.`, req.user.name, ip);
-    return res.json({ message: 'Autenticación de dos factores activada.', enabled: true });
-  } catch (error) {
-    console.error('[2FA] Error en enable:', error.message);
-    return res.status(503).json({ error: 'Error temporal de base de datos. Intente de nuevo en unos segundos.' });
-  }
-});
-
-// Desactiva 2FA: exige un código vigente del secreto ya almacenado.
-app.post('/api/auth/2fa/disable', authMiddleware, validateBody(twoFactorCodeSchema), async (req, res) => {
-  try {
-    const requireAdmin2FA = process.env.REQUIRE_ADMIN_2FA === 'true' ||
-      (process.env.NODE_ENV === 'production' && process.env.REQUIRE_ADMIN_2FA !== 'false');
-    if (req.user.role === 'admin' && requireAdmin2FA) {
-      return res.status(403).json({ error: 'La autenticación de dos factores es obligatoria para administradores y no puede ser desactivada.' });
-    }
-    const { code } = req.body || {};
-    if (!isValidTotpCode(code)) return res.status(400).json({ error: 'Ingrese el código de 6 dígitos de su aplicación de autenticación.' });
-    const ip = getClientIp(req);
-    const lookup = getLookupForRole(req.user.role, req.user);
-    const user = await col(getCollectionForRole(req.user.role)).findOne(lookup);
-    if (!user || !user.totpEnabled || !user.totpSecret) return res.status(400).json({ error: 'La autenticación de dos factores no está activa.' });
-    if (!verifyTOTP(decryptText(user.totpSecret), code)) {
-      await addSecurityLog('2FA Desactivación Fallida', `Código de verificación incorrecto para desactivar 2FA en ${req.user.email}.`, ip, req.user.email);
-      return res.status(401).json({ error: 'El código de verificación es incorrecto.' });
-    }
-    const nextVersion = (user.jwtVersion || 0) + 1;
-    await col(getCollectionForRole(req.user.role)).updateOne(
-      lookup,
-      { $set: { totpEnabled: false, totpSecret: null, jwtVersion: nextVersion } }
-    );
-    const freshPayload = { email: req.user.email, name: req.user.name, role: req.user.role, v: nextVersion };
-    if (req.user.role === 'funcionario') freshPayload.employeeId = req.user.employeeId;
-    setAuthCookie(res, signToken(freshPayload));
-    await addSecurityLog('2FA Desactivado', `Se desactivó la autenticación de dos factores para ${req.user.email}.`, ip, req.user.email);
-    await addAuditLog('Seguridad', `El usuario ${req.user.name} desactivó la autenticación de dos factores.`, req.user.name, ip);
-    return res.json({ message: 'Autenticación de dos factores desactivada.', enabled: false });
-  } catch (error) {
-    console.error('[2FA] Error en disable:', error.message);
-    return res.status(503).json({ error: 'Error temporal de base de datos. Intente de nuevo en unos segundos.' });
-  }
-});
-
-// Verifica el código durante el inicio de sesión (intercambia el challenge por sesión).
-app.post('/api/auth/2fa/verify', validateBody(twoFactorVerifySchema), async (req, res) => {
-  try {
-    const { challenge, code } = req.body || {};
-    const ip = getClientIp(req);
-    if (!challenge || !isValidTotpCode(code)) {
-      return res.status(400).json({ error: 'Ingrese el código de 6 dígitos de su aplicación de autenticación.' });
-    }
-    const challengeHash = crypto.createHash('sha256').update(challenge).digest('hex');
-    // Incremento atómico en BD ANTES de validar: evita la carrera del
-    // read-then-write (varias peticiones concurrentes leían el mismo contador y
-    // todas pasaban del límite). El filtro corta en 5 y no toca retos expirados.
-    const ch = await col('twoFactorChallenges').findOneAndUpdate(
-      {
-        tokenHash: challengeHash,
-        expiresAt: { $gt: new Date() },
-        $or: [{ attempts: { $lt: 5 } }, { attempts: { $exists: false } }]
-      },
-      { $inc: { attempts: 1 } },
-      { returnDocument: 'after' }
-    );
-    if (!ch) {
-      // Limpieza perezosa de expirados; un reto agotado se conserva hasta el TTL.
-      await col('twoFactorChallenges').deleteOne({ tokenHash: challengeHash, expiresAt: { $lt: new Date() } });
-      return res.status(400).json({ error: 'La solicitud de verificación no es válida, expiró o superó el número de intentos. Inicie sesión nuevamente.' });
-    }
-    const collection = getCollectionForRole(ch.role);
-    const user = await col(collection).findOne({ email: ch.email });
-    if (!user || !user.totpEnabled || !user.totpSecret) {
-      return res.status(400).json({ error: 'La autenticación de dos factores no está activa para esta cuenta.' });
-    }
-    // Revalidar el estado de la cuenta: pudo suspenderse/bloquearse después de
-    // emitir el reto de verificación (el reto vive hasta 5 minutos).
-    const locked = user.status === 'bloqueada' && user.lockedUntil && new Date(user.lockedUntil) > new Date();
-    if (user.status === 'suspendida' || user.status === 'inactiva'
-      || (ch.role === 'funcionario' && user.active === false && user.status !== 'pendiente')
-      || locked) {
-      return res.status(401).json({ error: 'La cuenta no está habilitada. Contacte al administrador.' });
-    }
-    if (!verifyTOTP(decryptText(user.totpSecret), code)) {
-      await addSecurityLog('2FA Fallido', `Código de verificación incorrecto para ${user.email}.`, ip, user.email);
-      if ((ch.attempts || 0) >= 5) {
-        await col('twoFactorChallenges').deleteOne({ tokenHash: challengeHash });
-        return res.status(401).json({ error: 'Demasiados intentos incorrectos. Inicie sesión nuevamente.' });
-      }
-      return res.status(401).json({ error: 'El código de verificación es incorrecto.' });
-    }
-    // Consumo atómico: solo el primer request que llega con el código correcto gana.
-    const consumed = await col('twoFactorChallenges').findOneAndDelete({ tokenHash: challengeHash });
-    if (!consumed) {
-      return res.status(400).json({ error: 'La solicitud de verificación no es válida o ya fue utilizada.' });
-    }
-    const tokenPayload = { email: user.email, name: user.name, role: ch.role, v: user.jwtVersion || 0 };
-    if (ch.role === 'funcionario') tokenPayload.employeeId = user.id;
-    const token = signToken(tokenPayload);
-    await addSecurityLog('2FA Exitoso', `Verificación de dos factores completada para ${user.email}.`, ip, user.email);
-    await addAuditLog('Inicio de Sesión (2FA)', `El ${ch.role === 'admin' ? 'usuario' : 'funcionario'} ${user.name} completó la autenticación de dos factores.`, user.name, ip);
-    const responseUser = { email: user.email, name: user.name, role: ch.role, department: user.department };
-    if (ch.role === 'funcionario') responseUser.employeeId = user.id;
-    if (user.mustChangePassword) responseUser.mustChangePassword = true;
-    setAuthCookie(res, token);
-    return res.json({ user: responseUser });
-  } catch (error) {
-    console.error('[2FA] Error en verify:', error.message);
-    return res.status(503).json({ error: 'Error temporal de base de datos. Intente de nuevo en unos segundos.' });
-  }
 });
 
 // --- RUTAS DEL PORTAL DEL FUNCIONARIO ---

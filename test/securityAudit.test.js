@@ -20,8 +20,7 @@ const adminDoc = {
   status: 'activa',
   active: true,
   jwtVersion: 0,
-  mustChangePassword: false,
-  totpEnabled: false
+  mustChangePassword: false
 };
 
 const fakeDb = {

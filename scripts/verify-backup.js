@@ -24,7 +24,7 @@ const { spawnSync } = require('child_process');
 const { MongoClient } = require('mongodb');
 
 // Colecciones volátiles (TTL / limpieza en login): se informan, no se comparan.
-const TRANSIENT = new Set(['twoFactorChallenges', 'loginAttempts']);
+const TRANSIENT = new Set(['loginAttempts']);
 
 function arg(name) {
   const i = process.argv.indexOf(name);

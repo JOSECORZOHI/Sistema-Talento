@@ -30,14 +30,6 @@ const scannerLimiter = rateLimit({
   message: { error: 'Demasiadas solicitudes de refresco de escáner. Intente de nuevo en 15 minutos.' }
 });
 
-const twoFactorLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: process.env.NODE_ENV === 'test' ? 1000 : 15,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Demasiados intentos de verificación 2FA. Intente de nuevo en 15 minutos.' }
-});
-
 const uploadLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   max: 60,
@@ -60,7 +52,6 @@ module.exports = {
   authLimiter,
   createLimiter,
   scannerLimiter,
-  twoFactorLimiter,
   uploadLimiter,
   gmailSyncLimiter
 };

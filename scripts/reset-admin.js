@@ -82,14 +82,11 @@ const USAGE = [
       status: 'activa',
       active: true,
       failedAttempts: 0,
-      lockedUntil: null,
-      totpEnabled: false,
-      totpSecret: null
+      lockedUntil: null
     };
 
     console.log(`[RECOVERY] Cuenta objetivo: ${admin.email}`);
     console.log(`[RECOVERY] Contraseña temporal: ${tempPassword}`);
-    console.log('[RECOVERY] 2FA: se desactivará (deberá configurarlo otra vez).');
     console.log('[RECOVERY] Se forzará cambio de contraseña en el próximo inicio.');
 
     if (dryRun) {
