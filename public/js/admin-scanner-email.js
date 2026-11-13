@@ -69,10 +69,10 @@ function renderScannerFiles() {
 async function fetchGmailStatus() {
   try {
     const res = await apiFetch('/api/gmail/status');
-    if (!res.ok) return { configured: false, authenticated: false };
+    if (!res.ok) return null;
     return await res.json();
   } catch (e) {
-    return { configured: false, authenticated: false };
+    return null;
   }
 }
 
@@ -83,6 +83,8 @@ function renderGmailStatusBanner(status) {
 
   const existing = document.getElementById('gmail-status-banner');
   if (existing) existing.remove();
+
+  if (!status) return;
 
   if (status.authenticated) {
     if (syncBtn) syncBtn.disabled = false;
@@ -337,3 +339,12 @@ async function refreshScannerStatus() {
     list.innerHTML = html;
   } catch (e) { console.error('Error actualizando estado del escáner:', e); }
 }
+
+// Escucha mensaje de autorización exitosa desde la ventana emergente de OAuth
+window.addEventListener('message', (event) => {
+  if (event.origin !== window.location.origin) return;
+  if (event.data && event.data.type === 'GMAIL_AUTH_SUCCESS') {
+    showToast('Gmail autorizado exitosamente.', 'success');
+    fetchEmails();
+  }
+});

@@ -89,7 +89,8 @@ async function authMiddleware(req, res, next) {
     if (dbUser.mustChangePassword && !allowedWhileRestricted) {
       return res.status(403).json({ error: 'Debe cambiar su contraseña antes de continuar.', mustChangePassword: true });
     }
-    const requireAdmin2FA = process.env.REQUIRE_ADMIN_2FA === 'true' || process.env.NODE_ENV === 'production';
+    const requireAdmin2FA = process.env.REQUIRE_ADMIN_2FA === 'true' ||
+      (process.env.NODE_ENV === 'production' && process.env.REQUIRE_ADMIN_2FA !== 'false');
     if (decoded.role === 'admin' && requireAdmin2FA && !dbUser.totpEnabled && !allowedWhileRestricted) {
       return res.status(403).json({
         error: 'Debe configurar la autenticación de dos factores (2FA) antes de realizar acciones administrativas.',
@@ -97,7 +98,7 @@ async function authMiddleware(req, res, next) {
       });
     }
     req.user = decoded;
-    if (decoded.role === 'admin' && !dbUser.totpEnabled) {
+    if (decoded.role === 'admin' && requireAdmin2FA && !dbUser.totpEnabled) {
       req.user.mustSetup2FA = true;
     }
     next();

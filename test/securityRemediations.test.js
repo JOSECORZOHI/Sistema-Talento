@@ -230,3 +230,87 @@ test('SEC-04: Exigencia de 2FA para admin cuando REQUIRE_ADMIN_2FA=true', async 
 
   delete process.env.REQUIRE_ADMIN_2FA;
 });
+
+test('SEC-05: REQUIRE_ADMIN_2FA=false en producción permite bypass administrativo y setup devuelve qrSvg', async () => {
+  const origNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'production';
+  process.env.REQUIRE_ADMIN_2FA = 'false';
+  adminDoc.totpEnabled = false;
+
+  await withServer(async (baseUrl) => {
+    // 1. Acceso a ruta administrativa debe permitirse (200) debido al bypass
+    const resAdminRoute = await fetch(baseUrl + '/api/employees', {
+      headers: {
+        'x-requested-with': 'XMLHttpRequest',
+        Cookie: cookieFor(ADMIN_EMAIL, 'admin')
+      }
+    });
+    assert.equal(resAdminRoute.status, 200);
+
+    // 2. /api/auth/2fa/setup devuelve secret, otpauth y qrSvg
+    const resSetup = await fetch(baseUrl + '/api/auth/2fa/setup', {
+      method: 'POST',
+      headers: {
+        'x-requested-with': 'XMLHttpRequest',
+        Cookie: cookieFor(ADMIN_EMAIL, 'admin')
+      }
+    });
+    assert.equal(resSetup.status, 200);
+    const dataSetup = await resSetup.json();
+    assert.ok(dataSetup.secret);
+    assert.ok(dataSetup.otpauth);
+    assert.ok(dataSetup.qrSvg && dataSetup.qrSvg.includes('<svg'));
+    // 3. /api/auth/me no debe exigir mustSetup2FA bajo el bypass
+    const resMe = await fetch(baseUrl + '/api/auth/me', {
+      headers: {
+        Cookie: cookieFor(ADMIN_EMAIL, 'admin')
+      }
+    });
+    assert.equal(resMe.status, 200);
+    const dataMe = await resMe.json();
+    assert.equal(dataMe.user.mustSetup2FA, undefined);
+
+    // 4. /api/auth/2fa/status debe indicar required: false
+    const resStatus = await fetch(baseUrl + '/api/auth/2fa/status', {
+      headers: {
+        Cookie: cookieFor(ADMIN_EMAIL, 'admin')
+      }
+    });
+    assert.equal(resStatus.status, 200);
+    const dataStatus = await resStatus.json();
+    assert.equal(dataStatus.required, false);
+  });
+
+  process.env.NODE_ENV = origNodeEnv;
+  delete process.env.REQUIRE_ADMIN_2FA;
+});
+
+test('SEC-06: En desarrollo sin REQUIRE_ADMIN_2FA, 2FA no es obligatorio para admin', async () => {
+  const origNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'development';
+  delete process.env.REQUIRE_ADMIN_2FA;
+  adminDoc.totpEnabled = false;
+
+  await withServer(async (baseUrl) => {
+    const resMe = await fetch(baseUrl + '/api/auth/me', {
+      headers: {
+        Cookie: cookieFor(ADMIN_EMAIL, 'admin')
+      }
+    });
+    assert.equal(resMe.status, 200);
+    const dataMe = await resMe.json();
+    assert.equal(dataMe.user.mustSetup2FA, undefined);
+
+    const resStatus = await fetch(baseUrl + '/api/auth/2fa/status', {
+      headers: {
+        Cookie: cookieFor(ADMIN_EMAIL, 'admin')
+      }
+    });
+    assert.equal(resStatus.status, 200);
+    const dataStatus = await resStatus.json();
+    assert.equal(dataStatus.required, false);
+  });
+
+  process.env.NODE_ENV = origNodeEnv;
+});
+

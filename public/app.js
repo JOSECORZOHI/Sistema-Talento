@@ -1,4 +1,4 @@
-/* exported appState, statTotalDocs, statPendingDocs, statTotalEmployees, statUnregisteredDocs, badgeUnregistered, modalViewPdf, modalEditDoc, loadAllData, fetchStats, fetchEmployees, refreshActiveSectionViews, reloadAll */
+/* exported appState, statTotalDocs, statPendingDocs, statTotalEmployees, statUnregisteredDocs, badgeUnregistered, modalViewPdf, modalEditDoc, loadAllData, fetchStats, fetchEmployees, refreshActiveSectionViews, reloadAll, showForceSetup2FAModal */
 // Verificación de autenticación (sanitize, apiFetch, checkAuth en utils.js)
 (function checkAuthAdmin() {
   if (!checkAuth('admin')) return;
@@ -34,6 +34,172 @@
       setTimeout(() => { logout(); }, 1500);
     } catch (err) { errDiv.textContent = 'Error de conexión.'; errDiv.style.display = 'block'; }
   });
+})();
+
+// --- CONFIGURACIÓN FORZADA DE 2FA ---
+let current2FASetupSecret = '';
+let is2FASetupLoading = false;
+
+function showForceSetup2FAModal() {
+  const modal = document.getElementById('modal-force-setup-2fa');
+  if (!modal) return;
+  modal.classList.add('show');
+  if (current2FASetupSecret || is2FASetupLoading) return;
+  is2FASetupLoading = true;
+  const qrContainer = document.getElementById('force-2fa-qr-container');
+  if (qrContainer && !qrContainer.querySelector('svg')) {
+    qrContainer.innerHTML = '<div style="font-size:13px;color:var(--text-muted);">Generando código QR...</div>';
+  }
+  const errDiv = document.getElementById('force-2fa-error');
+  if (errDiv) errDiv.style.display = 'none';
+
+  apiFetch('/api/auth/2fa/setup', { method: 'POST' })
+    .then(async (res) => {
+      const data = await res.json();
+      if (res.ok && data.secret) {
+        current2FASetupSecret = data.secret;
+        const secretEl = document.getElementById('force-2fa-secret');
+        if (secretEl) secretEl.textContent = data.secret;
+        if (qrContainer) {
+          if (data.qrSvg) {
+            qrContainer.innerHTML = data.qrSvg;
+          } else {
+            qrContainer.innerHTML = '<div style="font-size:13px;color:var(--text-muted);">Escanee el código o use la clave manual</div>';
+          }
+        }
+        const otpLink = document.getElementById('force-2fa-otpauth-link');
+        if (otpLink && data.otpauth) {
+          otpLink.href = data.otpauth;
+          otpLink.style.display = 'inline-block';
+        }
+      } else {
+        if (errDiv) {
+          errDiv.textContent = data.error || 'No se pudo generar la clave 2FA.';
+          errDiv.style.display = 'block';
+        }
+        if (qrContainer) {
+          qrContainer.innerHTML = '<div style="font-size:13px;color:var(--danger);text-align:center;">No se pudo generar el código QR.<br><button type="button" id="btn-retry-force-2fa" class="btn btn-secondary btn-sm" style="margin-top:8px;">Reintentar</button></div>';
+          document.getElementById('btn-retry-force-2fa')?.addEventListener('click', () => {
+            current2FASetupSecret = '';
+            showForceSetup2FAModal();
+          });
+        }
+      }
+    })
+    .catch(() => {
+      if (errDiv) {
+        errDiv.textContent = 'Error al comunicarse con el servidor.';
+        errDiv.style.display = 'block';
+      }
+      if (qrContainer) {
+        qrContainer.innerHTML = '<div style="font-size:13px;color:var(--danger);text-align:center;">Error de conexión.<br><button type="button" id="btn-retry-force-2fa" class="btn btn-secondary btn-sm" style="margin-top:8px;">Reintentar</button></div>';
+        document.getElementById('btn-retry-force-2fa')?.addEventListener('click', () => {
+          current2FASetupSecret = '';
+          showForceSetup2FAModal();
+        });
+      }
+    })
+    .finally(() => {
+      is2FASetupLoading = false;
+    });
+}
+
+(function initForceSetup2FA() {
+  const modal = document.getElementById('modal-force-setup-2fa');
+  if (!modal) return;
+  document.addEventListener('keydown', function blockEsc(e) {
+    if (e.key === 'Escape' && modal.classList.contains('show')) e.stopPropagation();
+  }, true);
+  modal.addEventListener('click', function blockBg(e) {
+    if (e.target === modal) e.stopPropagation();
+  }, true);
+
+  const copyBtn = document.getElementById('btn-copy-force-2fa');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', async () => {
+      const secret = document.getElementById('force-2fa-secret').textContent;
+      if (!secret) return;
+      try {
+        await navigator.clipboard.writeText(secret);
+        showToast('Clave copiada al portapapeles.', 'success');
+      } catch {
+        showToast('Copie la clave manualmente.', 'info');
+      }
+    });
+  }
+
+  const codeInput = document.getElementById('force-2fa-code');
+  if (codeInput) {
+    codeInput.addEventListener('input', () => {
+      codeInput.value = codeInput.value.replace(/\D/g, '').slice(0, 6);
+    });
+  }
+
+  const form = document.getElementById('form-force-setup-2fa');
+  if (form) {
+    form.addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const errDiv = document.getElementById('force-2fa-error');
+      const submitBtn = document.getElementById('btn-submit-force-2fa');
+      if (errDiv) errDiv.style.display = 'none';
+      const code = (document.getElementById('force-2fa-code').value || '').trim();
+      if (!/^\d{6}$/.test(code)) {
+        if (errDiv) {
+          errDiv.textContent = 'Ingrese el código de 6 dígitos.';
+          errDiv.style.display = 'block';
+        }
+        return;
+      }
+      if (!current2FASetupSecret) {
+        if (errDiv) {
+          errDiv.textContent = 'No se ha cargado la clave 2FA. Recargue la página.';
+          errDiv.style.display = 'block';
+        }
+        return;
+      }
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Activando...';
+      try {
+        const res = await apiFetch('/api/auth/2fa/enable', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ secret: current2FASetupSecret, code })
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          if (errDiv) {
+            errDiv.textContent = data.error || 'Código incorrecto.';
+            errDiv.style.display = 'block';
+          }
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Activar 2FA y Entrar al Panel';
+          return;
+        }
+        const u = getUser() || {};
+        u.mustSetup2FA = false;
+        localStorage.setItem('th_user', JSON.stringify(u));
+        modal.classList.remove('show');
+        showToast('Autenticación de dos factores activada con éxito.', 'success');
+        loadAllData();
+        if (typeof initTwoFactorPanel === 'function') initTwoFactorPanel();
+      } catch (err) {
+        if (errDiv) {
+          errDiv.textContent = 'Error de conexión al activar 2FA.';
+          errDiv.style.display = 'block';
+        }
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Activar 2FA y Entrar al Panel';
+      }
+    });
+  }
+
+  const user = getUser();
+  if (user && user.mustChangePassword) {
+    return;
+  }
+  if (user && user.mustSetup2FA) {
+    showForceSetup2FAModal();
+  }
 })();
 
 // GLOBALES Y ESTADO
@@ -94,7 +260,15 @@ const modalAddEmp = document.getElementById('modal-add-employee');
 document.addEventListener('DOMContentLoaded', () => {
   setupNavigation();
   setupEventListeners();
-  loadAllData();
+  const user = getUser();
+  if (user && user.mustChangePassword) {
+    return;
+  }
+  if (user && user.mustSetup2FA) {
+    showForceSetup2FAModal();
+  } else {
+    loadAllData();
+  }
   initTwoFactorPanel();
 
   // Botón de cerrar sesión
@@ -309,10 +483,27 @@ function setupNavigation() {
 
 // 3. OBTENEDORES DE DATOS DE API
 async function loadAllData(retries = 5) {
+  const user = getUser();
+  if (user && user.mustSetup2FA) {
+    showForceSetup2FAModal();
+    return;
+  }
   showLoader();
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const response = await apiFetch('/api/dashboard');
+      if (response.status === 403) {
+        const errData = await response.json().catch(() => ({}));
+        if (errData.mustSetup2FA) {
+          const u = getUser() || {};
+          u.mustSetup2FA = true;
+          localStorage.setItem('th_user', JSON.stringify(u));
+          hideLoader();
+          showForceSetup2FAModal();
+          return;
+        }
+        throw new Error(errData.error || 'Acceso restringido');
+      }
       if (!response.ok) throw new Error(`Error HTTP ${response.status}`);
       const data = await response.json();
 

@@ -50,3 +50,25 @@ test('health devuelve 503 y estado degradado cuando la BD no responde', async ()
     });
   }
 });
+
+test('health devuelve 200 starting durante el periodo de gracia inicial fuera de test', async () => {
+  const origEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = 'production';
+  const srv = app.listen(0);
+  await new Promise((resolve) => srv.once('listening', resolve));
+  const baseUrl = `http://127.0.0.1:${srv.address().port}`;
+  try {
+    const res = await fetch(baseUrl + '/api/health');
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.status, 'starting');
+    assert.equal(body.db, 'connecting');
+    assert.ok(typeof body.uptime === 'number');
+  } finally {
+    process.env.NODE_ENV = origEnv;
+    await new Promise((resolve) => {
+      srv.close(resolve);
+      if (typeof srv.closeAllConnections === 'function') srv.closeAllConnections();
+    });
+  }
+});

@@ -215,13 +215,13 @@ async function initTwoFactorPanel() {
     const res = await apiFetch('/api/auth/2fa/status');
     if (!res.ok) throw new Error(String(res.status));
     const data = await res.json();
-    renderTwoFactorPanel(!!data.enabled);
+    renderTwoFactorPanel(!!data.enabled, !!data.required);
   } catch (e) {
     panel.innerHTML = '<div class="no-data-placeholder">No se pudo consultar el estado de 2FA.</div>';
   }
 }
 
-function renderTwoFactorPanel(enabled) {
+function renderTwoFactorPanel(enabled, required) {
   const panel = document.getElementById('twofa-panel');
   if (!panel) return;
   const title = enabled
@@ -230,10 +230,18 @@ function renderTwoFactorPanel(enabled) {
   const desc = enabled
     ? '<p style="margin:0 0 12px;font-size:13px;color:var(--text-secondary);">Se solicita el código de su aplicación de autenticación al iniciar sesión.</p>'
     : '<p style="margin:0 0 12px;font-size:13px;color:var(--text-secondary);">Agregue una capa adicional de seguridad a su cuenta con una aplicación de autenticación (Google Authenticator, Authy, Microsoft Authenticator, etc.).</p>';
-  const btn = enabled
-    ? '<button class="btn btn-text btn-sm" id="btn-2fa-disable" style="font-size:12px;color:var(--danger);">Desactivar 2FA</button>'
-    : '<button class="btn btn-primary btn-sm" id="btn-2fa-setup" style="font-size:12px;">Configurar 2FA</button>';
-  panel.innerHTML = title + desc + btn;
+  
+  let actionHtml = '';
+  if (enabled) {
+    if (required) {
+      actionHtml = '<span class="badge" style="background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd;font-size:12px;font-weight:600;padding:4px 10px;border-radius:6px;display:inline-block;">Requerido por Directiva de Seguridad Digital</span>';
+    } else {
+      actionHtml = '<button class="btn btn-text btn-sm" id="btn-2fa-disable" style="font-size:12px;color:var(--danger);">Desactivar 2FA</button>';
+    }
+  } else {
+    actionHtml = '<button class="btn btn-primary btn-sm" id="btn-2fa-setup" style="font-size:12px;">Configurar 2FA</button>';
+  }
+  panel.innerHTML = title + desc + actionHtml;
 
   const setupBtn = document.getElementById('btn-2fa-setup');
   if (setupBtn) setupBtn.addEventListener('click', twoFaSetup);
@@ -248,9 +256,13 @@ async function twoFaSetup() {
     const res = await apiFetch('/api/auth/2fa/setup', { method: 'POST' });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Error generando el secreto.');
+    const qrBlock = data.qrSvg
+      ? `<div style="display:flex;justify-content:center;align-items:center;margin-bottom:12px;background:#ffffff;padding:10px;border-radius:8px;border:1px solid var(--border-color);max-width:160px;margin-left:auto;margin-right:auto;">${data.qrSvg}</div>`
+      : '';
     panel.innerHTML = `
       <div style="font-size:13px;font-weight:700;color:var(--primary);margin-bottom:6px;">Configuración de 2FA</div>
       <p style="margin:0 0 12px;font-size:13px;color:var(--text-secondary);">Escanee el código con su aplicación de autenticación o ingrese manualmente este secreto:</p>
+      ${qrBlock}
       <div style="font-family:monospace;background:var(--background);border:1px solid var(--border-color);border-radius:8px;padding:10px;font-size:13px;word-break:break-all;margin-bottom:10px;">${sanitize(data.secret)}</div>
       <a href="${sanitize(data.otpauth)}" target="_blank" rel="noopener" style="font-size:12px;color:var(--primary);">Abrir enlace de configuración (otpauth)</a>
       <div class="login-field" style="margin-top:12px;">

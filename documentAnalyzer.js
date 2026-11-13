@@ -3,14 +3,15 @@
 // clave. Sin APIs externas: todo corre en el servidor, gratis y sin enviar datos personales.
 
 const path = require('path');
+const fs = require('fs');
 const { pathToFileURL } = require('url');
 const mammoth = require('mammoth');
 const { createWorker, PSM } = require('tesseract.js');
 const { stripAccentsAndLower } = require('./lib/helpers');
 
-// Tope de píxeles por página rasterizada para OCR (25 MP ≈ 75 MB en RGB).
+// Tope de píxeles por página rasterizada para OCR (8 MP ≈ 24 MB en RGB).
 // Evita que un PDF con páginas de tamaño desmesurado agote la memoria del proceso.
-const MAX_RASTER_PIXELS = 25 * 1000 * 1000;
+const MAX_RASTER_PIXELS = 8 * 1000 * 1000;
 
 // --- PDF.js v4 (extracción de capa de texto) + mupdf WASM (rasterizado escaneados),
 //     ambos sin dependencias nativas de sistema ---
@@ -94,9 +95,18 @@ function getMupdf() {
 let ocrWorkerPromise = null;
 let ocrQueue = Promise.resolve();
 
+const OCR_CACHE_PATH = '/tmp/tesseract-cache';
+
 function getOcrWorker() {
   if (!ocrWorkerPromise) {
-    ocrWorkerPromise = createWorker('spa', 1, { cacheMethod: 'none' })
+    try {
+      if (!fs.existsSync(OCR_CACHE_PATH)) {
+        fs.mkdirSync(OCR_CACHE_PATH, { recursive: true });
+      }
+    } catch (dirErr) {
+      console.warn('[OCR] No se pudo crear directorio de caché:', dirErr.message);
+    }
+    ocrWorkerPromise = createWorker('spa', 1, { cachePath: OCR_CACHE_PATH })
       .then(async (worker) => {
         await worker.setParameters({ tessedit_pageseg_mode: PSM.AUTO });
         return worker;

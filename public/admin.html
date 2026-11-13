@@ -1038,6 +1038,67 @@
     </div>
   </div>
 
+  <!-- Modal configuración forzada de 2FA (pantalla completa, sin botón cerrar) -->
+  <div class="fcp-overlay" id="modal-force-setup-2fa" role="dialog" aria-modal="true" aria-labelledby="force-2fa-title">
+    <div class="fcp-brand-panel">
+      <div class="fcp-brand-content">
+        <div class="fcp-brand-escudo">
+          <img src="Escudo_Valledupar.png" alt="Escudo de Valledupar">
+        </div>
+        <h2 id="force-2fa-title">Doble Factor Obligatorio</h2>
+        <p>Por Directiva de Seguridad de la Información, los administradores deben activar la autenticación de dos factores (2FA / TOTP) para proteger la plataforma.</p>
+        <div class="fcp-features">
+          <div class="fcp-feature">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+            <span>Compatible con Google Authenticator, Microsoft Authenticator o Authy</span>
+          </div>
+          <div class="fcp-feature">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+            <span>Generación autónoma y segura en formato SVG sin servidores externos</span>
+          </div>
+          <div class="fcp-feature">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+            <span>Protección de expedientes y datos de funcionarios (Ley 1581)</span>
+          </div>
+        </div>
+      </div>
+      <div class="bandera-stripe"><span></span><span></span><span></span></div>
+    </div>
+    <div class="fcp-form-panel">
+      <div class="fcp-form-card">
+        <div class="fcp-card-header">
+          <div class="fcp-lock-circle">
+            <img src="Escudo_Valledupar.png" alt="Escudo de Valledupar">
+          </div>
+          <h3>Configuración de 2FA</h3>
+          <p>Escanee el código QR desde su aplicación de autenticación</p>
+        </div>
+        <form id="form-force-setup-2fa">
+          <div id="force-2fa-qr-container" style="display:flex;justify-content:center;align-items:center;margin-bottom:14px;background:#ffffff;padding:12px;border-radius:12px;border:1px solid var(--border-color);min-height:160px;box-shadow:inset 0 1px 3px rgba(0,0,0,0.05);">
+            <div style="font-size:13px;color:var(--text-muted);">Generando código QR...</div>
+          </div>
+          <div style="margin-bottom:14px;text-align:center;">
+            <label style="font-size:12px;color:var(--text-muted);display:block;margin-bottom:4px;">O ingrese esta clave secreta manualmente:</label>
+            <div style="display:flex;align-items:center;gap:6px;justify-content:center;">
+              <code id="force-2fa-secret" style="font-family:monospace;font-size:13px;letter-spacing:1px;background:var(--surface);padding:6px 10px;border-radius:6px;border:1px solid var(--border-color);user-select:all;max-width:260px;overflow:hidden;text-overflow:ellipsis;"></code>
+              <button type="button" id="btn-copy-force-2fa" class="btn btn-secondary btn-sm" style="padding:6px 10px;font-size:12px;">Copiar</button>
+            </div>
+            <a id="force-2fa-otpauth-link" href="#" target="_blank" rel="noopener" style="display:none;font-size:12px;color:var(--primary);margin-top:6px;">Abrir enlace otpauth</a>
+          </div>
+          <div class="login-field">
+            <label for="force-2fa-code">Código de verificación (6 dígitos)</label>
+            <div class="login-input-wrapper">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+              <input type="text" id="force-2fa-code" placeholder="000000" maxlength="6" inputmode="numeric" pattern="[0-9]{6}" autocomplete="one-time-code" required style="font-size:20px;letter-spacing:6px;text-align:center;">
+            </div>
+          </div>
+          <div class="login-error-msg" id="force-2fa-error" style="display:none;margin-bottom:10px;"></div>
+          <button type="submit" id="btn-submit-force-2fa" class="fcp-submit-btn">Activar 2FA y Entrar al Panel</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <!-- JS Logic -->
   <script src="js/svg-icons.js?v=1"></script>
   <script src="utils.js?v=8"></script>

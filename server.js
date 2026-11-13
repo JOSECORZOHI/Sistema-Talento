@@ -40,6 +40,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const PDFDocument = require('pdfkit');
+const QRCode = require('qrcode');
 const nodemailer = require('nodemailer');
 const { connect, col, isHealthy, reconnect, closeDb, storeFileBuffer, readFileStream, readFileBuffer, deleteFileByName, listFilesBySource, markFileRegistered, generateTempPassword } = require('./db');
 const { analyzeFile, warmupOcr } = require('./documentAnalyzer.js');
@@ -72,10 +73,12 @@ const app = express();
 // Por defecto solo se confían cabeceras X-Forwarded-For procedentes de loopback;
 // así un atacante remoto no puede falsificar req.ip (rate limiters/logs/auditoría).
 // Si se despliega detrás de un proxy real, definir TRUST_PROXY=1 (o 'loopback'/n).
+const isRailwayOrProd = Boolean(process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production');
+const defaultTrustProxy = isRailwayOrProd ? 1 : 'loopback';
 const trustProxySetting = process.env.TRUST_PROXY;
 app.set('trust proxy', trustProxySetting
   ? (/^\d+$/.test(trustProxySetting) ? parseInt(trustProxySetting, 10) : trustProxySetting)
-  : 'loopback');
+  : defaultTrustProxy);
 const PORT = process.env.PORT || 3000;
 
 if (!process.env.JWT_SECRET) {
@@ -804,7 +807,9 @@ async function authenticateUser(user, collectionName, role, username, password, 
       const responseUser = { email: user.email, name: user.name, role, department: user.department };
       if (role === 'funcionario') responseUser.employeeId = user.id;
       if (user.mustChangePassword) responseUser.mustChangePassword = true;
-      if (role === 'admin' && !user.totpEnabled) responseUser.mustSetup2FA = true;
+      const requireAdmin2FA = process.env.REQUIRE_ADMIN_2FA === 'true' ||
+        (process.env.NODE_ENV === 'production' && process.env.REQUIRE_ADMIN_2FA !== 'false');
+      if (role === 'admin' && requireAdmin2FA && !user.totpEnabled) responseUser.mustSetup2FA = true;
       setAuthCookie(res, token);
       return res.json({ user: responseUser });
     }
@@ -1636,18 +1641,32 @@ app.get('/api/auth/2fa/status', authMiddleware, async (req, res) => {
   try {
     const lookup = getLookupForRole(req.user.role, req.user);
     const user = await col(getCollectionForRole(req.user.role)).findOne(lookup, { projection: { totpEnabled: 1 } });
-    return res.json({ enabled: !!(user && user.totpEnabled) });
+    const requireAdmin2FA = process.env.REQUIRE_ADMIN_2FA === 'true' ||
+      (process.env.NODE_ENV === 'production' && process.env.REQUIRE_ADMIN_2FA !== 'false');
+    const required = req.user.role === 'admin' && requireAdmin2FA;
+    return res.json({ enabled: !!(user && user.totpEnabled), required });
   } catch (error) {
     console.error('[2FA] Error en status:', error.message);
     return res.status(503).json({ error: 'Error temporal de base de datos. Intente de nuevo en unos segundos.' });
   }
 });
 
-// Genera un secreto TOTP nuevo (aún no se activa).
-app.post('/api/auth/2fa/setup', authMiddleware, (req, res) => {
-  const secret = generateSecret();
-  const otpauth = buildOtpauthURL({ issuer: 'Sistema Talento Humano', account: req.user.email, secret });
-  return res.json({ secret, otpauth });
+// Genera un secreto TOTP nuevo y código QR SVG nativo (aún no se activa).
+app.post('/api/auth/2fa/setup', authMiddleware, async (req, res) => {
+  try {
+    const secret = generateSecret();
+    const otpauth = buildOtpauthURL({ issuer: 'Sistema Talento Humano', account: req.user.email, secret });
+    let qrSvg = '';
+    try {
+      qrSvg = await QRCode.toString(otpauth, { type: 'svg' });
+    } catch (qrErr) {
+      console.warn('[2FA] Error generando QR SVG:', qrErr.message);
+    }
+    return res.json({ secret, otpauth, qrSvg });
+  } catch (err) {
+    console.error('[2FA] Error en setup:', err.message);
+    return res.status(500).json({ error: 'Error al generar la configuración de 2FA.' });
+  }
 });
 
 // Activa 2FA: valida un primer código con el secreto generado.
@@ -1692,7 +1711,9 @@ app.post('/api/auth/2fa/enable', authMiddleware, validateBody(twoFactorEnableSch
 // Desactiva 2FA: exige un código vigente del secreto ya almacenado.
 app.post('/api/auth/2fa/disable', authMiddleware, validateBody(twoFactorCodeSchema), async (req, res) => {
   try {
-    if (req.user.role === 'admin' && (process.env.REQUIRE_ADMIN_2FA === 'true' || process.env.NODE_ENV === 'production')) {
+    const requireAdmin2FA = process.env.REQUIRE_ADMIN_2FA === 'true' ||
+      (process.env.NODE_ENV === 'production' && process.env.REQUIRE_ADMIN_2FA !== 'false');
+    if (req.user.role === 'admin' && requireAdmin2FA) {
       return res.status(403).json({ error: 'La autenticación de dos factores es obligatoria para administradores y no puede ser desactivada.' });
     }
     const { code } = req.body || {};
@@ -2792,6 +2813,9 @@ function getLocalSubnet() {
 }
 
 async function detectNetworkScanners() {
+  if (process.env.RAILWAY_ENVIRONMENT) {
+    return [];
+  }
   const subnet = getLocalSubnet();
 
   // Sondeo TCP puerto 9100 en Node (multiplataforma). Primeros 20 hosts,
@@ -3362,7 +3386,45 @@ app.get('/api/gmail/oauth2callback', async (req, res) => {
     } else {
       console.warn('[GMAIL] Google no devolvió refresh_token (¿autorización previa sin prompt=consent?).');
     }
-    res.json({ success: true, message: 'Autorización completada. Gmail ya quedó autorizado.' });
+    const nonce = res.locals.cspNonce || '';
+    const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Autorización Exitosa - Alcaldía de Valledupar</title>
+  <style nonce="${nonce}">
+    body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f8fafc; color: #1e293b; text-align: center; }
+    .card { background: #ffffff; padding: 2.5rem; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); max-width: 420px; border-top: 4px solid #16a34a; }
+    .escudo { width: 64px; height: 64px; object-fit: contain; margin-bottom: 1rem; }
+    h2 { margin: 0 0 0.5rem; color: #0f172a; font-size: 1.25rem; font-weight: 700; }
+    p { color: #64748b; font-size: 0.95rem; line-height: 1.5; margin: 0 0 1rem; }
+    .badge { display: inline-block; padding: 4px 12px; background: #dcfce7; color: #15803d; border-radius: 9999px; font-size: 0.85rem; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <img src="/Escudo_Valledupar.png" alt="Escudo de Valledupar" class="escudo">
+    <h2>Autorización Completada</h2>
+    <p>La vinculación con Google Workspace ha finalizado correctamente.</p>
+    <div class="badge">Esta ventana se cerrará automáticamente</div>
+  </div>
+  <script nonce="${nonce}">
+    try {
+      if (window.opener) {
+        window.opener.postMessage({ type: 'GMAIL_AUTH_SUCCESS' }, window.location.origin);
+      }
+    } catch (e) {
+      console.warn('postMessage error:', e);
+    }
+    setTimeout(function() {
+      window.close();
+    }, 1200);
+  </script>
+</body>
+</html>`;
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    return res.send(html);
   } catch (error) {
     console.error('Error al autorizar Gmail:', error && error.message);
     res.status(502).json({ error: 'No se pudo completar la autorización con Google.' });
@@ -3860,6 +3922,53 @@ async function recordError(source, err) {
   }
 }
 
+// --- PANEL DE ESTADO DEL SISTEMA ---
+app.use('/api/system', createSystemRouter({
+  getAdminGmailRefreshToken,
+  getUnregisteredFiles,
+  SCANNER_DIR
+}));
+
+// --- HEALTH CHECK ---
+// Devuelve 503 cuando la BD no responde para que Railway y el monitoreo externo
+// detecten la degradación. Durante los primeros 60s en producción, permite arrancar
+// sin caer en crash loop mientras se establece la conexión inicial.
+app.get('/api/health', async (req, res) => {
+  try {
+    const healthy = await isHealthy();
+    const isStarting = process.uptime() < 60 && process.env.NODE_ENV !== 'test';
+    if (healthy) return res.json({ status: 'ok', db: 'connected' });
+    if (isStarting) {
+      return res.json({ status: 'starting', db: 'connecting', uptime: Math.round(process.uptime()) });
+    }
+    return res.status(503).json({ status: 'degraded', db: 'disconnected' });
+  } catch {
+    return res.status(503).json({ status: 'error', db: 'unknown' });
+  }
+});
+
+// Respaldo SPA — solo para rutas GET que no sean API.
+// En Express 5, '*' no es válido como patrón (path-to-regexp v8); se usa un
+// middleware final que respeta el comportamiento original (solo GET, resto 404).
+app.use((req, res, next) => {
+  if (req.method !== 'GET') {
+    return next();
+  }
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ error: 'Ruta no encontrada.' });
+  }
+  const filePath = path.join(__dirname, 'public', 'index.html');
+  fs.readFile(filePath, 'utf8', (err, data) => {
+    if (err) return res.status(404).send('Not found');
+    const nonce = res.locals.cspNonce;
+    const injected = injectCspNonces(data, nonce);
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.send(injected);
+  });
+});
+
+// Manejador global de errores: debe ubicarse estrictamente después de todas las rutas
 app.use((error, req, res, next) => {
   if (res.headersSent) return next(error);
 
@@ -3906,47 +4015,6 @@ app.use((error, req, res, next) => {
   res.status(500).json({ error: 'Error interno del servidor.' });
 });
 
-// --- PANEL DE ESTADO DEL SISTEMA ---
-app.use('/api/system', createSystemRouter({
-  getAdminGmailRefreshToken,
-  getUnregisteredFiles,
-  SCANNER_DIR
-}));
-
-// --- HEALTH CHECK ---
-// Devuelve 503 cuando la BD no responde para que Railway y el monitoreo externo
-// detecten la degradación. Si la caída es transitoria, el proceso se reconecta solo.
-app.get('/api/health', async (req, res) => {
-  try {
-    const healthy = await isHealthy();
-    if (healthy) return res.json({ status: 'ok', db: 'connected' });
-    return res.status(503).json({ status: 'degraded', db: 'disconnected' });
-  } catch {
-    return res.status(503).json({ status: 'error', db: 'unknown' });
-  }
-});
-
-// Respaldo SPA — solo para rutas GET que no sean API.
-// En Express 5, '*' no es válido como patrón (path-to-regexp v8); se usa un
-// middleware final que respeta el comportamiento original (solo GET, resto 404).
-app.use((req, res, next) => {
-  if (req.method !== 'GET') {
-    return next();
-  }
-  if (req.path.startsWith('/api/')) {
-    return res.status(404).json({ error: 'Ruta no encontrada.' });
-  }
-  const filePath = path.join(__dirname, 'public', 'index.html');
-  fs.readFile(filePath, 'utf8', (err, data) => {
-    if (err) return res.status(404).send('Not found');
-    const nonce = res.locals.cspNonce;
-    const injected = injectCspNonces(data, nonce);
-    res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
-    res.set('Content-Type', 'text/html; charset=utf-8');
-    res.send(injected);
-  });
-});
-
 // --- Verificador de salud de conexión: reconexión automática al morir el pool ---
 let lastReconnectAttempt = 0;
 let reconnectCooldownMs = 10000;
@@ -3984,9 +4052,22 @@ let checkConnectionInterval = null;
 function shutdown() {
   console.log('[SERVER] Shutting down gracefully...');
   if (checkConnectionInterval) clearInterval(checkConnectionInterval);
-  if (server) server.close(() => {
+  const forceTimer = setTimeout(() => {
+    console.warn('[SERVER] Forzando cierre tras timeout...');
+    process.exit(0);
+  }, 4000);
+  if (forceTimer.unref) forceTimer.unref();
+
+  if (server) {
+    if (typeof server.closeAllConnections === 'function') {
+      server.closeAllConnections();
+    }
+    server.close(() => {
+      closeDb().catch(() => {}).finally(() => process.exit(0));
+    });
+  } else {
     closeDb().catch(() => {}).finally(() => process.exit(0));
-  });
+  }
 }
 
 // --- INICIO ---
@@ -4031,7 +4112,7 @@ function retentionMs() {
 
 async function runDocumentRetention() {
   try {
-    if (!isHealthy()) return;
+    if (!(await isHealthy())) return;
     const cutoff = new Date(Date.now() - retentionMs()).toISOString();
     // Solo purga documentos archivados que hayan vencido su periodo de retención.
     // (El estado 'Eliminado' no se genera en el sistema; solo se archiva = 'Archivado'.)
