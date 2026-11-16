@@ -49,6 +49,12 @@ const {
 } = require('./lib/helpers');
 const { renderResetPasswordEmail, renderCredentialsEmail } = require('./lib/emailTemplates');
 const { assertEncryptionKey, encryptText, decryptText } = require('./lib/crypto');
+const {
+  createFuncionarioDriveAuthClient,
+  uploadToDrive,
+  downloadFromDriveStream,
+  deleteFromDrive
+} = require('./lib/googleDrive');
 
 // Manejo de errores no controlados.
 // unhandledRejection: se loguea sin salir (permite que la reconexión a Mongo se recupere).
@@ -1386,8 +1392,15 @@ async function registerEmailAttachmentCore({ req, emailId, filename, employeeId,
 // entre el conteo de copias y el borrado físico.
 async function deleteDocAndPhysicalFile(id, filename) {
   await withRegisterLock(filename, async () => {
+    const docToDelete = await col('documents').findOne({ id });
     const sharingDocs = await col('documents').countDocuments({ filename, id: { $ne: id } });
     await col('documents').deleteOne({ id });
+    if (docToDelete && docToDelete.storageProvider === 'google_drive' && docToDelete.driveFileId) {
+      if (sharingDocs === 0) {
+        await deleteFromDrive({ employeeId: docToDelete.employeeId, fileId: docToDelete.driveFileId });
+      }
+      return;
+    }
     if (sharingDocs === 0) {
       // Además de documentos, verificar que el archivo no lo referencie un adjunto de correo
       const emailRefs = await col('emailsInbox').countDocuments({ 'attachments.filename': filename });
@@ -1808,6 +1821,61 @@ app.post('/api/funcionario/subir-documento', authMiddleware, uploadLimiter, uplo
 
   const employee = await col('employees').findOne({ id: empleadoId });
   if (!employee) return res.status(404).json({ error: 'Funcionario no encontrado.' });
+
+  // Si el funcionario tiene vinculada su cuenta de Google Workspace para almacenamiento en Drive
+  if (employee.googleDriveRefreshToken) {
+    const datesError = validateDocDates(issueDate);
+    if (datesError) return res.status(400).json({ error: datesError });
+    const descError = validateDescription(description);
+    if (descError) return res.status(400).json({ error: descError });
+    const references = await validateDocumentReferences(documentTypeId, categoryId);
+    if (!references) return res.status(400).json({ error: 'El tipo documental o la categoría seleccionada no existen.' });
+
+    try {
+      const targetFilename = getUniqueFilename(req.file.originalname);
+      const mimeType = getMimeType(req.file.originalname) || req.file.mimetype || 'application/pdf';
+      const driveUpload = await uploadToDrive({
+        employeeId: empleadoId,
+        filename: targetFilename,
+        buffer: req.file.buffer,
+        mimeType,
+        encrypt: true
+      });
+
+      const fileHash = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
+      const docRecord = createDoc({
+        filename: targetFilename,
+        originalName: req.file.originalname,
+        employeeId: empleadoId,
+        employeeName: employee.name,
+        documentTypeId,
+        categoryId,
+        description,
+        issueDate,
+        status: 'Pendiente',
+        fileSize: req.file.buffer.length,
+        fileHash,
+        uploadedBy: employee.name,
+        uploadedByEmployee: true,
+        visibleToEmployee: true
+      });
+      docRecord.storageProvider = 'google_drive';
+      docRecord.driveFileId = driveUpload.fileId;
+      docRecord.driveWebViewLink = driveUpload.webViewLink;
+      docRecord.encrypted = driveUpload.encrypted;
+
+      await col('documents').insertOne(docRecord);
+      await addAuditLog(
+        'Carga por Funcionario',
+        `${employee.name} subió el archivo '${targetFilename}' (${documentTypeId}) a Google Drive.`,
+        employee.name,
+        getClientIp(req)
+      );
+      return res.status(201).json(docRecord);
+    } catch (driveErr) {
+      console.error('[DRIVE-UPLOAD] Error al subir a Google Drive, cayendo a almacenamiento local:', driveErr.message);
+    }
+  }
 
   const result = await registerDocumentCore({
     req, filename: req.file.originalname, employeeId: empleadoId, documentTypeId, categoryId, description, issueDate,
@@ -2299,6 +2367,7 @@ app.get('/api/document-file/:filename', fileAuthMiddleware, async (req, res) => 
   // Correo autorizado: se resuelve UNA vez con el alcance del usuario y se reutiliza
   // para descargar el contenido (evita servir un adjunto homónimo de otra bandeja).
   let authorizedEmail = null;
+  let targetDoc = null;
   if (!canReadAll) {
     const owned = await col('documents').findOne({
       filename,
@@ -2306,6 +2375,7 @@ app.get('/api/document-file/:filename', fileAuthMiddleware, async (req, res) => 
       $or: [{ visibleToEmployee: true }, { uploadedByEmployee: true }]
     });
     if (owned) {
+      targetDoc = owned;
       // permitido: documento propio
     } else if (folder === 'scanner' && hasPermission(req.user.role, 'scanner.read')) {
       const trayPath = getSafeFilePath(SCANNER_DIR, filename);
@@ -2330,6 +2400,8 @@ app.get('/api/document-file/:filename', fileAuthMiddleware, async (req, res) => 
     }
   } else if (isEmailAttachment) {
     authorizedEmail = await col('emailsInbox').findOne({ 'attachments.filename': filename, inboxOwner: 'admin' });
+  } else {
+    targetDoc = await col('documents').findOne({ filename });
   }
 
   // Adjuntos de correo: se sirven SIEMPRE desde el correo ya autorizado. No se
@@ -2362,6 +2434,27 @@ app.get('/api/document-file/:filename', fileAuthMiddleware, async (req, res) => 
       if (!res.headersSent) res.status(status).json({ error: 'No se pudo recuperar el adjunto desde Gmail.' });
     }
     return;
+  }
+
+  // Si el documento está alojado en Google Drive del funcionario
+  if (targetDoc && targetDoc.storageProvider === 'google_drive' && targetDoc.driveFileId) {
+    try {
+      const stream = await downloadFromDriveStream({
+        employeeId: targetDoc.employeeId,
+        fileId: targetDoc.driveFileId,
+        encrypted: !!targetDoc.encrypted
+      });
+      const mimeType = getMimeType(filename);
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Content-Disposition', buildContentDisposition(mimeType, filename));
+      addAuditLog('Descarga de Documento', `Descarga de '${redactFilename(filename)}' desde Google Drive`, req.user.email || req.user.name || 'Sistema', getClientIp(req)).catch(() => {});
+      stream.pipe(res);
+      return;
+    } catch (e) {
+      console.error(`[FILE-SERVE] Error sirviendo archivo desde Google Drive '${redactFilename(filename)}':`, e.message);
+      if (!res.headersSent) res.status(502).json({ error: 'No se pudo recuperar el archivo desde Google Drive.' });
+      return;
+    }
   }
 
   try {
@@ -3649,6 +3742,128 @@ app.post('/api/funcionario/gmail/sync', authMiddleware, gmailSyncLimiter, async 
 app.get('/api/funcionario/gmail/sync/status', authMiddleware, async (req, res) => {
   if (req.user.role !== 'funcionario') return res.status(403).json({ error: 'Acceso denegado.' });
   res.json(getSyncJobState(req.user.employeeId));
+});
+
+// ============================================================
+// GOOGLE DRIVE POR FUNCIONARIO — Almacenamiento en Workspace Alcaldía
+// ============================================================
+
+// Consulta el estado de vínculo de Google Drive del funcionario
+app.get('/api/funcionario/google/status', authMiddleware, async (req, res) => {
+  if (req.user.role !== 'funcionario') return res.status(403).json({ error: 'Acceso denegado.' });
+  try {
+    let employee = null;
+    try { employee = await col('employees').findOne({ id: req.user.employeeId }); } catch {}
+    const linked = !!(employee && employee.googleDriveRefreshToken);
+    const configured = !!(process.env.GOOGLE_CLIENT_ID || process.env.GMAIL_CLIENT_ID);
+    res.json({
+      configured,
+      linked,
+      linkedEmail: (employee && employee.googleDriveEmail) || null,
+      linkedAt: (employee && employee.googleDriveLinkedAt) || null
+    });
+  } catch {
+    res.status(503).json({ error: 'Error al obtener el estado de Google Drive.' });
+  }
+});
+
+// Inicia la autorización OAuth de Google Drive con scope drive.file
+app.get('/api/funcionario/google/authorize', authMiddleware, async (req, res) => {
+  if (req.user.role !== 'funcionario') return res.status(403).json({ error: 'Acceso denegado.' });
+  try {
+    const auth = createFuncionarioDriveAuthClient();
+    const state = crypto.randomBytes(24).toString('hex');
+    await storeOauthState(state, { employeeId: req.user.employeeId, purpose: 'drive' });
+    const url = auth.generateAuthUrl({
+      access_type: 'offline',
+      prompt: 'consent',
+      state,
+      scope: [
+        'https://www.googleapis.com/auth/drive.file',
+        'https://www.googleapis.com/auth/userinfo.email'
+      ]
+    });
+    res.json({ url });
+  } catch (error) {
+    console.error('[DRIVE-FUNC] Error en /authorize:', error.message, error.code);
+    res.status(503).json({ error: 'Google Drive no está configurado.' });
+  }
+});
+
+// Callback OAuth de Google Drive del funcionario
+app.get('/api/funcionario/google/callback', async (req, res) => {
+  try {
+    if (!req.query.code) return res.status(400).json({ error: 'Google no devolvió un código de autorización.' });
+    const stateValue = await consumeOauthState(req.query.state);
+    if (!stateValue) {
+      return res.status(403).json({ error: 'Autorización inválida o expirada. Reinicie el proceso de autorización.' });
+    }
+    const employeeId = stateValue.employeeId;
+
+    const auth = createFuncionarioDriveAuthClient();
+    const { tokens } = await auth.getToken(req.query.code);
+    if (!tokens.refresh_token) {
+      return res.status(400).json({ error: 'Google no devolvió un refresh token. Revise los permisos en su cuenta e inténtelo de nuevo.' });
+    }
+
+    let driveEmail = null;
+    try {
+      auth.setCredentials(tokens);
+      const oauth2 = require('googleapis').google.oauth2({ version: 'v2', auth });
+      const userInfo = await oauth2.userinfo.get();
+      if (userInfo && userInfo.data && userInfo.data.email) {
+        driveEmail = userInfo.data.email;
+      }
+    } catch (e) {
+      console.warn('[DRIVE-FUNC] No se pudo obtener el correo del perfil de Google:', e.message);
+    }
+
+    const result = await col('employees').updateOne({ id: employeeId }, {
+      $set: {
+        googleDriveRefreshToken: encryptText(tokens.refresh_token),
+        googleDriveLinkedAt: new Date().toISOString(),
+        ...(driveEmail ? { googleDriveEmail: driveEmail } : {})
+      }
+    });
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ error: 'Funcionario no encontrado.' });
+    }
+
+    const linkedEmployee = await col('employees').findOne({ id: employeeId });
+    await addAuditLog(
+      'Autorización Google Drive',
+      `El funcionario vinculó su cuenta de Google Workspace para almacenamiento en Drive (${driveEmail || 'sin correo'}).`,
+      (linkedEmployee && linkedEmployee.name) || 'Funcionario',
+      getClientIp(req)
+    );
+
+    return res.send(`
+<!doctype html><html><head><meta charset="utf-8"><title>Google Drive Conectado</title>
+<style>body{font-family:system-ui,sans-serif;background:#f3f6fb;display:flex;justify-content:center;padding:60px 16px;margin:0}
+.card{background:#fff;border-radius:12px;padding:28px;max-width:480px;width:100%;box-shadow:0 6px 24px rgba(0,0,0,.08)}
+h2{margin:0 0 8px}.ok{color:#16a34a;font-weight:600}.hint{color:#666;font-size:13px}</style></head><body>
+<div class="card"><h2>Google Workspace Conectado</h2><p class="ok">Tu cuenta institucional de Google Drive ha sido conectada correctamente.</p>
+<p class="hint">Los documentos que subas desde el portal del funcionario se guardarán automáticamente en tu Google Drive institucional.</p>
+<button class="btn" id="btn-close" style="margin-top:14px;background:#2563eb;color:#fff;border:0;padding:10px 18px;border-radius:6px;cursor:pointer">Cerrar</button>
+<script nonce="${res.locals.cspNonce}">document.getElementById('btn-close').addEventListener('click',function(){window.close();});</script>
+</div></body></html>`);
+  } catch (error) {
+    console.error('Error al autorizar Google Drive del funcionario:', error && error.message);
+    res.status(502).json({ error: 'No se pudo completar la autorización con Google.' });
+  }
+});
+
+// Desconectar Google Drive del funcionario
+app.post('/api/funcionario/google/disconnect', authMiddleware, async (req, res) => {
+  if (req.user.role !== 'funcionario') return res.status(403).json({ error: 'Acceso denegado.' });
+  try {
+    await col('employees').updateOne({ id: req.user.employeeId }, {
+      $unset: { googleDriveRefreshToken: '', googleDriveLinkedAt: '', googleDriveEmail: '' }
+    });
+    res.json({ message: 'Cuenta de Google Drive desvinculada exitosamente.' });
+  } catch {
+    res.status(500).json({ error: 'No se pudo desvincular Google Drive.' });
+  }
 });
 
 app.post('/api/documents/register-email-attachment', authMiddleware, requirePermission('documents.create'), async (req, res) => {

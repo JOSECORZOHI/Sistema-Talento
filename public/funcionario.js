@@ -44,6 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
   showPortalApp();
   loadPortalData();
   checkFuncionarioGmailStatus();
+  checkFuncionarioGoogleDriveStatus();
   setTimeout(refreshPortalScannerStatus, 500);
   const portalScannerInterval = setInterval(refreshPortalScannerStatus, 15000);
   window.addEventListener('beforeunload', () => clearInterval(portalScannerInterval));
@@ -59,6 +60,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // Conexión y sincronización de Gmail (migrados desde onclick inline)
   document.getElementById('btn-portal-link-gmail')?.addEventListener('click', linkFuncionarioGmail);
   document.getElementById('btn-portal-sync-email')?.addEventListener('click', syncFuncionarioEmails);
+
+  // Conexión de Google Drive para almacenamiento
+  document.getElementById('btn-link-drive')?.addEventListener('click', linkFuncionarioGoogleDrive);
+  document.getElementById('btn-unlink-drive')?.addEventListener('click', unlinkFuncionarioGoogleDrive);
 
   // Cerrar modales desde su botón de cierre (migrados desde onclick inline)
   document.querySelectorAll('[data-modal-close]').forEach(btn => {
@@ -345,7 +350,10 @@ function renderPortalDocs() {
       <div class="doc-meta">${sanitize(catName)} · Emisión: ${fechaEmision} · ${sizeKB} KB</div>
       </div>
       <div class="doc-footer">
-        <span class="badge-status ${['pendiente','activo','aprobado','rechazado','archivado'].includes((doc.status || '').toLowerCase()) ? (doc.status || '').toLowerCase() : ''}">${sanitize(doc.status)}</span>
+        <div style="display:flex;gap:4px;align-items:center;">
+          <span class="badge-status ${['pendiente','activo','aprobado','rechazado','archivado'].includes((doc.status || '').toLowerCase()) ? (doc.status || '').toLowerCase() : ''}">${sanitize(doc.status)}</span>
+          ${doc.storageProvider === 'google_drive' ? '<span class="badge-status" style="background:#e0f2fe;color:#0284c7;font-size:11px;" title="Almacenado en Google Drive de la Alcaldía">Drive</span>' : ''}
+        </div>
         <div style="display:flex;gap:6px;align-items:center;">
           <button class="btn-ver-doc" data-action="pdf-view" data-fn="${safeFn}">Ver</button>
           <button class="btn-delete-doc" data-action="del-request" data-id="${safeId}" data-fn="${safeFn}" title="Solicitar eliminación">
@@ -446,6 +454,90 @@ window.checkFuncionarioGmailStatus = async function() {
     }
   } catch (e) {
     badge.style.display = 'none';
+  }
+};
+
+// ============================================================
+// GOOGLE DRIVE (ALMACENAMIENTO EN WORKSPACE DE LA ALCALDÍA)
+// ============================================================
+window.checkFuncionarioGoogleDriveStatus = async function() {
+  const titleEl = document.getElementById('storage-status-title');
+  const descEl = document.getElementById('storage-status-desc');
+  const linkBtn = document.getElementById('btn-link-drive');
+  const unlinkBtn = document.getElementById('btn-unlink-drive');
+  if (!titleEl || !descEl) return;
+
+  try {
+    const res = await apiFetch('/api/funcionario/google/status');
+    const data = await res.json().catch(() => ({}));
+    if (res.ok && data.linked) {
+      titleEl.textContent = 'Almacenamiento: Google Workspace Conectado';
+      titleEl.style.color = '#16a34a';
+      descEl.textContent = `Tus nuevos documentos se guardarán en tu Google Drive institucional (${data.linkedEmail || 'Cuenta Alcaldía'}).`;
+      if (linkBtn) linkBtn.style.display = 'none';
+      if (unlinkBtn) unlinkBtn.style.display = 'inline-block';
+    } else {
+      titleEl.textContent = 'Almacenamiento: Local (GridFS)';
+      titleEl.style.color = '#334155';
+      descEl.textContent = 'Conecta tu Google Workspace de la Alcaldía para almacenar tus documentos en Drive sin ocupar espacio local.';
+      if (linkBtn) {
+        linkBtn.style.display = 'inline-block';
+        linkBtn.textContent = 'Conectar Google Drive Alcaldía';
+      }
+      if (unlinkBtn) unlinkBtn.style.display = 'none';
+    }
+  } catch {
+    titleEl.textContent = 'Almacenamiento: Local';
+    descEl.textContent = 'Almacenamiento gestionado localmente.';
+  }
+};
+
+window.linkFuncionarioGoogleDrive = async function() {
+  try {
+    const res = await apiFetch('/api/funcionario/google/authorize');
+    const data = await res.json();
+    if (!res.ok || !data.url) {
+      showToast(data.error || 'Google Drive no está configurado en el servidor.', 'error');
+      return;
+    }
+    const width = 500, height = 650;
+    const left = Math.round((screen.width - width) / 2);
+    const top = Math.round((screen.height - height) / 2);
+    const popup = window.open(data.url, 'google_drive_oauth', `width=${width},height=${height},top=${top},left=${left}`);
+    if (!popup) {
+      window.location.href = data.url;
+    } else {
+      let ticks = 0;
+      const checkInterval = setInterval(async () => {
+        if (++ticks > 375 || popup.closed) {
+          clearInterval(checkInterval);
+          if (popup.closed) {
+            await checkFuncionarioGoogleDriveStatus();
+            showToast('Cuenta de Google Drive verificada.', 'success');
+          }
+        }
+      }, 800);
+    }
+  } catch {
+    showToast('Error al iniciar la conexión de Google Drive.', 'error');
+  }
+};
+
+window.unlinkFuncionarioGoogleDrive = async function() {
+  if (!confirm('¿Desea desvincular el almacenamiento de Google Drive? Los nuevos documentos se guardarán localmente.')) {
+    return;
+  }
+  try {
+    const res = await apiFetch('/api/funcionario/google/disconnect', { method: 'POST' });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(data.message || 'Google Drive desvinculado.', 'info');
+      await checkFuncionarioGoogleDriveStatus();
+    } else {
+      showToast(data.error || 'No se pudo desvincular Google Drive.', 'error');
+    }
+  } catch {
+    showToast('Error al desvincular Google Drive.', 'error');
   }
 };
 

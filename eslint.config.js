@@ -35,6 +35,7 @@ const frontendShared = [
   'fetchEmails', 'renderEmailInbox', 'selectEmail', 'renderEmailDetail',
   'refreshScannerStatus', 'switchSubTab', 'portalShowTab', 'archiveDocument',
   'linkFuncionarioGmail', 'checkFuncionarioGmailStatus', 'syncFuncionarioEmails',
+  'linkFuncionarioGoogleDrive', 'unlinkFuncionarioGoogleDrive', 'checkFuncionarioGoogleDriveStatus',
   'openPortalPdf', 'openDeleteRequest', 'openRegisterScanner', 'openRegisterEmail',
   'approveDeletionRequest', 'rejectDeletionRequest',
   'toggleEmployeeStatus', 'deleteEmployee', 'openPdfModal', 'openEditDocModal',
