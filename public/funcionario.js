@@ -46,8 +46,6 @@ document.addEventListener('DOMContentLoaded', () => {
   checkFuncionarioGmailStatus();
   checkFuncionarioGoogleDriveStatus();
   setTimeout(refreshPortalScannerStatus, 500);
-  const portalScannerInterval = setInterval(refreshPortalScannerStatus, 15000);
-  window.addEventListener('beforeunload', () => clearInterval(portalScannerInterval));
 
   // Cerrar sesión
   document.getElementById('btn-portal-logout').addEventListener('click', logout);

@@ -263,9 +263,14 @@ function setupNavigation() {
       activeBtn = navRegistro;
       switchSubTab('manual');
       fetchUnregisteredFiles();
-      // Reiniciar interval de escáner al entrar a la pestaña de registro
+      // Consultar escáner al entrar a la pestaña de registro
       refreshScannerStatus();
-      appState.scannerIntervalId = setInterval(refreshScannerStatus, 15000);
+      const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      if (isLocalhost) {
+        appState.scannerIntervalId = setInterval(() => {
+          if (!document.hidden) refreshScannerStatus();
+        }, 30000);
+      }
     } else if (hash === '#expedientes') {
       targetSection = 'section-expedientes';
       title = 'Expedientes por Funcionario';

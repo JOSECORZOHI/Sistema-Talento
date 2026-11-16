@@ -24,6 +24,7 @@ const { createEmployeesRouter } = require('./routes/employees');
 const { createSystemRouter } = require('./routes/system');
 require('dns').setDefaultResultOrder('ipv4first');
 const express = require('express');
+const compression = require('compression');
 const cors = require('cors');
 const helmet = require('helmet');
 const mongoSanitize = require('express-mongo-sanitize');
@@ -38,8 +39,16 @@ const os = require('os');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const PDFDocument = require('pdfkit');
-const nodemailer = require('nodemailer');
+let PDFDocumentLib = null;
+function getPDFDocument() {
+  if (!PDFDocumentLib) PDFDocumentLib = require('pdfkit');
+  return PDFDocumentLib;
+}
+let nodemailerLib = null;
+function getNodemailer() {
+  if (!nodemailerLib) nodemailerLib = require('nodemailer');
+  return nodemailerLib;
+}
 const { connect, col, isHealthy, reconnect, closeDb, storeFileBuffer, readFileStream, readFileBuffer, deleteFileByName, listFilesBySource, markFileRegistered, generateTempPassword } = require('./db');
 const { analyzeFile, warmupOcr } = require('./documentAnalyzer.js');
 const { parsePagination, wantsPagination, paginateQuery } = require('./lib/pagination');
@@ -134,6 +143,7 @@ const SMTP_ENABLED = Boolean(SMTP_CONFIG.host && SMTP_CONFIG.user && SMTP_CONFIG
  */
 function getMailTransporter() {
   if (!SMTP_ENABLED) return null;
+  const nodemailer = getNodemailer();
   return nodemailer.createTransport({
     host: SMTP_CONFIG.host,
     port: SMTP_CONFIG.port,
@@ -315,6 +325,7 @@ app.use(helmet({
   },
   crossOriginEmbedderPolicy: false
 }));
+app.use(compression({ threshold: 1024 }));
 app.use(cors({
   origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()).filter(Boolean) : false,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
@@ -382,7 +393,7 @@ app.use((req, res, next) => {
 app.use(express.static(path.join(__dirname, 'public'), {
   index: false,
   etag: true,
-  maxAge: '1h',
+  maxAge: '7d',
   setHeaders(res, filePath) {
     if (filePath.endsWith('.html')) {
       res.set('Cache-Control', 'no-store, no-cache, must-revalidate');
@@ -2798,6 +2809,9 @@ async function detectPrintersWithScanners() {
 }
 
 async function detectAllScanners() {
+  if (process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_STATIC_URL) {
+    return [];
+  }
   const [usb, net, printers] = await Promise.all([
     detectUsbScanners(),
     detectNetworkScanners(),
@@ -2943,6 +2957,7 @@ async function scanWithSane(customName, ownerEmployeeId) {
     try { fs.unlinkSync(tempPng); } catch {}
     const pdfBuffer = await new Promise((resolve, reject) => {
       const chunks = [];
+      const PDFDocument = getPDFDocument();
       const doc = new PDFDocument({ autoFirstPage: false });
       doc.on('data', chunk => chunks.push(chunk));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
@@ -3028,6 +3043,7 @@ async function scanWithScanner(customName, ownerEmployeeId) {
   try {
     const pdfBuffer = await new Promise((resolve, reject) => {
       const chunks = [];
+      const PDFDocument = getPDFDocument();
       const doc = new PDFDocument({ autoFirstPage: false });
       doc.on('data', chunk => chunks.push(chunk));
       doc.on('end', () => resolve(Buffer.concat(chunks)));
@@ -4004,43 +4020,10 @@ app.use((error, req, res, next) => {
   res.status(500).json({ error: 'Error interno del servidor.' });
 });
 
-// --- Verificador de salud de conexión: reconexión automática al morir el pool ---
-let lastReconnectAttempt = 0;
-let reconnectCooldownMs = 10000;
-const RECONNECT_COOLDOWN_MS_MAX = 120000;
-
-async function checkConnection() {
-  if (isReconnecting) return;
-  try {
-    const healthy = await isHealthy();
-    if (!healthy) {
-      const now = Date.now();
-      if (now - lastReconnectAttempt < reconnectCooldownMs) return;
-      lastReconnectAttempt = now;
-      console.warn('[MONGO] Conexión perdida, reconectando...');
-      isReconnecting = true;
-      const ok = await reconnect();
-      isReconnecting = false;
-      if (ok) {
-        reconnectCooldownMs = 10000;
-        console.log('[MONGO] Reconexión exitosa.');
-      } else {
-        reconnectCooldownMs = Math.min(RECONNECT_COOLDOWN_MS_MAX, reconnectCooldownMs * 2);
-        console.warn(`[MONGO] Reconexión falló. Se reintentará en ${Math.round(reconnectCooldownMs / 1000)}s.`);
-      }
-    }
-  } catch (err) {
-    console.warn('[MONGO] Health check falló:', err.message);
-    isReconnecting = false;
-  }
-}
-
 // --- Apagado graceful ---
 let server;
-let checkConnectionInterval = null;
 function shutdown() {
   console.log('[SERVER] Shutting down gracefully...');
-  if (checkConnectionInterval) clearInterval(checkConnectionInterval);
   const forceTimer = setTimeout(() => {
     console.warn('[SERVER] Forzando cierre tras timeout...');
     process.exit(0);
@@ -4063,7 +4046,6 @@ function shutdown() {
 // Solo se arranca al ejecutar el archivo directamente (node server.js). Al
 // importarlo desde las pruebas, se expone `app` sin abrir puerto ni conectar Mongo.
 if (require.main === module) {
-  checkConnectionInterval = setInterval(checkConnection, 10000);
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
 
@@ -4077,15 +4059,15 @@ if (require.main === module) {
     .then(() => {
       console.log('Base de datos remota conectada con colecciones separadas.');
       runDocumentRetention();
-      setInterval(runDocumentRetention, 24 * 60 * 60 * 1000); // diario
+      const retentionTimer = setInterval(runDocumentRetention, 24 * 60 * 60 * 1000); // diario
+      if (retentionTimer && typeof retentionTimer.unref === 'function') retentionTimer.unref();
     })
     .catch(error => {
       console.error('No se pudo conectar a la base de datos remota:', error.message);
     });
 
-  // Pre-cargar el modelo OCR (Tesseract 'spa') en segundo plano: no bloquea el arranque
-  // ni perjudica si falla (se reintenta en el primer análisis real).
-  if (process.env.OCR_WARMUP !== '0') {
+  // Pre-cargar el modelo OCR solo si se solicita explícitamente (ahorra ~150MB de RAM en reposo)
+  if (process.env.OCR_WARMUP === '1') {
     warmupOcr().then(ok => {
       logger.info('[OCR] Modelo español precargado' + (ok ? ' (listo)' : ' (falló; se reintentará en el primer análisis)'));
     });

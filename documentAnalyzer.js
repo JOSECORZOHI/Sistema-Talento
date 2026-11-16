@@ -5,9 +5,19 @@
 const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
-const mammoth = require('mammoth');
-const { createWorker, PSM } = require('tesseract.js');
 const { stripAccentsAndLower } = require('./lib/helpers');
+
+let mammothLib = null;
+function getMammoth() {
+  if (!mammothLib) mammothLib = require('mammoth');
+  return mammothLib;
+}
+
+let tesseractLib = null;
+function getTesseract() {
+  if (!tesseractLib) tesseractLib = require('tesseract.js');
+  return tesseractLib;
+}
 
 // Tope de píxeles por página rasterizada para OCR (8 MP ≈ 24 MB en RGB).
 // Evita que un PDF con páginas de tamaño desmesurado agote la memoria del proceso.
@@ -91,11 +101,32 @@ function getMupdf() {
   return mupdfPromise;
 }
 
-// --- OCR (Tesseract, español) ---
+// --- OCR (Tesseract, español con terminación automática por inactividad) ---
 let ocrWorkerPromise = null;
+let ocrWorkerInstance = null;
+let ocrIdleTimer = null;
 let ocrQueue = Promise.resolve();
 
 const OCR_CACHE_PATH = '/tmp/tesseract-cache';
+const OCR_IDLE_TIMEOUT_MS = 2 * 60 * 1000; // 2 minutos sin peticiones -> liberar memoria RAM (~150MB)
+
+function resetOcrIdleTimer() {
+  if (ocrIdleTimer) clearTimeout(ocrIdleTimer);
+  ocrIdleTimer = setTimeout(async () => {
+    if (ocrWorkerInstance) {
+      try {
+        await ocrWorkerInstance.terminate();
+      } catch (termErr) {
+        console.warn('[OCR] Error al terminar worker:', termErr.message);
+      }
+      ocrWorkerInstance = null;
+      ocrWorkerPromise = null;
+    }
+  }, OCR_IDLE_TIMEOUT_MS);
+  if (ocrIdleTimer && typeof ocrIdleTimer.unref === 'function') {
+    ocrIdleTimer.unref();
+  }
+}
 
 function getOcrWorker() {
   if (!ocrWorkerPromise) {
@@ -106,15 +137,21 @@ function getOcrWorker() {
     } catch (dirErr) {
       console.warn('[OCR] No se pudo crear directorio de caché:', dirErr.message);
     }
+    const { createWorker, PSM } = getTesseract();
     ocrWorkerPromise = createWorker('spa', 1, { cachePath: OCR_CACHE_PATH })
       .then(async (worker) => {
         await worker.setParameters({ tessedit_pageseg_mode: PSM.AUTO });
+        ocrWorkerInstance = worker;
+        resetOcrIdleTimer();
         return worker;
       })
       .catch((e) => {
+        ocrWorkerInstance = null;
         ocrWorkerPromise = null;
         throw e;
       });
+  } else {
+    resetOcrIdleTimer();
   }
   return ocrWorkerPromise;
 }
@@ -123,25 +160,27 @@ function getOcrWorker() {
 function ocrImage(buffer) {
   const task = ocrQueue.then(async () => {
     const worker = await getOcrWorker();
+    resetOcrIdleTimer();
     const { data } = await worker.recognize(buffer);
+    resetOcrIdleTimer();
     return (data && data.text) || '';
   });
   ocrQueue = task.catch(() => {});
   return task;
 }
 
-// Pre-carga el modelo de Tesseract (spa) en segundo plano al arrancar el servidor:
-// crea y memoriza el worker único (lo reutiliza el primer análisis real). Evita
-// reconocer texto de muestra, porque una entrada no-imagen dispara una excepción
-// interna de tesseract.js imposible de capturar (crash del proceso).
+// Pre-carga opcional del modelo (solo si se configura OCR_WARMUP=1 explícitamente)
 async function warmupOcr() {
-  try {
-    await getOcrWorker();
-    return true;
-  } catch (e) {
-    console.warn('[OCR] Warmup falló (se reintentará en el primer análisis):', e.message);
-    return false;
+  if (process.env.OCR_WARMUP === '1') {
+    try {
+      await getOcrWorker();
+      return true;
+    } catch (e) {
+      console.warn('[OCR] Warmup falló (se reintentará en el primer análisis):', e.message);
+      return false;
+    }
   }
+  return false;
 }
 
 // --- Extracción de texto por tipo de archivo ---
@@ -174,6 +213,7 @@ async function extractText(buffer, filename) {
       return { text: ocrText.trim(), ocrUsed: true };
     }
     if (kind === 'docx') {
+      const mammoth = getMammoth();
       const result = await mammoth.extractRawText({ buffer });
       return { text: (result.value || '').trim(), ocrUsed: false };
     }

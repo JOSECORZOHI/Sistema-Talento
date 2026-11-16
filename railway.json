@@ -4,7 +4,7 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "node --max-old-space-size=384 server.js",
+    "startCommand": "node --max-old-space-size=256 server.js",
     "healthcheckPath": "/api/health",
     "healthcheckTimeout": 45,
     "restartPolicyType": "ON_FAILURE",
