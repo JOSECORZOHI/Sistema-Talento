@@ -275,13 +275,18 @@ async function refreshScannerStatus() {
     const dot = document.getElementById('portal-scanner-dot');
     const dotText = document.getElementById('portal-scanner-dot-text');
     const list = document.getElementById('portal-scanner-device-list');
+    const isCloud = !!data.isCloud;
     const count = scanners.length;
     const isConnected = count > 0;
 
-    if (hwCount) hwCount.textContent = `${count} dispositivo(s)`;
+    if (hwCount) hwCount.textContent = isCloud ? 'Modo Nube (Render)' : `${count} dispositivo(s)`;
 
     if (dot && dotText) {
-      if (isConnected) {
+      if (isCloud) {
+        dot.style.background = '#2980B9';
+        dotText.textContent = 'Modo Nube (Render) · Escaneo físico deshabilitado';
+        dotText.style.color = '#2980B9';
+      } else if (isConnected) {
         dot.style.background = '#27AE60';
         dotText.textContent = `${count} detectado(s)`;
         dotText.style.color = '#27AE60';
@@ -294,19 +299,29 @@ async function refreshScannerStatus() {
 
     const btnScan = document.getElementById('btn-portal-scan');
     if (btnScan) {
-      btnScan.disabled = !isConnected;
-      btnScan.style.opacity = isConnected ? '1' : '0.45';
-      btnScan.style.cursor = isConnected ? 'pointer' : 'not-allowed';
-      btnScan.title = isConnected ? 'Escanear un documento' : 'No hay escáner conectado';
+      btnScan.disabled = isCloud || !isConnected;
+      btnScan.style.opacity = (!isCloud && isConnected) ? '1' : '0.45';
+      btnScan.style.cursor = (!isCloud && isConnected) ? 'pointer' : 'not-allowed';
+      btnScan.title = isCloud ? 'Escaneo directo por hardware no disponible en la nube' : (isConnected ? 'Escanear un documento' : 'No hay escáner conectado');
     }
 
     const btnEpsonScan = document.getElementById('btn-portal-epson-scan');
     if (btnEpsonScan) {
-      btnEpsonScan.style.display = epsonScanAvailable ? 'inline-flex' : 'none';
+      btnEpsonScan.style.display = (!isCloud && epsonScanAvailable) ? 'inline-flex' : 'none';
       if (epsonScanAvailable && data.scanProgramLabel) btnEpsonScan.textContent = data.scanProgramLabel;
     }
 
     if (!list) return;
+
+    if (isCloud) {
+      list.innerHTML = `
+        <div style="text-align:center;padding:16px;color:var(--text-muted);font-size:12px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-secondary);">
+          <div style="font-size:24px;margin-bottom:6px;">☁️</div>
+          <div style="font-weight:600;color:var(--text-primary);margin-bottom:4px;">Servicio en la Nube (Render)</div>
+          <div>La comunicación directa por USB o red local requiere ejecutar el servidor en un equipo local de la oficina. En la nube, digitalice sus documentos con el software del escáner en su computador y cargue los archivos PDF directamente en el expediente o use Google Drive.</div>
+        </div>`;
+      return;
+    }
 
     if (!isConnected) {
       list.innerHTML = `

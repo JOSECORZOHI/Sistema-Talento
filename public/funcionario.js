@@ -973,16 +973,25 @@ async function refreshPortalScannerStatus() {
     const count = scanners.length;
     const usbCount = data.usbCount || 0;
     const netCount = data.networkCount || 0;
+    const isCloud = !!data.isCloud;
     const isConnected = count > 0;
 
     const btnScan = document.getElementById('btn-portal-scan');
     if (scannerCount) {
-      scannerCount.textContent = isConnected
-        ? `${count} detectado(s) · ${usbCount} USB · ${netCount} Red`
-        : '0 dispositivo(s)';
+      scannerCount.textContent = isCloud
+        ? 'Modo Nube (Render)'
+        : (isConnected
+          ? `${count} detectado(s) · ${usbCount} USB · ${netCount} Red`
+          : '0 dispositivo(s)');
     }
 
-    if (isConnected) {
+    if (isCloud) {
+      dot.style.background = '#2980B9';
+      dotText.textContent = 'Modo Nube (Render) · Escaneo físico deshabilitado';
+      dotText.style.color = '#2980B9';
+      dot.classList.toggle('show-ok', false);
+      dot.classList.toggle('show-err', false);
+    } else if (isConnected) {
       dot.style.background = '#27AE60';
       dotText.textContent = `${count} escáner(es) disponible(s)`;
       dotText.style.color = '#27AE60';
@@ -997,20 +1006,27 @@ async function refreshPortalScannerStatus() {
     }
 
     if (btnScan) {
-      btnScan.disabled = !isConnected;
-      btnScan.style.opacity = isConnected ? '1' : '0.45';
-      btnScan.style.cursor = isConnected ? 'pointer' : 'not-allowed';
-      btnScan.title = isConnected ? 'Escanear un documento' : 'No hay escáner conectado';
+      btnScan.disabled = isCloud || !isConnected;
+      btnScan.style.opacity = (!isCloud && isConnected) ? '1' : '0.45';
+      btnScan.style.cursor = (!isCloud && isConnected) ? 'pointer' : 'not-allowed';
+      btnScan.title = isCloud ? 'Escaneo directo por hardware no disponible en la nube' : (isConnected ? 'Escanear un documento' : 'No hay escáner conectado');
     }
 
     const btnEpsonScan = document.getElementById('btn-portal-epson-scan');
     if (btnEpsonScan) {
-      btnEpsonScan.style.display = epsonScanAvailable ? 'inline-flex' : 'none';
+      btnEpsonScan.style.display = (!isCloud && epsonScanAvailable) ? 'inline-flex' : 'none';
       if (epsonScanAvailable && data.scanProgramLabel) btnEpsonScan.textContent = data.scanProgramLabel;
     }
 
     if (deviceList) {
-      if (!isConnected) {
+      if (isCloud) {
+        deviceList.innerHTML = `
+          <div style="text-align:center;padding:16px;color:var(--text-muted);font-size:12px;border:1px solid var(--border-color);border-radius:10px;background:var(--bg-secondary);">
+            <div style="font-size:24px;margin-bottom:6px;">☁️</div>
+            <div style="font-weight:600;color:var(--text-primary);margin-bottom:4px;">Servicio en la Nube (Render)</div>
+            <div style="line-height:1.5;">La comunicación directa por USB o red local requiere ejecutar el servidor en un equipo local de la oficina. En la nube, digitalice sus documentos con su equipo y cargue los archivos PDF directamente o mediante Google Drive.</div>
+          </div>`;
+      } else if (!isConnected) {
         deviceList.innerHTML = `
           <div style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px;border:2px dashed var(--border-color);border-radius:10px;background:var(--bg-secondary);">
             <svg viewBox="0 0 24 24" width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" style="margin:0 auto 8px;display:block;opacity:0.3;">

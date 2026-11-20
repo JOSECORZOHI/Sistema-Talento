@@ -68,7 +68,7 @@ const {
 // Manejo de errores no controlados.
 // unhandledRejection: se loguea sin salir (permite que la reconexión a Mongo se recupere).
 // uncaughtException: tras una excepción no capturada el proceso puede quedar corrupto;
-// se cierra HTTP y se sale para que Railway reinicie el proceso limpio.
+// se cierra HTTP y se sale para que el orquestador (Render) reinicie el proceso limpio.
 process.on('unhandledRejection', (err) => {
   console.error('[PROCESS] Unhandled rejection:', err && err.stack ? err.stack : err);
   recordError('process:unhandledRejection', err);
@@ -117,7 +117,7 @@ const MAX_REGISTER_BYTES = 50 * 1024 * 1024;
 // una máquina Linux con el escáner conectado (SANE). Las antiguas
 // bandejas locales 'storage/documentos' y 'storage/gmail_adjuntos' se eliminaron:
 // eran de solo lectura, no aportaban valor en producción (filesystem efímero en
-// Railway) y nada las alimentaba por la web; todo el contenido va a GridFS.
+// Render) y nada las alimentaba por la web; todo el contenido va a GridFS.
 const SCANNER_DIR = path.join(__dirname, 'bandeja_escaner');
 const ALLOWED_EMAIL_DOMAIN = (process.env.ALLOWED_EMAIL_DOMAIN || '').toLowerCase();
 [SCANNER_DIR].forEach(directory => {
@@ -411,7 +411,7 @@ app.use('/api', async (req, res, next) => {
   if (req.path === '/auth/logout') return next();
   if (req.path === '/gmail/oauth2callback') return next();
   // Health check: debe responder rápido y reflejar el estado real de la BD sin
-  // esperar los 12s de reconexión (lo consume Railway y el monitoreo externo).
+  // esperar los 12s de reconexión (lo consume Render y el monitoreo externo).
   if (req.path === '/health') return next();
   try {
     col('users');
@@ -2582,7 +2582,8 @@ function runBin(program, args = [], timeoutMs = 20000) {
     execFile(program, args, { timeout: timeoutMs, encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 },
       (error, stdout) => {
         if (error && !stdout) {
-          if (error.code !== 'ENOENT') console.warn(`Error ejecutando ${program}:`, error.message);
+          const isCheckCmd = args.some(a => typeof a === 'string' && a.includes('command -v'));
+          if (error.code !== 'ENOENT' && !isCheckCmd) console.warn(`Error ejecutando ${program}:`, error.message);
           return resolve('');
         }
         resolve((stdout || '').trim());
@@ -2592,6 +2593,7 @@ function runBin(program, args = [], timeoutMs = 20000) {
 
 let scanimageWarned = false;
 function requireScanimage() {
+  if (process.env.RENDER || process.env.RAILWAY_ENVIRONMENT) return Promise.resolve(false);
   return runBin('sh', ['-c', 'command -v scanimage']).then(p => {
     if (!p && !scanimageWarned) {
       scanimageWarned = true;
@@ -2840,6 +2842,7 @@ let scanInProgress = false;
 let scanProgram = null;
 let scanProgramChecked = false;
 async function findScanProgram() {
+  if (process.env.RENDER || process.env.RAILWAY_ENVIRONMENT) return null;
   if (scanProgramChecked) return scanProgram;
   scanProgramChecked = true;
   if (IS_WINDOWS) {
@@ -2892,6 +2895,7 @@ app.get('/api/scanner/status', authMiddleware, requirePermission('scanner.read')
 
   res.json({
     connected,
+    isCloud: Boolean(process.env.RENDER || process.env.RAILWAY_ENVIRONMENT),
     scanners: cachedScanners,
     usbCount: cachedScanners.filter(s => s.type === 'USB').length,
     networkCount: cachedScanners.filter(s => s.type === 'Red').length,
@@ -3071,6 +3075,9 @@ async function scanWithScanner(customName, ownerEmployeeId) {
 
 app.post('/api/scanner/scan', authMiddleware, requireAnyPermission('scanner.manage', 'scanner.scan'), scannerLimiter, async (req, res) => {
   try {
+    if (process.env.RENDER || process.env.RAILWAY_ENVIRONMENT) {
+      return res.status(400).json({ error: 'El escaneo directo por hardware no está disponible en despliegues en la nube. Digitalice sus documentos en su equipo y cargue los archivos PDF directamente.' });
+    }
     if (scanInProgress) {
       return res.status(409).json({ error: 'Ya hay un escaneo en curso. Espere a que termine.' });
     }
@@ -3112,6 +3119,9 @@ app.post('/api/scanner/scan', authMiddleware, requireAnyPermission('scanner.mana
 
 app.post('/api/scanner/launch-epson-scan', authMiddleware, requireAnyPermission('scanner.manage', 'scanner.scan'), scannerLimiter, async (req, res) => {
   try {
+    if (process.env.RENDER || process.env.RAILWAY_ENVIRONMENT) {
+      return res.status(400).json({ error: 'No es posible abrir la aplicación de escaneo de escritorio desde el servidor en la nube.' });
+    }
     const prog = await findScanProgram();
     if (!prog) {
       return res.status(404).json({ error: 'No hay programa de escaneo instalado en este equipo (Linux: instale sane-utils o simple-scan).' });
@@ -3935,7 +3945,7 @@ app.use('/api/system', createSystemRouter({
 }));
 
 // --- HEALTH CHECK ---
-// Devuelve 503 cuando la BD no responde para que Railway y el monitoreo externo
+// Devuelve 503 cuando la BD no responde para que Render y el monitoreo externo
 // detecten la degradación. Durante los primeros 60s en producción, permite arrancar
 // sin caer en crash loop mientras se establece la conexión inicial.
 app.get('/api/health', async (req, res) => {
