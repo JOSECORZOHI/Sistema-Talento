@@ -3137,6 +3137,45 @@ app.post('/api/scanner/launch-epson-scan', authMiddleware, requireAnyPermission(
   }
 });
 
+// Recepción de archivos digitalizados desde el Agente Puente Local (Scanner Bridge) o carga directa
+app.post('/api/scanner/upload', authMiddleware, requireAnyPermission('scanner.manage', 'scanner.scan'), upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ error: 'No se envió ningún archivo.' });
+    }
+    const ext = path.extname(req.file.originalname).toLowerCase();
+    if (ext !== '.pdf') {
+      return res.status(400).json({ error: 'Solo se permiten archivos en formato PDF.' });
+    }
+    const pdfMagic = req.file.buffer.slice(0, 5).toString('ascii');
+    if (pdfMagic !== '%PDF-') {
+      return res.status(400).json({ error: 'El contenido del archivo no es un PDF válido.' });
+    }
+    const timestamp = Date.now();
+    let baseName = path.basename(req.file.originalname, ext)
+      .replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ _.-]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .substring(0, 120);
+    if (!baseName) baseName = `Escaner_${timestamp}`;
+    const filename = `${baseName}_${crypto.randomBytes(3).toString('hex')}.pdf`;
+
+    const ownerEmployeeId = req.user.role === 'funcionario' ? req.user.employeeId : undefined;
+    await storeFileBuffer(filename, req.file.buffer, {
+      source: 'scanner',
+      registered: false,
+      sensitive: true,
+      ...(ownerEmployeeId ? { ownerEmployeeId: String(ownerEmployeeId) } : {})
+    });
+
+    await addAuditLog('Escáner Puente', `Archivo escaneado recibido: '${filename}'`, req.user.name || 'Sistema', getClientIp(req));
+    res.status(201).json({ success: true, filename });
+  } catch (e) {
+    logger.error('[SCANNER-UPLOAD] Error:', e);
+    res.status(500).json({ error: 'Error al procesar el archivo escaneado.' });
+  }
+});
+
 app.post('/api/documents/register-scanner', authMiddleware, requirePermission('documents.create'), async (req, res) => {
   return registerScannerDoc(req, res, {
     errorMessage: 'Faltan campos obligatorios para registrar el documento escaneado.',
@@ -3395,12 +3434,12 @@ function launchGmailSyncJob(key, gmail, opts) {
         state.remaining = result.remaining;
         if (!result.updated || result.remaining <= 0) break;
         if (first) {
-          // Primera corrida: la paginación de lista ya consumió cuota; dar aire.
-          await sleep(4000);
+          // Primera corrida: breve pausa para balancear cuota de paginación previa.
+          await sleep(500);
           first = false;
         }
-        // Respiro entre lotes para que la ventana por minuto/usuario se renueve.
-        await sleep(2500);
+        // Respiro breve entre lotes (cuota de Google Workspace: 250 unidades/seg).
+        await sleep(500);
       }
     } catch (error) {
       console.error(`Error al sincronizar Gmail (${redactEmail(key)}):`, error && error.message);
@@ -3495,9 +3534,8 @@ async function performGmailSync(gmail, opts = {}) {
     if (newEmails.length >= MAX_NEW_MESSAGES_PER_SYNC) {
       break;
     }
-    // Respiro de ritmo: distribuye el consumo de unidades entre las ventanas
-    // por minuto/usuario para no agotar la cuota (el reintento cubre los picos).
-    await sleep(3200);
+    // Breve pausa para no saturar ráfagas locales (150ms es seguro con cuota de 250 req/s).
+    await sleep(150);
     const message = await gmailCallWithRetry(
       () => gmail.users.messages.get({ userId: 'me', id: messageRef.id, format: 'full' }),
       `messages.get ${messageRef.id}`

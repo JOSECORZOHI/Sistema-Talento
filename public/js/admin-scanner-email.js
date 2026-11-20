@@ -276,16 +276,38 @@ async function refreshScannerStatus() {
     const dotText = document.getElementById('portal-scanner-dot-text');
     const list = document.getElementById('portal-scanner-device-list');
     const isCloud = !!data.isCloud;
-    const count = scanners.length;
-    const isConnected = count > 0;
+    let bridge = null;
+    if (isCloud && window.ScannerBridge) {
+      bridge = await window.ScannerBridge.check();
+    }
 
-    if (hwCount) hwCount.textContent = isCloud ? 'Modo Nube (Render)' : `${count} dispositivo(s)`;
+    const localScanners = (bridge && bridge.ok && Array.isArray(bridge.scanners)) ? bridge.scanners : [];
+    const effectiveScanners = isCloud ? localScanners : scanners;
+    const count = effectiveScanners.length;
+    const isBridgeConnected = isCloud && !!(bridge && bridge.ok);
+    const isConnected = isCloud ? (isBridgeConnected && count > 0) : count > 0;
+
+    if (hwCount) {
+      if (isBridgeConnected) hwCount.textContent = 'Puente Local Activo';
+      else if (isCloud) hwCount.textContent = 'Modo Nube';
+      else hwCount.textContent = `${count} dispositivo(s)`;
+    }
 
     if (dot && dotText) {
-      if (isCloud) {
-        dot.style.background = '#2980B9';
-        dotText.textContent = 'Modo Nube (Render) · Escaneo físico deshabilitado';
-        dotText.style.color = '#2980B9';
+      if (isBridgeConnected) {
+        if (count > 0) {
+          dot.style.background = '#27AE60';
+          dotText.textContent = `${count} escáner(es) local(es) detectado(s) · Puente Activo`;
+          dotText.style.color = '#27AE60';
+        } else {
+          dot.style.background = '#F39C12';
+          dotText.textContent = 'Puente Activo · Sin escáner USB detectado en PC';
+          dotText.style.color = '#F39C12';
+        }
+      } else if (isCloud) {
+        dot.style.background = '#F39C12';
+        dotText.textContent = 'Modo Nube · Inicie el Agente Puente para escanear';
+        dotText.style.color = '#F39C12';
       } else if (isConnected) {
         dot.style.background = '#27AE60';
         dotText.textContent = `${count} detectado(s)`;
@@ -299,10 +321,13 @@ async function refreshScannerStatus() {
 
     const btnScan = document.getElementById('btn-portal-scan');
     if (btnScan) {
-      btnScan.disabled = isCloud || !isConnected;
-      btnScan.style.opacity = (!isCloud && isConnected) ? '1' : '0.45';
-      btnScan.style.cursor = (!isCloud && isConnected) ? 'pointer' : 'not-allowed';
-      btnScan.title = isCloud ? 'Escaneo directo por hardware no disponible en la nube' : (isConnected ? 'Escanear un documento' : 'No hay escáner conectado');
+      const canScan = isBridgeConnected || (!isCloud && isConnected);
+      btnScan.disabled = !canScan;
+      btnScan.style.opacity = canScan ? '1' : '0.45';
+      btnScan.style.cursor = canScan ? 'pointer' : 'not-allowed';
+      btnScan.title = isBridgeConnected
+        ? 'Escanear directamente desde el escáner local'
+        : (isCloud ? 'Inicie el Agente Puente en su computador para escanear' : (isConnected ? 'Escanear un documento' : 'No hay escáner conectado'));
     }
 
     const btnEpsonScan = document.getElementById('btn-portal-epson-scan');
@@ -313,12 +338,22 @@ async function refreshScannerStatus() {
 
     if (!list) return;
 
-    if (isCloud) {
+    if (isCloud && !isBridgeConnected) {
       list.innerHTML = `
-        <div style="text-align:center;padding:16px;color:var(--text-muted);font-size:12px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-secondary);">
-          <div style="font-size:24px;margin-bottom:6px;">☁️</div>
-          <div style="font-weight:600;color:var(--text-primary);margin-bottom:4px;">Servicio en la Nube (Render)</div>
-          <div>La comunicación directa por USB o red local requiere ejecutar el servidor en un equipo local de la oficina. En la nube, digitalice sus documentos con el software del escáner en su computador y cargue los archivos PDF directamente en el expediente o use Google Drive.</div>
+        <div style="padding:16px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;font-size:12px;line-height:1.6;">
+          <div style="font-weight:700;color:var(--text-primary);margin-bottom:6px;display:flex;align-items:center;gap:6px;">
+            <span>🔌</span> Agente Puente de Escáner no detectado en su equipo
+          </div>
+          <div style="color:var(--text-muted);margin-bottom:8px;">
+            Para digitalizar directamente desde esta página web sin arrastrar archivos, inicie el puente en su computador:
+          </div>
+          <div style="background:var(--bg-primary);padding:8px 12px;border-radius:6px;font-family:monospace;font-size:11px;margin-bottom:10px;border:1px solid var(--border-color);color:var(--text-primary);">
+            <b>Windows:</b> doble clic en <code>start-scanner-bridge.bat</code><br>
+            <b>Linux:</b> ejecutar <code>./start-scanner-bridge.sh</code>
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);">
+            El agente detectará su escáner USB y habilitará el botón de escaneo inmediato.
+          </div>
         </div>`;
       return;
     }
@@ -327,14 +362,14 @@ async function refreshScannerStatus() {
       list.innerHTML = `
         <div style="text-align:center;padding:16px;color:var(--text-muted);font-size:12px;border:2px dashed var(--border-color);border-radius:8px;background:var(--bg-secondary);">
           <div style="font-size:28px;margin-bottom:6px;opacity:0.4;">🖨️</div>
-          <div style="font-weight:600;color:var(--text-secondary);">Escáner inactivo</div>
-          <div style="margin-top:4px;">No se detectaron dispositivos. Verifique conexiones USB o de red.</div>
+          <div style="font-weight:600;color:var(--text-secondary);">${isBridgeConnected ? 'Puente activo pero sin escáner' : 'Escáner inactivo'}</div>
+          <div style="margin-top:4px;">${isBridgeConnected ? 'Encienda el escáner y verifique la conexión USB con su computador.' : 'No se detectaron dispositivos. Verifique conexiones USB o de red.'}</div>
         </div>`;
       return;
     }
 
     let html = '';
-    scanners.forEach(s => {
+    effectiveScanners.forEach(s => {
       const typeColor = s.type === 'USB' ? '#8E44AD' : '#2980B9';
       const typeBg = s.type === 'USB' ? 'rgba(142,68,173,0.12)' : 'rgba(41,128,185,0.12)';
       const statusColor = s.status === 'Conectado' || s.status === 'Detectado' ? '#27AE60' : '#F39C12';
@@ -342,11 +377,12 @@ async function refreshScannerStatus() {
         <span style="font-size:20px;">${sanitize(s.icon || '🖨️')}</span>
         <div style="flex:1;min-width:0;">
           <div style="font-weight:600;font-size:13px;color:var(--text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${sanitize(s.name)}">${sanitize(s.name)}</div>
-          <div style="display:flex;gap:6px;margin-top:3px;flex-wrap:wrap;">
+          <div style="display:flex;gap:6px;margin-top:3px;flex-wrap:wrap;align-items:center;">
             <span style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;background:${typeBg};color:${typeColor};">${sanitize(s.type)}</span>
             <span style="font-size:10px;color:${statusColor};font-weight:600;display:flex;align-items:center;gap:3px;">
               <span style="width:6px;height:6px;border-radius:50%;background:${statusColor};display:inline-block;"></span>${sanitize(s.status)}
             </span>
+            ${isBridgeConnected ? '<span style="font-size:10px;background:#e0f2fe;color:#0369a1;padding:1px 6px;border-radius:4px;font-weight:600;">Puente Local</span>' : ''}
             ${s.ip ? `<span style="font-size:10px;color:var(--text-muted);">📡 ${sanitize(s.ip)}</span>` : ''}
           </div>
         </div></div>`;

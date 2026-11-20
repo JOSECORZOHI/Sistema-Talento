@@ -123,22 +123,74 @@ document.addEventListener('DOMContentLoaded', () => {
       const filenameInput = document.getElementById('input-scan-filename');
       const customName = filenameInput ? filenameInput.value.trim() : '';
       btnScan.disabled = true;
-      btnScan.textContent = 'Escaneando...';
+
       try {
-        const res = await apiFetch('/api/scanner/scan', { method: 'POST', body: JSON.stringify({ filename: customName || undefined }), headers: { 'Content-Type': 'application/json' } });
-        const data = await res.json();
-        if (!res.ok) {
-          showToast(data.error || 'Error al escanear.', 'error');
-        } else {
-          showToast('Archivo escaneado: ' + data.filename, 'success');
+        const bridge = window.ScannerBridge ? await window.ScannerBridge.check() : null;
+        if (bridge && bridge.ok) {
+          // --- Flujo con Agente Puente Local ---
+          btnScan.textContent = 'Digitalizando hoja...';
+          const bridgeData = await window.ScannerBridge.scan(customName);
+          btnScan.textContent = 'Subiendo a la bandeja...';
+          const blob = window.ScannerBridge.base64ToBlob(bridgeData.pdfBase64);
+          const fd = new FormData();
+          fd.append('file', blob, bridgeData.filename);
+          const uploadRes = await apiFetch('/api/scanner/upload', { method: 'POST', body: fd });
+          const uploadData = await uploadRes.json();
+          if (!uploadRes.ok) throw new Error(uploadData.error || 'Error al guardar archivo en bandeja.');
+          showToast('Documento escaneado: ' + uploadData.filename, 'success');
           if (filenameInput) filenameInput.value = '';
           await fetchScannerFiles();
+        } else {
+          // --- Flujo Local Directo ---
+          btnScan.textContent = 'Escaneando...';
+          const res = await apiFetch('/api/scanner/scan', { method: 'POST', body: JSON.stringify({ filename: customName || undefined }), headers: { 'Content-Type': 'application/json' } });
+          const data = await res.json();
+          if (!res.ok) {
+            showToast(data.error || 'Error al escanear.', 'error');
+          } else {
+            showToast('Archivo escaneado: ' + data.filename, 'success');
+            if (filenameInput) filenameInput.value = '';
+            await fetchScannerFiles();
+          }
         }
       } catch (e) {
-        showToast('Error de red al escanear.', 'error');
+        showToast(e.message || 'Error al ejecutar escáner.', 'error');
       } finally {
         btnScan.disabled = false;
         btnScan.textContent = 'Escanear Documento';
+      }
+    });
+  }
+
+  // Botón para subir PDF directamente a la bandeja de escáner
+  const btnUploadScanner = document.getElementById('btn-portal-upload-scanner');
+  const inputScannerPicker = document.getElementById('input-scanner-file-picker');
+  if (btnUploadScanner && inputScannerPicker) {
+    btnUploadScanner.addEventListener('click', () => inputScannerPicker.click());
+    inputScannerPicker.addEventListener('change', async () => {
+      const file = inputScannerPicker.files && inputScannerPicker.files[0];
+      if (!file) return;
+      if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+        showToast('Solo se permiten archivos en formato PDF.', 'error');
+        inputScannerPicker.value = '';
+        return;
+      }
+      btnUploadScanner.disabled = true;
+      btnUploadScanner.textContent = 'Subiendo...';
+      try {
+        const fd = new FormData();
+        fd.append('file', file);
+        const res = await apiFetch('/api/scanner/upload', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Error al subir archivo a la bandeja.');
+        showToast('Archivo subido a la bandeja: ' + data.filename, 'success');
+        inputScannerPicker.value = '';
+        await fetchScannerFiles();
+      } catch (e) {
+        showToast(e.message || 'Error al subir PDF.', 'error');
+      } finally {
+        btnUploadScanner.disabled = false;
+        btnUploadScanner.textContent = '⬆ Subir PDF';
       }
     });
   }

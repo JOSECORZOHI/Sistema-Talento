@@ -820,3 +820,41 @@ function setupDragDrop(dropAreaId, fileInputId, previewId) {
   if (isLoggedIn()) resetTimer();
 })();
 
+// --- AGENTE PUENTE DE ESCÁNER (Local Scanner Bridge) ---
+window.ScannerBridge = {
+  url: 'http://127.0.0.1:5070',
+  async check() {
+    try {
+      const c = new AbortController();
+      const t = setTimeout(() => c.abort(), 1800);
+      const res = await fetch(`${this.url}/status`, { signal: c.signal });
+      clearTimeout(t);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  },
+  async scan(filename) {
+    const res = await fetch(`${this.url}/scan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: filename || undefined })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || 'Error al ejecutar el escaneo en el agente local.');
+    }
+    return data;
+  },
+  base64ToBlob(base64, mimeType = 'application/pdf') {
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return new Blob([bytes], { type: mimeType });
+  }
+};
+
+

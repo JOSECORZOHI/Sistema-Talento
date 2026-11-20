@@ -611,7 +611,11 @@
         <div class="portal-scanner-bar">
           <div class="portal-docs-header" style="margin-bottom:10px;">
             <h3 style="font-size:15px;">Bandeja de Escáner</h3>
-            <span id="portal-scanner-tray-count" style="font-size:12px;font-weight:600;">0 archivo(s)</span>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span id="portal-scanner-tray-count" style="font-size:12px;font-weight:600;">0 archivo(s)</span>
+              <button class="btn btn-secondary" id="btn-portal-upload-scanner" style="font-size:11px;padding:4px 10px;" title="Cargar un archivo PDF escaneado directamente a la bandeja">⬆ Subir PDF</button>
+              <input type="file" id="input-scanner-file-picker" accept=".pdf,application/pdf" style="display:none;" />
+            </div>
           </div>
           <div id="portal-scanner-list" class="portal-scanner-list"></div>
         </div>

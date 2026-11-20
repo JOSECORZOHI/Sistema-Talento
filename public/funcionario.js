@@ -104,23 +104,76 @@ document.addEventListener('DOMContentLoaded', () => {
       const filenameInput = document.getElementById('input-scan-filename');
       const customName = filenameInput ? filenameInput.value.trim() : '';
       btnPortalScan.disabled = true;
-      btnPortalScan.textContent = 'Escaneando...';
+
       try {
-        const res = await apiFetch('/api/scanner/scan', { method: 'POST', body: JSON.stringify({ filename: customName || undefined }), headers: { 'Content-Type': 'application/json' } });
-        const data = await res.json();
-        if (res.ok) {
+        const bridge = window.ScannerBridge ? await window.ScannerBridge.check() : null;
+        if (bridge && bridge.ok) {
+          // --- Flujo con Agente Puente Local ---
+          btnPortalScan.textContent = 'Digitalizando hoja...';
+          const bridgeData = await window.ScannerBridge.scan(customName);
+          btnPortalScan.textContent = 'Subiendo a la bandeja...';
+          const blob = window.ScannerBridge.base64ToBlob(bridgeData.pdfBase64);
+          const fd = new FormData();
+          fd.append('file', blob, bridgeData.filename);
+          const uploadRes = await apiFetch('/api/scanner/upload', { method: 'POST', body: fd });
+          const uploadData = await uploadRes.json();
+          if (!uploadRes.ok) throw new Error(uploadData.error || 'Error al guardar archivo en bandeja.');
           if (filenameInput) filenameInput.value = '';
-          showToast('Documento escaneado: ' + data.filename, 'success');
+          showToast('Documento escaneado: ' + uploadData.filename, 'success');
           await loadPortalData();
           refreshPortalScannerStatus();
         } else {
-          showToast(data.error || 'Error al escanear.', 'error');
+          // --- Flujo Local Directo ---
+          btnPortalScan.textContent = 'Escaneando...';
+          const res = await apiFetch('/api/scanner/scan', { method: 'POST', body: JSON.stringify({ filename: customName || undefined }), headers: { 'Content-Type': 'application/json' } });
+          const data = await res.json();
+          if (res.ok) {
+            if (filenameInput) filenameInput.value = '';
+            showToast('Documento escaneado: ' + data.filename, 'success');
+            await loadPortalData();
+            refreshPortalScannerStatus();
+          } else {
+            showToast(data.error || 'Error al escanear.', 'error');
+          }
         }
       } catch (e) {
-        showToast('Error de red al escanear.', 'error');
+        showToast(e.message || 'Error de red al escanear.', 'error');
       } finally {
         btnPortalScan.disabled = false;
         btnPortalScan.textContent = 'Escanear Documento';
+      }
+    });
+  }
+
+  // Botón para subir PDF directamente a la bandeja de escáner
+  const btnUploadScanner = document.getElementById('btn-portal-upload-scanner');
+  const inputScannerPicker = document.getElementById('input-scanner-file-picker');
+  if (btnUploadScanner && inputScannerPicker) {
+    btnUploadScanner.addEventListener('click', () => inputScannerPicker.click());
+    inputScannerPicker.addEventListener('change', async () => {
+      const file = inputScannerPicker.files && inputScannerPicker.files[0];
+      if (!file) return;
+      if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+        showToast('Solo se permiten archivos en formato PDF.', 'error');
+        inputScannerPicker.value = '';
+        return;
+      }
+      btnUploadScanner.disabled = true;
+      btnUploadScanner.textContent = 'Subiendo...';
+      try {
+        const fd = new FormData();
+        fd.append('file', file);
+        const res = await apiFetch('/api/scanner/upload', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Error al subir archivo a la bandeja.');
+        showToast('Archivo subido a la bandeja: ' + data.filename, 'success');
+        inputScannerPicker.value = '';
+        await loadPortalData();
+      } catch (e) {
+        showToast(e.message || 'Error al subir PDF.', 'error');
+      } finally {
+        btnUploadScanner.disabled = false;
+        btnUploadScanner.textContent = '⬆ Subir PDF';
       }
     });
   }
@@ -970,25 +1023,45 @@ async function refreshPortalScannerStatus() {
 
     const scanners = Array.isArray(data.scanners) ? data.scanners : [];
     const epsonScanAvailable = !!data.epsonScanAvailable;
-    const count = scanners.length;
     const usbCount = data.usbCount || 0;
     const netCount = data.networkCount || 0;
     const isCloud = !!data.isCloud;
-    const isConnected = count > 0;
+    let bridge = null;
+    if (isCloud && window.ScannerBridge) {
+      bridge = await window.ScannerBridge.check();
+    }
+
+    const localScanners = (bridge && bridge.ok && Array.isArray(bridge.scanners)) ? bridge.scanners : [];
+    const effectiveScanners = isCloud ? localScanners : scanners;
+    const count = effectiveScanners.length;
+    const isBridgeConnected = isCloud && !!(bridge && bridge.ok);
+    const isConnected = isCloud ? (isBridgeConnected && count > 0) : count > 0;
 
     const btnScan = document.getElementById('btn-portal-scan');
     if (scannerCount) {
-      scannerCount.textContent = isCloud
-        ? 'Modo Nube (Render)'
-        : (isConnected
-          ? `${count} detectado(s) · ${usbCount} USB · ${netCount} Red`
-          : '0 dispositivo(s)');
+      if (isBridgeConnected) scannerCount.textContent = 'Puente Local Activo';
+      else if (isCloud) scannerCount.textContent = 'Modo Nube (Render)';
+      else scannerCount.textContent = isConnected ? `${count} detectado(s) · ${usbCount} USB · ${netCount} Red` : '0 dispositivo(s)';
     }
 
-    if (isCloud) {
-      dot.style.background = '#2980B9';
-      dotText.textContent = 'Modo Nube (Render) · Escaneo físico deshabilitado';
-      dotText.style.color = '#2980B9';
+    if (isBridgeConnected) {
+      if (count > 0) {
+        dot.style.background = '#27AE60';
+        dotText.textContent = `${count} escáner(es) local(es) · Puente Activo`;
+        dotText.style.color = '#27AE60';
+        dot.classList.toggle('show-ok', true);
+        dot.classList.toggle('show-err', false);
+      } else {
+        dot.style.background = '#F39C12';
+        dotText.textContent = 'Puente Activo · Sin escáner USB detectado en PC';
+        dotText.style.color = '#F39C12';
+        dot.classList.toggle('show-ok', false);
+        dot.classList.toggle('show-err', false);
+      }
+    } else if (isCloud) {
+      dot.style.background = '#F39C12';
+      dotText.textContent = 'Modo Nube · Inicie el Agente Puente para escanear';
+      dotText.style.color = '#F39C12';
       dot.classList.toggle('show-ok', false);
       dot.classList.toggle('show-err', false);
     } else if (isConnected) {
@@ -1006,10 +1079,13 @@ async function refreshPortalScannerStatus() {
     }
 
     if (btnScan) {
-      btnScan.disabled = isCloud || !isConnected;
-      btnScan.style.opacity = (!isCloud && isConnected) ? '1' : '0.45';
-      btnScan.style.cursor = (!isCloud && isConnected) ? 'pointer' : 'not-allowed';
-      btnScan.title = isCloud ? 'Escaneo directo por hardware no disponible en la nube' : (isConnected ? 'Escanear un documento' : 'No hay escáner conectado');
+      const canScan = isBridgeConnected || (!isCloud && isConnected);
+      btnScan.disabled = !canScan;
+      btnScan.style.opacity = canScan ? '1' : '0.45';
+      btnScan.style.cursor = canScan ? 'pointer' : 'not-allowed';
+      btnScan.title = isBridgeConnected
+        ? 'Escanear directamente desde el escáner local'
+        : (isCloud ? 'Inicie el Agente Puente en su computador para escanear' : (isConnected ? 'Escanear un documento' : 'No hay escáner conectado'));
     }
 
     const btnEpsonScan = document.getElementById('btn-portal-epson-scan');
@@ -1019,12 +1095,22 @@ async function refreshPortalScannerStatus() {
     }
 
     if (deviceList) {
-      if (isCloud) {
+      if (isCloud && !isBridgeConnected) {
         deviceList.innerHTML = `
-          <div style="text-align:center;padding:16px;color:var(--text-muted);font-size:12px;border:1px solid var(--border-color);border-radius:10px;background:var(--bg-secondary);">
-            <div style="font-size:24px;margin-bottom:6px;">☁️</div>
-            <div style="font-weight:600;color:var(--text-primary);margin-bottom:4px;">Servicio en la Nube (Render)</div>
-            <div style="line-height:1.5;">La comunicación directa por USB o red local requiere ejecutar el servidor en un equipo local de la oficina. En la nube, digitalice sus documentos con su equipo y cargue los archivos PDF directamente o mediante Google Drive.</div>
+          <div style="padding:16px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px;font-size:12px;line-height:1.6;">
+            <div style="font-weight:700;color:var(--text-primary);margin-bottom:6px;display:flex;align-items:center;gap:6px;">
+              <span>🔌</span> Agente Puente de Escáner no detectado en su equipo
+            </div>
+            <div style="color:var(--text-muted);margin-bottom:8px;">
+              Para digitalizar directamente desde esta página en la nube sin mover archivos manualmente, ejecute el agente en su computador:
+            </div>
+            <div style="background:var(--bg-primary);padding:8px 12px;border-radius:6px;font-family:monospace;font-size:11px;margin-bottom:10px;border:1px solid var(--border-color);color:var(--text-primary);">
+              <b>Windows:</b> doble clic en <code>start-scanner-bridge.bat</code><br>
+              <b>Linux:</b> ejecutar <code>./start-scanner-bridge.sh</code>
+            </div>
+            <div style="font-size:11px;color:var(--text-muted);">
+              Al iniciarlo, el escáner físico de su mesa se conectará automáticamente con esta ventana.
+            </div>
           </div>`;
       } else if (!isConnected) {
         deviceList.innerHTML = `
@@ -1033,12 +1119,12 @@ async function refreshPortalScannerStatus() {
               <path stroke-linecap="round" stroke-linejoin="round" d="M3 7V5a2 2 0 012-2h2M17 3h2a2 2 0 012 2v2M21 17v2a2 2 0 01-2 2h-2M7 21H5a2 2 0 01-2-2v-2"/>
               <line x1="7" y1="12" x2="17" y2="12"/>
             </svg>
-            <div style="font-weight:600;color:var(--text-secondary);margin-bottom:4px;">Escáner inactivo</div>
-            <div style="line-height:1.5;">No se detectaron dispositivos. Verifique conexiones USB o de red.</div>
+            <div style="font-weight:600;color:var(--text-secondary);margin-bottom:4px;">${isBridgeConnected ? 'Puente activo pero sin escáner' : 'Escáner inactivo'}</div>
+            <div style="line-height:1.5;">${isBridgeConnected ? 'Verifique que el escáner esté encendido y conectado por USB.' : 'No se detectaron dispositivos. Verifique conexiones USB o de red.'}</div>
           </div>`;
       } else {
         let html = '';
-        scanners.forEach(s => {
+        effectiveScanners.forEach(s => {
           const typeColor = s.type === 'USB' ? '#8E44AD' : '#2980B9';
           const typeBg = s.type === 'USB' ? 'rgba(142,68,173,0.12)' : 'rgba(41,128,185,0.12)';
           const statusColor = s.status === 'Conectado' || s.status === 'Detectado' ? '#27AE60' : '#F39C12';
