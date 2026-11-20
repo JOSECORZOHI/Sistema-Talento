@@ -112,9 +112,9 @@ document.addEventListener('DOMContentLoaded', () => {
           btnPortalScan.textContent = 'Digitalizando hoja...';
           const bridgeData = await window.ScannerBridge.scan(customName);
           btnPortalScan.textContent = 'Subiendo a la bandeja...';
-          const blob = window.ScannerBridge.base64ToBlob(bridgeData.pdfBase64);
+          const payload = window.ScannerBridge.payloadToBlob(bridgeData);
           const fd = new FormData();
-          fd.append('file', blob, bridgeData.filename);
+          fd.append('file', payload.blob, payload.filename);
           const uploadRes = await apiFetch('/api/scanner/upload', { method: 'POST', body: fd });
           const uploadData = await uploadRes.json();
           if (!uploadRes.ok) throw new Error(uploadData.error || 'Error al guardar archivo en bandeja.');
@@ -1096,22 +1096,39 @@ async function refreshPortalScannerStatus() {
 
     if (deviceList) {
       if (isCloud && !isBridgeConnected) {
+        if (!window._bridgeFuncPolling) {
+          window._bridgeFuncPolling = setInterval(async () => {
+            if (!window.ScannerBridge) return;
+            const b = await window.ScannerBridge.check();
+            if (b && b.ok) {
+              clearInterval(window._bridgeFuncPolling);
+              window._bridgeFuncPolling = null;
+              refreshPortalScannerStatus();
+            }
+          }, 2500);
+        }
+
         deviceList.innerHTML = `
-          <div style="padding:16px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px;font-size:12px;line-height:1.6;">
-            <div style="font-weight:700;color:var(--text-primary);margin-bottom:6px;display:flex;align-items:center;gap:6px;">
-              <span>🔌</span> Agente Puente de Escáner no detectado en su equipo
+          <div style="padding:18px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px;font-size:12px;line-height:1.6;">
+            <div style="font-weight:700;color:var(--text-primary);margin-bottom:6px;font-size:13px;display:flex;align-items:center;gap:6px;">
+              <span>🔌</span> Conecta tu escáner físico con 1 clic
             </div>
-            <div style="color:var(--text-muted);margin-bottom:8px;">
-              Para digitalizar directamente desde esta página en la nube sin mover archivos manualmente, ejecute el agente en su computador:
+            <div style="color:var(--text-muted);margin-bottom:12px;">
+              Para digitalizar hojas directamente desde esta página en la nube sin mover archivos a mano, activa el conector en este equipo:
             </div>
-            <div style="background:var(--bg-primary);padding:8px 12px;border-radius:6px;font-family:monospace;font-size:11px;margin-bottom:10px;border:1px solid var(--border-color);color:var(--text-primary);">
-              <b>Windows:</b> doble clic en <code>start-scanner-bridge.bat</code><br>
-              <b>Linux:</b> ejecutar <code>./start-scanner-bridge.sh</code>
+            <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+              <a href="/api/scanner/download-connector" class="btn btn-primary" style="padding:8px 16px;font-size:12px;text-decoration:none;display:inline-flex;align-items:center;gap:6px;" download>
+                <span>📥</span> Descargar Conector (1 clic)
+              </a>
+              <span style="font-size:11px;color:var(--text-muted);">Solo toma 3 segundos y no requiere instalar programas adicionales.</span>
             </div>
-            <div style="font-size:11px;color:var(--text-muted);">
-              Al iniciarlo, el escáner físico de su mesa se conectará automáticamente con esta ventana.
+            <div style="font-size:11px;color:var(--text-secondary);background:var(--bg-primary);padding:8px 12px;border-radius:6px;border:1px solid var(--border-color);">
+              <b>Instrucciones:</b> Haz clic en el archivo descargado en tu navegador para abrirlo. El conector se activará y esta pantalla cambiará a verde automáticamente.
             </div>
           </div>`;
+      } else if (isBridgeConnected && window._bridgeFuncPolling) {
+        clearInterval(window._bridgeFuncPolling);
+        window._bridgeFuncPolling = null;
       } else if (!isConnected) {
         deviceList.innerHTML = `
           <div style="text-align:center;padding:20px;color:var(--text-muted);font-size:12px;border:2px dashed var(--border-color);border-radius:10px;background:var(--bg-secondary);">

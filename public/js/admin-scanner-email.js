@@ -339,23 +339,42 @@ async function refreshScannerStatus() {
     if (!list) return;
 
     if (isCloud && !isBridgeConnected) {
+      if (!window._bridgePolling) {
+        window._bridgePolling = setInterval(async () => {
+          if (!window.ScannerBridge) return;
+          const b = await window.ScannerBridge.check();
+          if (b && b.ok) {
+            clearInterval(window._bridgePolling);
+            window._bridgePolling = null;
+            refreshScannerStatus();
+          }
+        }, 2500);
+      }
+
       list.innerHTML = `
-        <div style="padding:16px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;font-size:12px;line-height:1.6;">
-          <div style="font-weight:700;color:var(--text-primary);margin-bottom:6px;display:flex;align-items:center;gap:6px;">
-            <span>🔌</span> Agente Puente de Escáner no detectado en su equipo
+        <div style="padding:18px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px;font-size:12px;line-height:1.6;">
+          <div style="font-weight:700;color:var(--text-primary);margin-bottom:6px;font-size:13px;display:flex;align-items:center;gap:6px;">
+            <span>🔌</span> Conecta tu escáner físico con 1 clic
           </div>
-          <div style="color:var(--text-muted);margin-bottom:8px;">
-            Para digitalizar directamente desde esta página web sin arrastrar archivos, inicie el puente en su computador:
+          <div style="color:var(--text-muted);margin-bottom:12px;">
+            Para digitalizar hojas directamente desde esta página en la nube sin mover archivos a mano, activa el conector en este equipo:
           </div>
-          <div style="background:var(--bg-primary);padding:8px 12px;border-radius:6px;font-family:monospace;font-size:11px;margin-bottom:10px;border:1px solid var(--border-color);color:var(--text-primary);">
-            <b>Windows:</b> doble clic en <code>start-scanner-bridge.bat</code><br>
-            <b>Linux:</b> ejecutar <code>./start-scanner-bridge.sh</code>
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px;">
+            <a href="/api/scanner/download-connector" class="btn btn-primary" style="padding:8px 16px;font-size:12px;text-decoration:none;display:inline-flex;align-items:center;gap:6px;" download>
+              <span>📥</span> Descargar Conector (1 clic)
+            </a>
+            <span style="font-size:11px;color:var(--text-muted);">Solo toma 3 segundos y no requiere instalar programas adicionales.</span>
           </div>
-          <div style="font-size:11px;color:var(--text-muted);">
-            El agente detectará su escáner USB y habilitará el botón de escaneo inmediato.
+          <div style="font-size:11px;color:var(--text-secondary);background:var(--bg-primary);padding:8px 12px;border-radius:6px;border:1px solid var(--border-color);">
+            <b>Instrucciones:</b> Haz clic en el archivo descargado en tu navegador para abrirlo. El conector se activará y esta pantalla cambiará a verde automáticamente.
           </div>
         </div>`;
       return;
+    }
+
+    if (isBridgeConnected && window._bridgePolling) {
+      clearInterval(window._bridgePolling);
+      window._bridgePolling = null;
     }
 
     if (!isConnected) {

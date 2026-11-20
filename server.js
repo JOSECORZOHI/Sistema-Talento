@@ -3137,6 +3137,22 @@ app.post('/api/scanner/launch-epson-scan', authMiddleware, requireAnyPermission(
   }
 });
 
+// Endpoint de descarga del instalador del Conector de Escáner en 1 clic
+app.get('/api/scanner/download-connector', authMiddleware, (req, res) => {
+  const ua = (req.headers['user-agent'] || '').toLowerCase();
+  const isWindows = ua.includes('windows') || ua.includes('win32');
+  const filename = isWindows ? 'conector-escaner-windows.bat' : 'conector-escaner-linux.sh';
+  const filePath = path.join(__dirname, 'scanner-bridge', filename);
+
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'Instalador no encontrado en el servidor.' });
+  }
+
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.setHeader('Content-Type', isWindows ? 'application/x-bat' : 'application/x-sh');
+  return res.sendFile(filePath);
+});
+
 // Recepción de archivos digitalizados desde el Agente Puente Local (Scanner Bridge) o carga directa
 app.post('/api/scanner/upload', authMiddleware, requireAnyPermission('scanner.manage', 'scanner.scan'), upload.single('file'), async (req, res) => {
   try {
@@ -3144,13 +3160,39 @@ app.post('/api/scanner/upload', authMiddleware, requireAnyPermission('scanner.ma
       return res.status(400).json({ error: 'No se envió ningún archivo.' });
     }
     const ext = path.extname(req.file.originalname).toLowerCase();
-    if (ext !== '.pdf') {
-      return res.status(400).json({ error: 'Solo se permiten archivos en formato PDF.' });
+    const isPdf = ext === '.pdf';
+    const isImage = ext === '.png' || ext === '.jpg' || ext === '.jpeg';
+    if (!isPdf && !isImage) {
+      return res.status(400).json({ error: 'Solo se permiten archivos en formato PDF o imágenes (PNG, JPG).' });
     }
-    const pdfMagic = req.file.buffer.slice(0, 5).toString('ascii');
-    if (pdfMagic !== '%PDF-') {
-      return res.status(400).json({ error: 'El contenido del archivo no es un PDF válido.' });
+
+    let finalPdfBuffer = req.file.buffer;
+    if (isImage) {
+      // Conversión automática de imagen a PDF mediante PDFKit
+      try {
+        const PDFDocument = getPDFDocument();
+        finalPdfBuffer = await new Promise((resolve, reject) => {
+          const chunks = [];
+          const doc = new PDFDocument({ autoFirstPage: false });
+          doc.on('data', chunk => chunks.push(chunk));
+          doc.on('end', () => resolve(Buffer.concat(chunks)));
+          doc.on('error', reject);
+          const img = doc.openImage(req.file.buffer);
+          doc.addPage({ size: [img.width, img.height] });
+          doc.image(img, 0, 0, { width: img.width, height: img.height });
+          doc.end();
+        });
+      } catch (convErr) {
+        logger.error('[SCANNER-CONVERT] Error convirtiendo imagen a PDF:', convErr);
+        return res.status(500).json({ error: 'No se pudo convertir la imagen digitalizada a PDF.' });
+      }
+    } else {
+      const pdfMagic = req.file.buffer.slice(0, 5).toString('ascii');
+      if (pdfMagic !== '%PDF-') {
+        return res.status(400).json({ error: 'El contenido del archivo no es un PDF válido.' });
+      }
     }
+
     const timestamp = Date.now();
     let baseName = path.basename(req.file.originalname, ext)
       .replace(/[^a-zA-Z0-9áéíóúÁÉÍÓÚñÑ _.-]/g, '')
@@ -3161,7 +3203,7 @@ app.post('/api/scanner/upload', authMiddleware, requireAnyPermission('scanner.ma
     const filename = `${baseName}_${crypto.randomBytes(3).toString('hex')}.pdf`;
 
     const ownerEmployeeId = req.user.role === 'funcionario' ? req.user.employeeId : undefined;
-    await storeFileBuffer(filename, req.file.buffer, {
+    await storeFileBuffer(filename, finalPdfBuffer, {
       source: 'scanner',
       registered: false,
       sensitive: true,

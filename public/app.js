@@ -131,9 +131,9 @@ document.addEventListener('DOMContentLoaded', () => {
           btnScan.textContent = 'Digitalizando hoja...';
           const bridgeData = await window.ScannerBridge.scan(customName);
           btnScan.textContent = 'Subiendo a la bandeja...';
-          const blob = window.ScannerBridge.base64ToBlob(bridgeData.pdfBase64);
+          const payload = window.ScannerBridge.payloadToBlob(bridgeData);
           const fd = new FormData();
-          fd.append('file', blob, bridgeData.filename);
+          fd.append('file', payload.blob, payload.filename);
           const uploadRes = await apiFetch('/api/scanner/upload', { method: 'POST', body: fd });
           const uploadData = await uploadRes.json();
           if (!uploadRes.ok) throw new Error(uploadData.error || 'Error al guardar archivo en bandeja.');

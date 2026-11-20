@@ -854,6 +854,15 @@ window.ScannerBridge = {
       bytes[i] = binary.charCodeAt(i);
     }
     return new Blob([bytes], { type: mimeType });
+  },
+  payloadToBlob(bridgeData) {
+    if (bridgeData.pdfBase64) {
+      return { blob: this.base64ToBlob(bridgeData.pdfBase64, 'application/pdf'), filename: bridgeData.filename || 'Escaneo.pdf' };
+    }
+    if (bridgeData.imageBase64) {
+      return { blob: this.base64ToBlob(bridgeData.imageBase64, 'image/png'), filename: bridgeData.filename || 'Escaneo.png' };
+    }
+    throw new Error('El puente local no devolvió datos del archivo escaneado.');
   }
 };
 
