@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: sistema-talento-valledupar
+    runtime: node
+    plan: free
+    region: ohio
+    buildCommand: npm install
+    startCommand: node --max-old-space-size=384 server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_NAME
+        value: talento_humano
+      - key: OCR_WARMUP
+        value: "0"
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: DOC_ENC_KEY
+        sync: false
+      - key: APP_BASE_URL
+        sync: false

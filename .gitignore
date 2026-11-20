@@ -33,16 +33,7 @@ public/__probe_admin.html
 .opencode/
 opencode.json
 AGENTS.md
-docs/manual-de-uso.md
-docs/manual-de-uso.doc
-docs/manual-tecnico.md
-docs/manual-tecnico.doc
-docs/pendientes.md
-docs/planificacion/
+# Documentación, formatos e imágenes (solo local, nunca subir)
+docs/
 
-# Documentos de práctica académica y formatos con datos personales
-docs/*.doc
-docs/*.docx
-docs/*.pdf
-docs/*practica*
 

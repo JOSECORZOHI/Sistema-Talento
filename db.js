@@ -220,9 +220,9 @@ async function ensureIndexes() {
 }
 
 async function connect() {
-  let uri = process.env.DATABASE_URL;
+  let uri = process.env.DATABASE_URL || process.env.MONGODB_URI;
   if (!uri) {
-    throw new Error('DATABASE_URL no está configurada. La base de datos debe ser remota.');
+    throw new Error('DATABASE_URL o MONGODB_URI no está configurada. La base de datos debe ser remota.');
   }
 
   if (db) return db;
@@ -685,7 +685,7 @@ module.exports = {
     reconnectInProgress = true;
     let newClient = null;
     try {
-      const uri = process.env.DATABASE_URL;
+      const uri = process.env.DATABASE_URL || process.env.MONGODB_URI;
       if (!uri) return false;
       const fullUri = buildUri(uri);
 

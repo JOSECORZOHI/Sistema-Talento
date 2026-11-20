@@ -85,8 +85,8 @@ const app = express();
 // Por defecto solo se confían cabeceras X-Forwarded-For procedentes de loopback;
 // así un atacante remoto no puede falsificar req.ip (rate limiters/logs/auditoría).
 // Si se despliega detrás de un proxy real, definir TRUST_PROXY=1 (o 'loopback'/n).
-const isRailwayOrProd = Boolean(process.env.RAILWAY_ENVIRONMENT || process.env.NODE_ENV === 'production');
-const defaultTrustProxy = isRailwayOrProd ? 1 : 'loopback';
+const isCloudOrProd = Boolean(process.env.RAILWAY_ENVIRONMENT || process.env.RENDER || process.env.NODE_ENV === 'production');
+const defaultTrustProxy = isCloudOrProd ? 1 : 'loopback';
 const trustProxySetting = process.env.TRUST_PROXY;
 app.set('trust proxy', trustProxySetting
   ? (/^\d+$/.test(trustProxySetting) ? parseInt(trustProxySetting, 10) : trustProxySetting)
@@ -2691,7 +2691,7 @@ function getLocalSubnet() {
 }
 
 async function detectNetworkScanners() {
-  if (process.env.RAILWAY_ENVIRONMENT) {
+  if (process.env.RAILWAY_ENVIRONMENT || process.env.RENDER) {
     return [];
   }
   const subnet = getLocalSubnet();
@@ -2809,7 +2809,7 @@ async function detectPrintersWithScanners() {
 }
 
 async function detectAllScanners() {
-  if (process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_STATIC_URL) {
+  if (process.env.RAILWAY_ENVIRONMENT || process.env.RAILWAY_STATIC_URL || process.env.RENDER) {
     return [];
   }
   const [usb, net, printers] = await Promise.all([
